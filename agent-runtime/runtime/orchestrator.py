@@ -83,6 +83,9 @@ def run_agent(skills: List[Skill]) -> List[dict]:
                         "content": result,
                     })
             messages.append({"role": "user", "content": tool_results})
+        elif response.stop_reason not in ("end_turn", "tool_use"):
+            print(f"[warn] unexpected stop_reason: {response.stop_reason}, aborting loop")
+            break
 
     return findings
 

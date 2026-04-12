@@ -8,7 +8,10 @@ from .skill_loader import load_skills
 
 
 def main() -> None:
-    run_id = os.environ["RUN_ID"]
+    run_id = os.environ.get("RUN_ID")
+    if not run_id:
+        print("[error] RUN_ID environment variable is not set")
+        sys.exit(1)
     skill_names_raw = os.environ.get("SKILL_NAMES", "")
     skill_names = [s.strip() for s in skill_names_raw.split(",") if s.strip()]
 
@@ -19,7 +22,11 @@ def main() -> None:
         print("[error] no skills loaded — exiting")
         sys.exit(1)
 
-    findings = run_agent(skills)
+    try:
+        findings = run_agent(skills)
+    except Exception as e:
+        print(f"[error] agent failed: {e}")
+        sys.exit(1)
     print(f"[info] found {len(findings)} findings")
 
     post_findings(run_id, findings)

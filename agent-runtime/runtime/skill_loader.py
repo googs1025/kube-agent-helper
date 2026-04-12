@@ -55,4 +55,5 @@ def _parse_skill_md(path: str) -> "Skill | None":
         dimension=meta.get("dimension", "health"),
         tools=tools,
         prompt=prompt_body,
+        requires_data=meta.get("requires_data", []),
     )
