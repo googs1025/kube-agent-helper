@@ -107,6 +107,10 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	runID := parts[2]
+	if runID == "" {
+		http.Error(w, "missing run ID", http.StatusBadRequest)
+		return
+	}
 
 	if len(parts) == 4 && parts[3] == "findings" {
 		findings, err := s.store.ListFindings(r.Context(), runID)
