@@ -17,6 +17,7 @@ import (
 
 type fakeStore struct {
 	findings []*store.Finding
+	skills   []*store.Skill
 }
 
 func (f *fakeStore) CreateFinding(_ context.Context, finding *store.Finding) error {
@@ -42,8 +43,13 @@ func (f *fakeStore) UpdateRunStatus(_ context.Context, id string, p store.Phase,
 func (f *fakeStore) ListRuns(_ context.Context, opts store.ListOpts) ([]*store.DiagnosticRun, error) {
 	return nil, nil
 }
-func (f *fakeStore) UpsertSkill(_ context.Context, s *store.Skill) error      { return nil }
-func (f *fakeStore) ListSkills(_ context.Context) ([]*store.Skill, error)      { return nil, nil }
+func (f *fakeStore) UpsertSkill(_ context.Context, s *store.Skill) error {
+	f.skills = append(f.skills, s)
+	return nil
+}
+func (f *fakeStore) ListSkills(_ context.Context) ([]*store.Skill, error) {
+	return f.skills, nil
+}
 func (f *fakeStore) GetSkill(_ context.Context, name string) (*store.Skill, error) {
 	return nil, nil
 }
@@ -85,4 +91,21 @@ func TestGetFindings(t *testing.T) {
 	var resp []map[string]interface{}
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Len(t, resp, 1)
+}
+
+func TestGetSkills(t *testing.T) {
+	st := &fakeStore{}
+	ctx := context.Background()
+	_ = st.UpsertSkill(ctx, &store.Skill{Name: "s1", Dimension: "health", Enabled: true})
+
+	srv := httpserver.New(st)
+	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var skills []*store.Skill
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&skills))
+	require.Len(t, skills, 1)
+	assert.Equal(t, "s1", skills[0].Name)
 }

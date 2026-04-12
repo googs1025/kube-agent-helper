@@ -20,6 +20,7 @@ func New(s store.Store) *Server {
 	srv.mux.HandleFunc("/internal/runs/", srv.handleInternal)
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
 	srv.mux.HandleFunc("/api/runs/", srv.handleAPIRunDetail)
+	srv.mux.HandleFunc("/api/skills", srv.handleAPISkills)
 	return srv
 }
 
@@ -82,16 +83,19 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/runs
 func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		runs, err := s.store.ListRuns(r.Context(), store.ListOpts{Limit: 50})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, runs)
+	case http.MethodPost:
+		http.Error(w, "not implemented", http.StatusNotImplemented)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	runs, err := s.store.ListRuns(r.Context(), store.ListOpts{Limit: 50})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, runs)
 }
 
 // GET /api/runs/{id}  and  GET /api/runs/{id}/findings
@@ -135,6 +139,23 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, run)
+}
+
+// GET /api/skills
+func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	skills, err := s.store.ListSkills(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if skills == nil {
+		skills = make([]*store.Skill, 0)
+	}
+	writeJSON(w, skills)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
