@@ -1,6 +1,8 @@
 # k8s-mcp-server Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task
+>
+> -by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a Go-based Model Context Protocol server that exposes 8 read-only Kubernetes diagnostic tools over stdio, scoped per spec `docs/superpowers/specs/2026-04-11-k8s-mcp-server-design.md`.
 
@@ -102,6 +104,7 @@ kube-agent-helper/
 ## Task 1: Scaffold module, directories, and build tooling
 
 **Files:**
+
 - Create: `go.mod`
 - Create: `Makefile`
 - Create: `.golangci.yml`
@@ -113,18 +116,19 @@ kube-agent-helper/
 - Create: `internal/audit/doc.go`
 - Create: `internal/mcptools/doc.go`
 
-- [ ] **Step 1: Initialize Go module**
+- [ ]  **Step 1: Initialize Go module**
 
 ```bash
 cd /Users/zhenyu.jiang/kube-agent-helper
 go mod init github.com/kube-agent-helper/kube-agent-helper
 ```
 
-- [ ] **Step 2: Create directory skeleton with placeholder doc.go files**
+- [ ]  **Step 2: Create directory skeleton with placeholder doc.go files**
 
 Each package needs at least one `.go` file for `go build ./...` to succeed. Use `doc.go`:
 
 `internal/k8sclient/doc.go`:
+
 ```go
 // Package k8sclient builds Kubernetes REST configuration and typed/dynamic
 // clients from CLI flags, and performs an RBAC precheck at startup.
@@ -133,9 +137,10 @@ package k8sclient
 
 Repeat for the other four internal packages with one-line package docs matching the spec responsibilities (`sanitize`, `trimmer`, `audit`, `mcptools`).
 
-- [ ] **Step 3: Write minimal main.go**
+- [ ]  **Step 3: Write minimal main.go**
 
 `cmd/k8s-mcp-server/main.go`:
+
 ```go
 package main
 
@@ -150,9 +155,10 @@ func main() {
 }
 ```
 
-- [ ] **Step 4: Write Makefile**
+- [ ]  **Step 4: Write Makefile**
 
 `Makefile`:
+
 ```makefile
 BINARY := k8s-mcp-server
 PKG := ./cmd/$(BINARY)
@@ -185,9 +191,10 @@ clean:
 	rm -rf bin/
 ```
 
-- [ ] **Step 5: Write .golangci.yml**
+- [ ]  **Step 5: Write .golangci.yml**
 
 `.golangci.yml`:
+
 ```yaml
 run:
   timeout: 3m
@@ -207,9 +214,10 @@ issues:
   exclude-use-default: false
 ```
 
-- [ ] **Step 6: Append to .gitignore**
+- [ ]  **Step 6: Append to .gitignore**
 
 Append these lines to existing `.gitignore`:
+
 ```
 bin/
 *.test
@@ -218,22 +226,25 @@ coverage.out
 .envrc
 ```
 
-- [ ] **Step 7: Smoke-verify build**
+- [ ]  **Step 7: Smoke-verify build**
 
 ```bash
 make build
 ./bin/k8s-mcp-server
 ```
+
 Expected stderr: `k8s-mcp-server: not yet implemented`
 Expected exit code: 0
 
 Also run:
+
 ```bash
 go vet ./...
 ```
+
 Expected: no output (success).
 
-- [ ] **Step 8: Commit**
+- [ ]  **Step 8: Commit**
 
 ```bash
 git add go.mod Makefile .golangci.yml .gitignore cmd internal
@@ -245,14 +256,16 @@ git commit -m "feat: scaffold module, directories, and build tooling"
 ## Task 2: k8sclient — rest.Config resolution from flags
 
 **Files:**
+
 - Create: `internal/k8sclient/config.go`
 - Create: `internal/k8sclient/config_test.go`
 
 Resolves CLI flags (`--in-cluster` / `--kubeconfig` / `--context`) and environment into a `*rest.Config`. Pure logic, no side effects beyond reading kubeconfig file if specified.
 
-- [ ] **Step 1: Write failing test (table-driven)**
+- [ ]  **Step 1: Write failing test (table-driven)**
 
 `internal/k8sclient/config_test.go`:
+
 ```go
 package k8sclient
 
@@ -343,23 +356,25 @@ users:
 `
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/k8sclient/... -run TestResolveConfig -v
 ```
+
 Expected: compilation errors — `undefined: Resolve`, `undefined: Flags`.
 
-- [ ] **Step 3: Add required dependencies**
+- [ ]  **Step 3: Add required dependencies**
 
 ```bash
 go get k8s.io/client-go@v0.31.0
 go get github.com/stretchr/testify@latest
 ```
 
-- [ ] **Step 4: Implement config.go**
+- [ ]  **Step 4: Implement config.go**
 
 `internal/k8sclient/config.go`:
+
 ```go
 package k8sclient
 
@@ -441,14 +456,15 @@ func Resolve(f Flags) (*Resolved, error) {
 }
 ```
 
-- [ ] **Step 5: Run test to confirm pass**
+- [ ]  **Step 5: Run test to confirm pass**
 
 ```bash
 go test ./internal/k8sclient/... -run TestResolveConfig -v
 ```
+
 Expected: all 4 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add internal/k8sclient/config.go internal/k8sclient/config_test.go go.mod go.sum
@@ -460,12 +476,13 @@ git commit -m "feat(k8sclient): resolve rest.Config from CLI flags"
 ## Task 3: k8sclient — client factory and RESTMapper
 
 **Files:**
+
 - Create: `internal/k8sclient/clients.go`
 - Create: `internal/k8sclient/mapper.go`
 
 Produces the concrete clients used by tool handlers. No tests at this layer — clients are thin factories exercised by envtest in later tasks.
 
-- [ ] **Step 1: Add metrics + prometheus dependencies**
+- [ ]  **Step 1: Add metrics + prometheus dependencies**
 
 ```bash
 go get k8s.io/metrics@v0.31.0
@@ -473,9 +490,10 @@ go get github.com/prometheus/client_golang@latest
 go get github.com/prometheus/common@latest
 ```
 
-- [ ] **Step 2: Implement clients.go**
+- [ ]  **Step 2: Implement clients.go**
 
 `internal/k8sclient/clients.go`:
+
 ```go
 package k8sclient
 
@@ -551,9 +569,10 @@ func Build(r *Resolved, promURL string) (*Clients, error) {
 }
 ```
 
-- [ ] **Step 3: Implement mapper.go**
+- [ ]  **Step 3: Implement mapper.go**
 
 `internal/k8sclient/mapper.go`:
+
 ```go
 package k8sclient
 
@@ -619,14 +638,15 @@ func (m *Mapper) Discovery() discovery.DiscoveryInterface {
 }
 ```
 
-- [ ] **Step 4: Verify build**
+- [ ]  **Step 4: Verify build**
 
 ```bash
 go build ./...
 ```
+
 Expected: no errors.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/k8sclient/clients.go internal/k8sclient/mapper.go go.mod go.sum
@@ -638,14 +658,16 @@ git commit -m "feat(k8sclient): client factory and RESTMapper wrapper"
 ## Task 4: k8sclient — startup RBAC precheck
 
 **Files:**
+
 - Create: `internal/k8sclient/precheck.go`
 - Create: `internal/k8sclient/precheck_test.go`
 
 Verifies the current SA can at minimum `list pods`; fails fast if not. Uses `SelfSubjectAccessReview` rather than `SelfSubjectRulesReview` for simplicity.
 
-- [ ] **Step 1: Write failing test using fake clientset**
+- [ ]  **Step 1: Write failing test using fake clientset**
 
 `internal/k8sclient/precheck_test.go`:
+
 ```go
 package k8sclient
 
@@ -696,16 +718,18 @@ func TestPrecheck_Denied(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/k8sclient/... -run TestPrecheck -v
 ```
+
 Expected: `undefined: Precheck`.
 
-- [ ] **Step 3: Implement precheck.go**
+- [ ]  **Step 3: Implement precheck.go**
 
 `internal/k8sclient/precheck.go`:
+
 ```go
 package k8sclient
 
@@ -743,14 +767,15 @@ func Precheck(ctx context.Context, client kubernetes.Interface) error {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/k8sclient/... -run TestPrecheck -v
 ```
+
 Expected: both tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/k8sclient/precheck.go internal/k8sclient/precheck_test.go
@@ -762,20 +787,22 @@ git commit -m "feat(k8sclient): RBAC precheck via SelfSubjectAccessReview"
 ## Task 5: main.go wire-up with CLI flags and stdio server
 
 **Files:**
+
 - Modify: `cmd/k8s-mcp-server/main.go`
 
 Full startup sequence: flag parse → resolve config → build clients → precheck → log startup → register zero tools → `ServeStdio`. Registering zero tools is intentional at this stage; tools come in later tasks. The MCP server must already be functional at this point.
 
-- [ ] **Step 1: Add mcp-go dependency**
+- [ ]  **Step 1: Add mcp-go dependency**
 
 ```bash
 go get github.com/mark3labs/mcp-go@latest
 go get github.com/oklog/ulid/v2@latest
 ```
 
-- [ ] **Step 2: Rewrite main.go**
+- [ ]  **Step 2: Rewrite main.go**
 
 `cmd/k8s-mcp-server/main.go`:
+
 ```go
 package main
 
@@ -879,30 +906,33 @@ func newLogger(level string) *slog.Logger {
 const defaultMaskCMRegex = `(?i)(password|passwd|pwd|secret|token|apikey|api_key|credential|private[_-]?key|cert)`
 ```
 
-- [ ] **Step 3: Verify build**
+- [ ]  **Step 3: Verify build**
 
 ```bash
 make build
 ```
+
 Expected: `bin/k8s-mcp-server` produced, no errors.
 
-- [ ] **Step 4: Verify help flag**
+- [ ]  **Step 4: Verify help flag**
 
 ```bash
 ./bin/k8s-mcp-server --help
 ```
+
 Expected: flag list printed with each flag's description.
 
-- [ ] **Step 5: Smoke-verify stdio server handshake**
+- [ ]  **Step 5: Smoke-verify stdio server handshake**
 
 With no real cluster available, the precheck will fail. That's expected — the goal here is only to verify the binary wires up. Use a kubeconfig pointing at a fake server to confirm flag parsing works:
 
 ```bash
 ./bin/k8s-mcp-server --kubeconfig /nonexistent/kubeconfig 2>&1 | head -5
 ```
+
 Expected: JSON log line with `"level":"ERROR"` and a message mentioning the kubeconfig path.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add cmd/k8s-mcp-server/main.go go.mod go.sum
@@ -914,14 +944,16 @@ git commit -m "feat(cmd): wire up flags, clients, precheck, and stdio server"
 ## Task 6: sanitize — generic rules (managedFields, selfLink, last-applied)
 
 **Files:**
+
 - Create: `internal/sanitize/sanitize.go`
 - Create: `internal/sanitize/sanitize_test.go`
 
 Pure-function layer. `Clean(obj, opts)` returns a deep-copied, sanitized `*unstructured.Unstructured`. Never mutates the input. Idempotent.
 
-- [ ] **Step 1: Write failing test for generic rules**
+- [ ]  **Step 1: Write failing test for generic rules**
 
 `internal/sanitize/sanitize_test.go`:
+
 ```go
 package sanitize
 
@@ -995,16 +1027,18 @@ func TestClean_DoesNotMutateInput(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/sanitize/... -v
 ```
+
 Expected: `undefined: Clean`, `undefined: Options`.
 
-- [ ] **Step 3: Implement sanitize.go**
+- [ ]  **Step 3: Implement sanitize.go**
 
 `internal/sanitize/sanitize.go`:
+
 ```go
 package sanitize
 
@@ -1065,11 +1099,12 @@ func stripGenericMetadata(u *unstructured.Unstructured) {
 }
 ```
 
-- [ ] **Step 4: Stub cleanSecret/cleanConfigMap/cleanPod so tests compile**
+- [ ]  **Step 4: Stub cleanSecret/cleanConfigMap/cleanPod so tests compile**
 
 Create `internal/sanitize/secret.go`, `configmap.go`, `pod.go` with no-op implementations for now; they are populated in Tasks 7-9.
 
 `internal/sanitize/secret.go`:
+
 ```go
 package sanitize
 
@@ -1080,6 +1115,7 @@ func cleanSecret(u *unstructured.Unstructured) {}
 ```
 
 `internal/sanitize/configmap.go`:
+
 ```go
 package sanitize
 
@@ -1094,6 +1130,7 @@ func cleanConfigMap(u *unstructured.Unstructured, mask *regexp.Regexp) {}
 ```
 
 `internal/sanitize/pod.go`:
+
 ```go
 package sanitize
 
@@ -1103,14 +1140,15 @@ import "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 func cleanPod(u *unstructured.Unstructured) {}
 ```
 
-- [ ] **Step 5: Run test to confirm pass**
+- [ ]  **Step 5: Run test to confirm pass**
 
 ```bash
 go test ./internal/sanitize/... -v
 ```
+
 Expected: 5 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add internal/sanitize/
@@ -1122,12 +1160,14 @@ git commit -m "feat(sanitize): generic metadata stripping with idempotency"
 ## Task 7: sanitize — Secret data/stringData redaction
 
 **Files:**
+
 - Modify: `internal/sanitize/secret.go`
 - Modify: `internal/sanitize/sanitize_test.go` (append)
 
-- [ ] **Step 1: Append failing tests**
+- [ ]  **Step 1: Append failing tests**
 
 Add to `internal/sanitize/sanitize_test.go`:
+
 ```go
 func secretObj(data map[string]interface{}) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
@@ -1173,16 +1213,18 @@ func TestClean_SecretStringDataRedacted(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/sanitize/... -run TestClean_Secret -v
 ```
+
 Expected: two tests FAIL with the data/stringData unchanged.
 
-- [ ] **Step 3: Implement cleanSecret**
+- [ ]  **Step 3: Implement cleanSecret**
 
 Replace `internal/sanitize/secret.go`:
+
 ```go
 package sanitize
 
@@ -1255,14 +1297,15 @@ func redactedLen(v interface{}) string {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/sanitize/... -run TestClean_Secret -v
 ```
+
 Expected: both tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/sanitize/secret.go internal/sanitize/sanitize_test.go
@@ -1274,10 +1317,11 @@ git commit -m "feat(sanitize): redact Secret data and stringData"
 ## Task 8: sanitize — ConfigMap key-regex redaction
 
 **Files:**
+
 - Modify: `internal/sanitize/configmap.go`
 - Modify: `internal/sanitize/sanitize_test.go` (append)
 
-- [ ] **Step 1: Append failing tests**
+- [ ]  **Step 1: Append failing tests**
 
 ```go
 func cmObj(data map[string]interface{}) *unstructured.Unstructured {
@@ -1322,16 +1366,18 @@ func TestClean_ConfigMapNoMask(t *testing.T) {
 
 You must also add `"regexp"` to the imports at the top of `sanitize_test.go`.
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/sanitize/... -run TestClean_ConfigMap -v
 ```
+
 Expected: first test FAILS (values unchanged).
 
-- [ ] **Step 3: Implement cleanConfigMap**
+- [ ]  **Step 3: Implement cleanConfigMap**
 
 Replace `internal/sanitize/configmap.go`:
+
 ```go
 package sanitize
 
@@ -1357,14 +1403,15 @@ func cleanConfigMap(u *unstructured.Unstructured, mask *regexp.Regexp) {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/sanitize/... -run TestClean_ConfigMap -v
 ```
+
 Expected: both tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/sanitize/configmap.go internal/sanitize/sanitize_test.go
@@ -1376,12 +1423,13 @@ git commit -m "feat(sanitize): regex-driven ConfigMap key redaction"
 ## Task 9: sanitize — Pod env variable redaction
 
 **Files:**
+
 - Modify: `internal/sanitize/pod.go`
 - Modify: `internal/sanitize/sanitize_test.go` (append)
 
 Applies to both `spec.containers[].env` and `spec.initContainers[].env`. Regex is an internal constant — not user configurable.
 
-- [ ] **Step 1: Append failing tests**
+- [ ]  **Step 1: Append failing tests**
 
 ```go
 func podWithEnv(containers []interface{}, initContainers []interface{}) *unstructured.Unstructured {
@@ -1448,16 +1496,18 @@ func TestClean_PodEnvRedacted(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/sanitize/... -run TestClean_PodEnv -v
 ```
+
 Expected: FAIL.
 
-- [ ] **Step 3: Implement cleanPod**
+- [ ]  **Step 3: Implement cleanPod**
 
 Replace `internal/sanitize/pod.go`:
+
 ```go
 package sanitize
 
@@ -1506,19 +1556,21 @@ func redactContainers(spec map[string]interface{}, key string) {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/sanitize/... -v
 ```
+
 Expected: every `TestClean_*` PASSES. Check overall coverage:
 
 ```bash
 go test ./internal/sanitize/... -cover
 ```
+
 Expected: ≥ 90%.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/sanitize/pod.go internal/sanitize/sanitize_test.go
@@ -1530,6 +1582,7 @@ git commit -m "feat(sanitize): redact sensitive Pod env values"
 ## Task 10: trimmer — projector interface, generic fallback, Pod projection
 
 **Files:**
+
 - Create: `internal/trimmer/trimmer.go`
 - Create: `internal/trimmer/pod.go`
 - Create: `internal/trimmer/trimmer_test.go`
@@ -1538,9 +1591,10 @@ git commit -m "feat(sanitize): redact sensitive Pod env values"
 
 The trimmer builds slimmed projections for list-mode responses. Each specialized projector returns a plain `map[string]interface{}` shaped exactly as documented in spec §2.1.
 
-- [ ] **Step 1: Write failing test with golden file**
+- [ ]  **Step 1: Write failing test with golden file**
 
 `internal/trimmer/testdata/pod.input.json`:
+
 ```json
 {
   "apiVersion": "v1",
@@ -1567,6 +1621,7 @@ The trimmer builds slimmed projections for list-mode responses. Each specialized
 ```
 
 `internal/trimmer/testdata/pod.golden.json`:
+
 ```json
 {
   "name": "api-7d8-abc",
@@ -1584,6 +1639,7 @@ The trimmer builds slimmed projections for list-mode responses. Each specialized
 ```
 
 `internal/trimmer/trimmer_test.go`:
+
 ```go
 package trimmer
 
@@ -1665,16 +1721,18 @@ func TestProject_StripsManagedFields(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/trimmer/... -v
 ```
+
 Expected: `undefined: Projectors`.
 
-- [ ] **Step 3: Implement trimmer.go**
+- [ ]  **Step 3: Implement trimmer.go**
 
 `internal/trimmer/trimmer.go`:
+
 ```go
 package trimmer
 
@@ -1750,9 +1808,10 @@ func toMapInterface(in map[string]string) map[string]interface{} {
 }
 ```
 
-- [ ] **Step 4: Implement pod.go**
+- [ ]  **Step 4: Implement pod.go**
 
 `internal/trimmer/pod.go`:
+
 ```go
 package trimmer
 
@@ -1843,14 +1902,15 @@ func summarizeState(raw interface{}) string {
 }
 ```
 
-- [ ] **Step 5: Run test to confirm pass**
+- [ ]  **Step 5: Run test to confirm pass**
 
 ```bash
 go test ./internal/trimmer/... -v
 ```
+
 Expected: all 3 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add internal/trimmer/
@@ -1862,6 +1922,7 @@ git commit -m "feat(trimmer): projector interface, generic fallback, Pod project
 ## Task 11: trimmer — Deployment and Node projections
 
 **Files:**
+
 - Create: `internal/trimmer/deployment.go`
 - Create: `internal/trimmer/node.go`
 - Create: `internal/trimmer/testdata/deployment.input.json`
@@ -1871,9 +1932,10 @@ git commit -m "feat(trimmer): projector interface, generic fallback, Pod project
 - Modify: `internal/trimmer/trimmer_test.go` (append)
 - Modify: `internal/trimmer/trimmer.go` (wire switch cases)
 
-- [ ] **Step 1: Write golden fixtures**
+- [ ]  **Step 1: Write golden fixtures**
 
 `internal/trimmer/testdata/deployment.input.json`:
+
 ```json
 {
   "apiVersion": "apps/v1",
@@ -1887,6 +1949,7 @@ git commit -m "feat(trimmer): projector interface, generic fallback, Pod project
 ```
 
 `internal/trimmer/testdata/deployment.golden.json`:
+
 ```json
 {
   "name": "api",
@@ -1897,6 +1960,7 @@ git commit -m "feat(trimmer): projector interface, generic fallback, Pod project
 ```
 
 `internal/trimmer/testdata/node.input.json`:
+
 ```json
 {
   "apiVersion": "v1",
@@ -1917,6 +1981,7 @@ git commit -m "feat(trimmer): projector interface, generic fallback, Pod project
 ```
 
 `internal/trimmer/testdata/node.golden.json`:
+
 ```json
 {
   "name": "node-3",
@@ -1929,7 +1994,7 @@ git commit -m "feat(trimmer): projector interface, generic fallback, Pod project
 }
 ```
 
-- [ ] **Step 2: Append failing tests**
+- [ ]  **Step 2: Append failing tests**
 
 ```go
 func TestProject_Deployment_Golden(t *testing.T) {
@@ -1951,16 +2016,18 @@ func TestProject_Node_Golden(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run test to confirm failure**
+- [ ]  **Step 3: Run test to confirm failure**
 
 ```bash
 go test ./internal/trimmer/... -run TestProject_Deployment -v
 ```
+
 Expected: equality mismatch — generic projection is used instead of Deployment-specific.
 
-- [ ] **Step 4: Wire new Kinds into the switch**
+- [ ]  **Step 4: Wire new Kinds into the switch**
 
 Edit `internal/trimmer/trimmer.go`, extend the `Project` switch:
+
 ```go
 func (p *Projectors) Project(u *unstructured.Unstructured) map[string]interface{} {
 	switch u.GetKind() {
@@ -1976,9 +2043,10 @@ func (p *Projectors) Project(u *unstructured.Unstructured) map[string]interface{
 }
 ```
 
-- [ ] **Step 5: Implement deployment.go**
+- [ ]  **Step 5: Implement deployment.go**
 
 `internal/trimmer/deployment.go`:
+
 ```go
 package trimmer
 
@@ -2002,9 +2070,10 @@ func (p *Projectors) projectDeployment(u *unstructured.Unstructured) map[string]
 }
 ```
 
-- [ ] **Step 6: Implement node.go**
+- [ ]  **Step 6: Implement node.go**
 
 `internal/trimmer/node.go`:
+
 ```go
 package trimmer
 
@@ -2040,14 +2109,15 @@ func (p *Projectors) projectNode(u *unstructured.Unstructured) map[string]interf
 }
 ```
 
-- [ ] **Step 7: Run test to confirm pass**
+- [ ]  **Step 7: Run test to confirm pass**
 
 ```bash
 go test ./internal/trimmer/... -v
 ```
+
 Expected: all 5 tests PASS.
 
-- [ ] **Step 8: Commit**
+- [ ]  **Step 8: Commit**
 
 ```bash
 git add internal/trimmer/deployment.go internal/trimmer/node.go \
@@ -2061,6 +2131,7 @@ git commit -m "feat(trimmer): Deployment and Node projections"
 ## Task 12: trimmer — Service and Event projections
 
 **Files:**
+
 - Create: `internal/trimmer/service.go`
 - Create: `internal/trimmer/event.go`
 - Create: `internal/trimmer/testdata/service.input.json`
@@ -2070,9 +2141,10 @@ git commit -m "feat(trimmer): Deployment and Node projections"
 - Modify: `internal/trimmer/trimmer.go`
 - Modify: `internal/trimmer/trimmer_test.go`
 
-- [ ] **Step 1: Write golden fixtures**
+- [ ]  **Step 1: Write golden fixtures**
 
 `internal/trimmer/testdata/service.input.json`:
+
 ```json
 {
   "apiVersion": "v1",
@@ -2092,6 +2164,7 @@ git commit -m "feat(trimmer): Deployment and Node projections"
 ```
 
 `internal/trimmer/testdata/service.golden.json`:
+
 ```json
 {
   "name": "api",
@@ -2107,6 +2180,7 @@ git commit -m "feat(trimmer): Deployment and Node projections"
 ```
 
 `internal/trimmer/testdata/event.input.json`:
+
 ```json
 {
   "apiVersion": "v1",
@@ -2124,6 +2198,7 @@ git commit -m "feat(trimmer): Deployment and Node projections"
 ```
 
 `internal/trimmer/testdata/event.golden.json`:
+
 ```json
 {
   "namespace": "prod",
@@ -2137,7 +2212,7 @@ git commit -m "feat(trimmer): Deployment and Node projections"
 }
 ```
 
-- [ ] **Step 2: Append failing tests**
+- [ ]  **Step 2: Append failing tests**
 
 ```go
 func TestProject_Service_Golden(t *testing.T) {
@@ -2159,7 +2234,7 @@ func TestProject_Event_Golden(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Wire new Kinds into switch**
+- [ ]  **Step 3: Wire new Kinds into switch**
 
 ```go
 func (p *Projectors) Project(u *unstructured.Unstructured) map[string]interface{} {
@@ -2180,9 +2255,10 @@ func (p *Projectors) Project(u *unstructured.Unstructured) map[string]interface{
 }
 ```
 
-- [ ] **Step 4: Implement service.go**
+- [ ]  **Step 4: Implement service.go**
 
 `internal/trimmer/service.go`:
+
 ```go
 package trimmer
 
@@ -2210,9 +2286,10 @@ func (p *Projectors) projectService(u *unstructured.Unstructured) map[string]int
 }
 ```
 
-- [ ] **Step 5: Implement event.go**
+- [ ]  **Step 5: Implement event.go**
 
 `internal/trimmer/event.go`:
+
 ```go
 package trimmer
 
@@ -2250,14 +2327,15 @@ func (p *Projectors) projectEvent(u *unstructured.Unstructured) map[string]inter
 }
 ```
 
-- [ ] **Step 6: Run test to confirm pass**
+- [ ]  **Step 6: Run test to confirm pass**
 
 ```bash
 go test ./internal/trimmer/... -v -cover
 ```
+
 Expected: all 7 tests PASS, coverage ≥ 90%.
 
-- [ ] **Step 7: Commit**
+- [ ]  **Step 7: Commit**
 
 ```bash
 git add internal/trimmer/service.go internal/trimmer/event.go \
@@ -2271,13 +2349,15 @@ git commit -m "feat(trimmer): Service and Event projections"
 ## Task 13: audit — slog logger and arg whitelist sanitizer
 
 **Files:**
+
 - Create: `internal/audit/logger.go`
 - Create: `internal/audit/argmask.go`
 - Create: `internal/audit/audit_test.go`
 
-- [ ] **Step 1: Write failing test for argmask**
+- [ ]  **Step 1: Write failing test for argmask**
 
 `internal/audit/audit_test.go`:
+
 ```go
 package audit
 
@@ -2309,16 +2389,18 @@ func TestMaskArgs_EmptyWhitelistDropsAll(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/audit/... -run TestMaskArgs -v
 ```
+
 Expected: `undefined: MaskArgs`.
 
-- [ ] **Step 3: Implement argmask.go**
+- [ ]  **Step 3: Implement argmask.go**
 
 `internal/audit/argmask.go`:
+
 ```go
 package audit
 
@@ -2336,9 +2418,10 @@ func MaskArgs(args map[string]interface{}, whitelist []string) map[string]interf
 }
 ```
 
-- [ ] **Step 4: Implement logger.go**
+- [ ]  **Step 4: Implement logger.go**
 
 `internal/audit/logger.go`:
+
 ```go
 package audit
 
@@ -2358,14 +2441,15 @@ func New(level string) *slog.Logger {
 }
 ```
 
-- [ ] **Step 5: Run test to confirm pass**
+- [ ]  **Step 5: Run test to confirm pass**
 
 ```bash
 go test ./internal/audit/... -v
 ```
+
 Expected: tests PASS.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add internal/audit/
@@ -2377,12 +2461,13 @@ git commit -m "feat(audit): slog JSON logger and arg whitelist sanitizer"
 ## Task 14: audit — tool-call middleware
 
 **Files:**
+
 - Create: `internal/audit/middleware.go`
 - Modify: `internal/audit/audit_test.go` (append)
 
 The middleware wraps an `mcp-go` tool handler and emits one JSON log record per call with the schema defined in spec §4.2.
 
-- [ ] **Step 1: Append failing test using a capturing slog handler**
+- [ ]  **Step 1: Append failing test using a capturing slog handler**
 
 ```go
 import (
@@ -2488,16 +2573,18 @@ func TestMiddleware_TimestampIncreasing(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/audit/... -run TestMiddleware -v
 ```
+
 Expected: `undefined: Wrap`, `undefined: ToolSpec`.
 
-- [ ] **Step 3: Implement middleware.go**
+- [ ]  **Step 3: Implement middleware.go**
 
 `internal/audit/middleware.go`:
+
 ```go
 package audit
 
@@ -2595,14 +2682,15 @@ func extractErrorText(result *mcp.CallToolResult) string {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/audit/... -v -cover
 ```
+
 Expected: all tests PASS, coverage ≥ 85%.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/audit/middleware.go internal/audit/audit_test.go
@@ -2614,18 +2702,19 @@ git commit -m "feat(audit): tool_call middleware with trace_id and latency"
 ## Task 15: envtest shared setup for component tests
 
 **Files:**
+
 - Create: `test/envtest/setup_test.go`
 - Create: `test/envtest/helpers.go`
 
 One-time envtest bootstrap shared across component tests. Uses `setup-envtest` to install the envtest binary.
 
-- [ ] **Step 1: Add controller-runtime dependency**
+- [ ]  **Step 1: Add controller-runtime dependency**
 
 ```bash
 go get sigs.k8s.io/controller-runtime@latest
 ```
 
-- [ ] **Step 2: Install envtest assets**
+- [ ]  **Step 2: Install envtest assets**
 
 ```bash
 go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
@@ -2634,9 +2723,10 @@ setup-envtest use 1.31.0 --bin-dir ./bin/envtest
 
 Expected output: a path like `bin/envtest/k8s/1.31.0-darwin-arm64`.
 
-- [ ] **Step 3: Write envtest setup**
+- [ ]  **Step 3: Write envtest setup**
 
 `test/envtest/setup_test.go`:
+
 ```go
 package envtest
 
@@ -2679,9 +2769,10 @@ func TestMain(m *testing.M) {
 }
 ```
 
-- [ ] **Step 4: Write test helper**
+- [ ]  **Step 4: Write test helper**
 
 `test/envtest/helpers.go`:
+
 ```go
 package envtest
 
@@ -2723,9 +2814,10 @@ func CreateNamespace(t *testing.T, client kubernetes.Interface, name string) {
 var PodGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 ```
 
-- [ ] **Step 5: Smoke test that envtest boots**
+- [ ]  **Step 5: Smoke test that envtest boots**
 
 Add a trivial smoke test to `test/envtest/setup_test.go`:
+
 ```go
 func TestEnvtest_Boots(t *testing.T) {
 	client := NewTypedClient(t)
@@ -2738,14 +2830,15 @@ func TestEnvtest_Boots(t *testing.T) {
 
 Add `"github.com/stretchr/testify/assert"`, `metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"`, and `"github.com/stretchr/testify/require"` to the imports.
 
-- [ ] **Step 6: Run envtest smoke**
+- [ ]  **Step 6: Run envtest smoke**
 
 ```bash
 go test ./test/envtest/... -v
 ```
+
 Expected: `TestEnvtest_Boots` PASSES.
 
-- [ ] **Step 7: Commit**
+- [ ]  **Step 7: Commit**
 
 ```bash
 git add test/envtest/ go.mod go.sum
@@ -2757,19 +2850,21 @@ git commit -m "test(envtest): shared setup with smoke test"
 ## Task 16: mcptools — kubectl_get (list and get modes)
 
 **Files:**
+
 - Create: `internal/mcptools/deps.go`
 - Create: `internal/mcptools/kubectl_get.go`
 - Create: `internal/mcptools/kubectl_get_test.go`
 
 `Deps` bundles everything tools need: clients, sanitize options, trimmer, logger, cluster URL. Handlers receive a `*Deps` and produce a closure. This avoids package-global state.
 
-- [ ] **Step 1: Create shared Deps struct**
+- [ ]  **Step 1: Create shared Deps struct**
 
 Write `internal/mcptools/deps.go` using the interface-based version shown in the "Deps design note" below Step 2. The handler layer must depend on narrow interfaces (`dynamic.Interface`, `kubernetes.Interface`, `ResourceMapper`, etc.), not on the concrete `k8sclient.Clients`, so that tests can inject fakes.
 
-- [ ] **Step 2: Write failing test for list mode using fake dynamic client**
+- [ ]  **Step 2: Write failing test for list mode using fake dynamic client**
 
 `internal/mcptools/kubectl_get_test.go`:
+
 ```go
 package mcptools
 
@@ -2991,16 +3086,18 @@ func DefaultSanitizeOpts(maskCMKeys string) (sanitize.Options, error) {
 
 This is the file Step 1 refers to. Write it before running the tests.
 
-- [ ] **Step 3: Run test to confirm failure**
+- [ ]  **Step 3: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlGet -v
 ```
+
 Expected: `undefined: NewKubectlGetHandler`.
 
-- [ ] **Step 4: Implement kubectl_get.go**
+- [ ]  **Step 4: Implement kubectl_get.go**
 
 `internal/mcptools/kubectl_get.go`:
+
 ```go
 package mcptools
 
@@ -3126,14 +3223,15 @@ func jsonResult(payload interface{}) (*mcp.CallToolResult, error) {
 }
 ```
 
-- [ ] **Step 5: Run test to confirm pass**
+- [ ]  **Step 5: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlGet -v
 ```
+
 Expected: all 3 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add internal/mcptools/
@@ -3145,14 +3243,16 @@ git commit -m "feat(mcptools): kubectl_get list/get with trimmer + sanitize"
 ## Task 17: mcptools — kubectl_describe
 
 **Files:**
+
 - Create: `internal/mcptools/kubectl_describe.go`
 - Create: `internal/mcptools/kubectl_describe_test.go`
 
 Fetches a single object plus the last 20 events whose `involvedObject.uid` matches.
 
-- [ ] **Step 1: Write failing test**
+- [ ]  **Step 1: Write failing test**
 
 `internal/mcptools/kubectl_describe_test.go`:
+
 ```go
 package mcptools
 
@@ -3224,16 +3324,18 @@ func TestKubectlDescribe_ReturnsObjectAndEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlDescribe -v
 ```
+
 Expected: `undefined: NewKubectlDescribeHandler`.
 
-- [ ] **Step 3: Implement kubectl_describe.go**
+- [ ]  **Step 3: Implement kubectl_describe.go**
 
 `internal/mcptools/kubectl_describe.go`:
+
 ```go
 package mcptools
 
@@ -3347,14 +3449,15 @@ func listRelatedEvents(ctx context.Context, d *Deps, namespace, uid string) ([]m
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlDescribe -v
 ```
+
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/kubectl_describe.go internal/mcptools/kubectl_describe_test.go
@@ -3366,14 +3469,16 @@ git commit -m "feat(mcptools): kubectl_describe with related events"
 ## Task 18: mcptools — kubectl_logs
 
 **Files:**
+
 - Create: `internal/mcptools/kubectl_logs.go`
 - Create: `internal/mcptools/kubectl_logs_test.go`
 
 Fake clientset does not support `GetLogs` cleanly, so tests only cover argument validation and multi-container error handling. Real log retrieval is validated by the kind integration test in Task 27.
 
-- [ ] **Step 1: Write failing test**
+- [ ]  **Step 1: Write failing test**
 
 `internal/mcptools/kubectl_logs_test.go`:
+
 ```go
 package mcptools
 
@@ -3424,16 +3529,18 @@ func TestKubectlLogs_MultiContainerRequiresExplicit(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlLogs -v
 ```
+
 Expected: `undefined: NewKubectlLogsHandler`.
 
-- [ ] **Step 3: Implement kubectl_logs.go**
+- [ ]  **Step 3: Implement kubectl_logs.go**
 
 `internal/mcptools/kubectl_logs.go`:
+
 ```go
 package mcptools
 
@@ -3528,14 +3635,15 @@ func NewKubectlLogsHandler(d *Deps) func(context.Context, mcp.CallToolRequest) (
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlLogs -v
 ```
+
 Expected: both tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/kubectl_logs.go internal/mcptools/kubectl_logs_test.go
@@ -3547,12 +3655,14 @@ git commit -m "feat(mcptools): kubectl_logs with tail/size limits"
 ## Task 19: mcptools — events_list
 
 **Files:**
+
 - Create: `internal/mcptools/events_list.go`
 - Create: `internal/mcptools/events_list_test.go`
 
-- [ ] **Step 1: Write failing test**
+- [ ]  **Step 1: Write failing test**
 
 `internal/mcptools/events_list_test.go`:
+
 ```go
 package mcptools
 
@@ -3612,16 +3722,18 @@ func TestEventsList_FiltersByType(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestEventsList -v
 ```
+
 Expected: `undefined: NewEventsListHandler`.
 
-- [ ] **Step 3: Implement events_list.go**
+- [ ]  **Step 3: Implement events_list.go**
 
 `internal/mcptools/events_list.go`:
+
 ```go
 package mcptools
 
@@ -3714,14 +3826,15 @@ func NewEventsListHandler(d *Deps) func(context.Context, mcp.CallToolRequest) (*
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestEventsList -v
 ```
+
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/events_list.go internal/mcptools/events_list_test.go
@@ -3733,14 +3846,16 @@ git commit -m "feat(mcptools): events_list with type and involvedObject filters"
 ## Task 20: mcptools — register M5 tools and wire into main
 
 **Files:**
+
 - Create: `internal/mcptools/register.go`
 - Modify: `cmd/k8s-mcp-server/main.go`
 
 At this point the 4 core tools are all implemented but unreached from the stdio server. This task hooks them up, completes the natural M5 exit, and performs a smoke test of the full stdio protocol.
 
-- [ ] **Step 1: Implement register.go**
+- [ ]  **Step 1: Implement register.go**
 
 `internal/mcptools/register.go`:
+
 ```go
 package mcptools
 
@@ -3790,7 +3905,7 @@ func register(s *server.MCPServer, d *Deps, name, desc string, whitelist []strin
 
 Note: consult the mark3labs/mcp-go version's `server.AddTool` signature; the exact context parameter type may differ. Adjust the adapter accordingly.
 
-- [ ] **Step 2: Update main.go to call RegisterCore**
+- [ ]  **Step 2: Update main.go to call RegisterCore**
 
 Modify `cmd/k8s-mcp-server/main.go`, inside `run()`, after precheck:
 
@@ -3809,14 +3924,15 @@ Modify `cmd/k8s-mcp-server/main.go`, inside `run()`, after precheck:
 
 Add the `mcptools` import. Pass `optsMaskCMKeys` down from `runOptions`.
 
-- [ ] **Step 3: Verify build**
+- [ ]  **Step 3: Verify build**
 
 ```bash
 make build
 ```
+
 Expected: success.
 
-- [ ] **Step 4: Smoke test the stdio protocol**
+- [ ]  **Step 4: Smoke test the stdio protocol**
 
 With a real kubeconfig (any kind cluster works), run:
 
@@ -3829,14 +3945,15 @@ printf '%s\n' \
 
 Expected: second response includes a `tools` array of length 4 containing the four M5 tool names.
 
-- [ ] **Step 5: Full unit test run**
+- [ ]  **Step 5: Full unit test run**
 
 ```bash
 go test ./... -race -cover
 ```
+
 Expected: all tests PASS.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add internal/mcptools/register.go cmd/k8s-mcp-server/main.go
@@ -3850,12 +3967,14 @@ git commit -m "feat: register M5 tools and wire stdio server end-to-end"
 ## Task 21: mcptools — top_pods and top_nodes with graceful degradation
 
 **Files:**
+
 - Create: `internal/mcptools/top.go`
 - Create: `internal/mcptools/top_test.go`
 
-- [ ] **Step 1: Write failing tests**
+- [ ]  **Step 1: Write failing tests**
 
 `internal/mcptools/top_test.go`:
+
 ```go
 package mcptools
 
@@ -3932,16 +4051,18 @@ func TestTopNodes_Unavailable(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestTop -v
 ```
+
 Expected: `undefined: NewTopPodsHandler`.
 
-- [ ] **Step 3: Implement top.go**
+- [ ]  **Step 3: Implement top.go**
 
 `internal/mcptools/top.go`:
+
 ```go
 package mcptools
 
@@ -4099,14 +4220,15 @@ func NewTopNodesHandler(d *Deps) func(context.Context, mcp.CallToolRequest) (*mc
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestTop -v
 ```
+
 Expected: all 3 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/top.go internal/mcptools/top_test.go
@@ -4118,12 +4240,14 @@ git commit -m "feat(mcptools): top_pods and top_nodes with graceful degradation"
 ## Task 22: mcptools — list_api_resources
 
 **Files:**
+
 - Create: `internal/mcptools/list_api_resources.go`
 - Create: `internal/mcptools/list_api_resources_test.go`
 
-- [ ] **Step 1: Write failing test with fake discovery client**
+- [ ]  **Step 1: Write failing test with fake discovery client**
 
 `internal/mcptools/list_api_resources_test.go`:
+
 ```go
 package mcptools
 
@@ -4195,16 +4319,18 @@ func TestListAPIResources_NamespacedFilter(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestListAPIResources -v
 ```
+
 Expected: `undefined: NewListAPIResourcesHandler`.
 
-- [ ] **Step 3: Implement list_api_resources.go**
+- [ ]  **Step 3: Implement list_api_resources.go**
 
 `internal/mcptools/list_api_resources.go`:
+
 ```go
 package mcptools
 
@@ -4268,14 +4394,15 @@ func containsVerb(verbs []string, want string) bool {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestListAPIResources -v
 ```
+
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/list_api_resources.go internal/mcptools/list_api_resources_test.go
@@ -4287,12 +4414,14 @@ git commit -m "feat(mcptools): list_api_resources with namespaced/verb filters"
 ## Task 23: mcptools — prometheus_query with httptest mock
 
 **Files:**
+
 - Create: `internal/mcptools/prometheus_query.go`
 - Create: `internal/mcptools/prometheus_query_test.go`
 
-- [ ] **Step 1: Write failing test using httptest**
+- [ ]  **Step 1: Write failing test using httptest**
 
 `internal/mcptools/prometheus_query_test.go`:
+
 ```go
 package mcptools
 
@@ -4355,16 +4484,18 @@ func TestPrometheusQuery_Instant(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestPrometheusQuery -v
 ```
+
 Expected: `undefined: NewPrometheusQueryHandler`.
 
-- [ ] **Step 3: Implement prometheus_query.go**
+- [ ]  **Step 3: Implement prometheus_query.go**
 
 `internal/mcptools/prometheus_query.go`:
+
 ```go
 package mcptools
 
@@ -4474,14 +4605,15 @@ func marshalSamples(v model.Value) []map[string]interface{} {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestPrometheusQuery -v
 ```
+
 Expected: both tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/prometheus_query.go internal/mcptools/prometheus_query_test.go
@@ -4493,14 +4625,16 @@ git commit -m "feat(mcptools): prometheus_query with instant and range modes"
 ## Task 24: mcptools — kubectl_explain via OpenAPI v3
 
 **Files:**
+
 - Create: `internal/mcptools/kubectl_explain.go`
 - Create: `internal/mcptools/kubectl_explain_test.go`
 
 OpenAPI v3 schema endpoints (`/openapi/v3/apis/<group>/<version>`) return a JSON document of schema definitions. The handler navigates `$ref`s to describe the requested field.
 
-- [ ] **Step 1: Write failing test using a fake HTTP transport**
+- [ ]  **Step 1: Write failing test using a fake HTTP transport**
 
 `internal/mcptools/kubectl_explain_test.go`:
+
 ```go
 package mcptools
 
@@ -4570,16 +4704,18 @@ func TestKubectlExplain_TopLevel(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to confirm failure**
+- [ ]  **Step 2: Run test to confirm failure**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlExplain -v
 ```
+
 Expected: `undefined: NewKubectlExplainHandler`.
 
-- [ ] **Step 3: Implement kubectl_explain.go**
+- [ ]  **Step 3: Implement kubectl_explain.go**
 
 `internal/mcptools/kubectl_explain.go`:
+
 ```go
 package mcptools
 
@@ -4715,14 +4851,15 @@ func buildExplainResult(node *openapiType) map[string]interface{} {
 }
 ```
 
-- [ ] **Step 4: Run test to confirm pass**
+- [ ]  **Step 4: Run test to confirm pass**
 
 ```bash
 go test ./internal/mcptools/... -run TestKubectlExplain -v
 ```
+
 Expected: PASS. Note: the test uses a static OpenAPI fixture, so it does not exercise the fallback path.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/kubectl_explain.go internal/mcptools/kubectl_explain_test.go
@@ -4734,9 +4871,10 @@ git commit -m "feat(mcptools): kubectl_explain via OpenAPI v3"
 ## Task 25: mcptools — register extension tools and rebuild wire-up
 
 **Files:**
+
 - Modify: `internal/mcptools/register.go`
 
-- [ ] **Step 1: Add RegisterExtension**
+- [ ]  **Step 1: Add RegisterExtension**
 
 Append to `internal/mcptools/register.go`:
 
@@ -4776,22 +4914,24 @@ func RegisterAll(s *server.MCPServer, d *Deps) {
 }
 ```
 
-- [ ] **Step 2: Update main.go to use RegisterAll**
+- [ ]  **Step 2: Update main.go to use RegisterAll**
 
 In `cmd/k8s-mcp-server/main.go` replace `mcptools.RegisterCore(srv, deps)` with:
+
 ```go
 mcptools.RegisterAll(srv, deps)
 ```
 
-- [ ] **Step 3: Full test + build**
+- [ ]  **Step 3: Full test + build**
 
 ```bash
 make build
 go test ./... -race -cover
 ```
+
 Expected: all tests PASS, build succeeds.
 
-- [ ] **Step 4: Smoke test shows 8 tools listed**
+- [ ]  **Step 4: Smoke test shows 8 tools listed**
 
 ```bash
 printf '%s\n' \
@@ -4802,7 +4942,7 @@ printf '%s\n' \
 
 Expected: response id=2 contains a `tools` array of length 9 (kubectl_get, kubectl_describe, kubectl_logs, events_list, top_pods, top_nodes, list_api_resources, prometheus_query, kubectl_explain).
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add internal/mcptools/register.go cmd/k8s-mcp-server/main.go
@@ -4814,15 +4954,17 @@ git commit -m "feat: register M6 extension tools (8 tools total)"
 ## Task 26: integration test harness (kind)
 
 **Files:**
+
 - Create: `test/integration/run.sh`
 - Create: `test/integration/kind-config.yaml`
 - Create: `test/integration/README.md`
 
 Bootstrap a kind cluster, run Go integration tests, tear down on exit. The test code itself lives in Task 27.
 
-- [ ] **Step 1: Write kind cluster config**
+- [ ]  **Step 1: Write kind cluster config**
 
 `test/integration/kind-config.yaml`:
+
 ```yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -4831,9 +4973,10 @@ nodes:
 - role: control-plane
 ```
 
-- [ ] **Step 2: Write run.sh**
+- [ ]  **Step 2: Write run.sh**
 
 `test/integration/run.sh`:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -4863,15 +5006,16 @@ KIND_KUBECONFIG="$KUBECONFIG" \
 go test -tags=integration ./test/integration/... -v -timeout 10m
 ```
 
-- [ ] **Step 3: Make run.sh executable**
+- [ ]  **Step 3: Make run.sh executable**
 
 ```bash
 chmod +x test/integration/run.sh
 ```
 
-- [ ] **Step 4: Write README**
+- [ ]  **Step 4: Write README**
 
 `test/integration/README.md`:
+
 ```markdown
 # Integration Tests
 
@@ -4887,22 +5031,25 @@ exercise the stdio MCP protocol end-to-end.
 ## Run
 
 ```
+
 make integration
+
 ```
 
 The cluster is always cleaned up on exit. Individual test files use the
 `integration` build tag so `go test ./...` ignores them.
 ```
 
-- [ ] **Step 5: Verify run.sh refuses to run without kind**
+- [ ]  **Step 5: Verify run.sh refuses to run without kind**
 
 ```bash
 # Sanity: script exists and is syntactically valid bash
 bash -n test/integration/run.sh
 ```
+
 Expected: no output.
 
-- [ ] **Step 6: Commit**
+- [ ]  **Step 6: Commit**
 
 ```bash
 git add test/integration/
@@ -4914,14 +5061,16 @@ git commit -m "test(integration): kind harness scaffolding"
 ## Task 27: integration test scenarios
 
 **Files:**
+
 - Create: `test/integration/mcp_client_test.go`
 - Create: `test/integration/scenarios_test.go`
 
 Five scenarios per spec §6.4: protocol smoke, real logs, CrashLoop describe, Secret redaction, precheck fail-fast.
 
-- [ ] **Step 1: Write a minimal JSON-RPC stdio client helper**
+- [ ]  **Step 1: Write a minimal JSON-RPC stdio client helper**
 
 `test/integration/mcp_client_test.go`:
+
 ```go
 //go:build integration
 
@@ -5036,9 +5185,10 @@ func (c *rpcClient) callTool(t *testing.T, name string, args map[string]interfac
 var _ = context.Background
 ```
 
-- [ ] **Step 2: Write 5 scenarios**
+- [ ]  **Step 2: Write 5 scenarios**
 
 `test/integration/scenarios_test.go`:
+
 ```go
 //go:build integration
 
@@ -5161,16 +5311,17 @@ func TestScenario_PrecheckFailsFast(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run integration tests locally**
+- [ ]  **Step 3: Run integration tests locally**
 
 ```bash
 make integration
 ```
+
 Expected: kind cluster boots, 5 tests pass, cluster deleted.
 
 If kind or docker is unavailable, skip this step and document the failure in a separate issue.
 
-- [ ] **Step 4: Commit**
+- [ ]  **Step 4: Commit**
 
 ```bash
 git add test/integration/mcp_client_test.go test/integration/scenarios_test.go
@@ -5182,11 +5333,13 @@ git commit -m "test(integration): 5 end-to-end scenarios via stdio protocol"
 ## Task 28: user-facing documentation
 
 **Files:**
+
 - Create: `docs/k8s-mcp-server.md`
 
-- [ ] **Step 1: Write user guide**
+- [ ]  **Step 1: Write user guide**
 
 `docs/k8s-mcp-server.md`:
+
 ````markdown
 # k8s-mcp-server
 
@@ -5290,7 +5443,7 @@ See spec §3 for the full rules.
 - **Log lines interleaved with JSON output** — do not write to stdout in custom wrappers; stdout is the MCP protocol channel.
 ````
 
-- [ ] **Step 2: Commit**
+- [ ]  **Step 2: Commit**
 
 ```bash
 git add docs/k8s-mcp-server.md
@@ -5302,9 +5455,10 @@ git commit -m "docs: user guide for k8s-mcp-server"
 ## Task 29: README update and final verification
 
 **Files:**
+
 - Modify: `README.md`
 
-- [ ] **Step 1: Append Components section to README.md**
+- [ ]  **Step 1: Append Components section to README.md**
 
 Add to `README.md` after the existing introduction:
 
@@ -5320,14 +5474,17 @@ This repository will host the Phase 1 components described in
 ## Build
 
 ```
+
 make build           # compile bin/k8s-mcp-server
 make test            # unit + component (envtest) tests
 make lint            # golangci-lint
 make integration     # kind-based end-to-end tests
-```
+
 ```
 
-- [ ] **Step 2: Run full verification**
+```
+
+- [ ]  **Step 2: Run full verification**
 
 ```bash
 make fmt
@@ -5336,18 +5493,20 @@ make lint
 make test
 make build
 ```
+
 Expected: every target succeeds.
 
-- [ ] **Step 3: Confirm tool count and coverage**
+- [ ]  **Step 3: Confirm tool count and coverage**
 
 ```bash
 go test ./internal/sanitize/... -cover
 go test ./internal/trimmer/... -cover
 go test ./internal/audit/... -cover
 ```
+
 Expected: each reports ≥ 85%.
 
-- [ ] **Step 4: Final smoke against a kind cluster**
+- [ ]  **Step 4: Final smoke against a kind cluster**
 
 ```bash
 printf '%s\n' \
@@ -5356,9 +5515,10 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kubectl_get","arguments":{"kind":"Pod","namespace":"default"}}}' \
   | ./bin/k8s-mcp-server --kubeconfig ~/.kube/config
 ```
+
 Expected: three JSON-RPC responses, the third containing a populated or empty `items` array for Pods in the default namespace.
 
-- [ ] **Step 5: Commit**
+- [ ]  **Step 5: Commit**
 
 ```bash
 git add README.md
@@ -5369,13 +5529,13 @@ git commit -m "docs: README components and build quickstart"
 
 ## Definition of Done
 
-- [x] Tasks 1-29 committed
-- [x] `make test` green
-- [x] `make lint` green
-- [x] `make build` green
-- [x] `go test ./internal/{sanitize,trimmer,audit}/... -cover` ≥ 85%
-- [x] `tools/list` returns 9 tools
-- [x] `docs/k8s-mcp-server.md` exists and is accurate
-- [x] A real Claude Desktop / stdio client can call `kubectl_get` against a kind cluster
+- [X]  Tasks 1-29 committed
+- [X]  `make test` green
+- [X]  `make lint` green
+- [X]  `make build` green
+- [X]  `go test ./internal/{sanitize,trimmer,audit}/... -cover` ≥ 85%
+- [X]  `tools/list` returns 9 tools
+- [X]  `docs/k8s-mcp-server.md` exists and is accurate
+- [X]  A real Claude Desktop / stdio client can call `kubectl_get` against a kind cluster
 
 If any box is unchecked, the plan is not complete.
