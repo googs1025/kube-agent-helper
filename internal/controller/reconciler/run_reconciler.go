@@ -33,12 +33,12 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Already terminal — nothing to do.
-	if run.Status.Phase == "Succeeded" || run.Status.Phase == "Failed" {
+	if run.Status.Phase == string(store.PhaseSucceeded) || run.Status.Phase == string(store.PhaseFailed) {
 		return ctrl.Result{}, nil
 	}
 
 	// Phase: Pending → Running
-	if run.Status.Phase == "" || run.Status.Phase == "Pending" {
+	if run.Status.Phase == "" || run.Status.Phase == string(store.PhasePending) {
 		logger.Info("translating run", "name", run.Name)
 
 		// Persist to store
@@ -49,7 +49,7 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Status:     store.PhasePending,
 		}
 		if err := r.Store.CreateRun(ctx, storeRun); err != nil {
-			logger.Error(err, "store.CreateRun failed")
+			return ctrl.Result{}, fmt.Errorf("store.CreateRun: %w", err)
 		}
 
 		// Translate to Job resources
@@ -66,13 +66,14 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 
-		run.Status.Phase = "Running"
+		run.Status.Phase = string(store.PhaseRunning)
 		run.Status.ReportID = string(run.UID)
 		if err := r.Status().Update(ctx, &run); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := r.Store.UpdateRunStatus(ctx, string(run.UID), store.PhaseRunning, ""); err != nil {
 			logger.Error(err, "store.UpdateRunStatus failed")
+			return ctrl.Result{Requeue: true}, nil
 		}
 		logger.Info("run started", "name", run.Name)
 	}
@@ -81,9 +82,11 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 }
 
 func (r *DiagnosticRunReconciler) failRun(ctx context.Context, run *k8saiV1.DiagnosticRun, msg string) (ctrl.Result, error) {
-	run.Status.Phase = "Failed"
+	run.Status.Phase = string(store.PhaseFailed)
 	run.Status.Message = msg
-	_ = r.Status().Update(ctx, run)
+	if err := r.Status().Update(ctx, run); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failRun status update: %w", err)
+	}
 	_ = r.Store.UpdateRunStatus(ctx, string(run.UID), store.PhaseFailed, msg)
 	return ctrl.Result{}, nil
 }
