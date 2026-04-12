@@ -42,8 +42,14 @@ func main() {
 	slog.SetDefault(logger)
 
 	scheme := runtime.NewScheme()
-	_ = clientgoscheme.AddToScheme(scheme)
-	_ = k8saiV1.AddToScheme(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		slog.Error("add clientgo scheme", "error", err)
+		os.Exit(1)
+	}
+	if err := k8saiV1.AddToScheme(scheme); err != nil {
+		slog.Error("add k8sai scheme", "error", err)
+		os.Exit(1)
+	}
 
 	// Open DB
 	st, err := sqlitestore.New(dbPath)
@@ -55,7 +61,8 @@ func main() {
 
 	// Load built-in skills into DB (stub for Phase 0; replaced in Task 9)
 	if err := loadBuiltinSkills(context.Background(), st, skillsDir); err != nil {
-		slog.Warn("load builtin skills", "error", err)
+		slog.Error("load builtin skills", "error", err)
+		os.Exit(1)
 	}
 
 	// Manager
@@ -66,7 +73,11 @@ func main() {
 	}
 
 	// Load skills for translator
-	skills, _ := st.ListSkills(context.Background())
+	skills, err := st.ListSkills(context.Background())
+	if err != nil {
+		slog.Error("list skills", "error", err)
+		os.Exit(1)
+	}
 
 	tr := translator.New(translator.Config{
 		AgentImage:    agentImage,
@@ -108,15 +119,18 @@ func (r *runnableHTTP) Start(ctx context.Context) error {
 	return r.srv.Start(ctx, r.addr)
 }
 
+func (r *runnableHTTP) NeedLeaderElection() bool { return false }
+
 // loadBuiltinSkills is a Phase 0 stub. Task 9 replaces this with a SKILL.md file scanner.
 func loadBuiltinSkills(ctx context.Context, st store.Store, _ string) error {
 	return st.UpsertSkill(ctx, &store.Skill{
-		Name:      "pod-health-analyst",
-		Dimension: "health",
-		Prompt:    "You are a Kubernetes pod health specialist. See SKILL.md for full prompt.",
-		ToolsJSON: `["kubectl_get","kubectl_describe","kubectl_logs","events_list"]`,
-		Source:    "builtin",
-		Enabled:   true,
-		Priority:  100,
+		Name:             "pod-health-analyst",
+		Dimension:        "health",
+		Prompt:           "You are a Kubernetes pod health specialist. See SKILL.md for full prompt.",
+		ToolsJSON:        `["kubectl_get","kubectl_describe","kubectl_logs","events_list"]`,
+		RequiresDataJSON: `["pods","events"]`,
+		Source:           "builtin",
+		Enabled:          true,
+		Priority:         100,
 	})
 }
