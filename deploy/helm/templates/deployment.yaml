@@ -31,8 +31,6 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /data
-        - name: skills
-          mountPath: /skills
       volumes:
       - name: data
         {{- if .Values.persistence.enabled }}
@@ -41,6 +39,3 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
-      - name: skills
-        configMap:
-          name: {{ .Release.Name }}-skills
