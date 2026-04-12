@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-controller
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-controller
+rules:
+- apiGroups: ["k8sai.io"]
+  resources: ["diagnosticruns","diagnosticskills","modelconfigs"]
+  verbs: ["get","list","watch","update","patch"]
+- apiGroups: ["k8sai.io"]
+  resources: ["diagnosticruns/status"]
+  verbs: ["update","patch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get","list","watch","create","delete"]
+- apiGroups: [""]
+  resources: ["configmaps","serviceaccounts","secrets"]
+  verbs: ["get","list","watch","create","delete"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings"]
+  verbs: ["get","list","watch","create","delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-controller
+subjects:
+- kind: ServiceAccount
+  name: {{ .Release.Name }}-controller
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-controller
+  ports:
+  - port: 8080
+    targetPort: 8080

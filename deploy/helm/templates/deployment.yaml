@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-controller
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-controller
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-controller
+    spec:
+      serviceAccountName: {{ .Release.Name }}-controller
+      containers:
+      - name: controller
+        image: {{ .Values.image.controller }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+        - --http-addr={{ .Values.controller.httpAddr }}
+        - --db={{ .Values.controller.dbPath }}
+        - --agent-image={{ .Values.image.agent }}
+        - --controller-url={{ .Values.controller.controllerURL }}
+        - --skills-dir=/skills
+        ports:
+        - containerPort: 8080
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: skills
+          mountPath: /skills
+      volumes:
+      - name: data
+        {{- if .Values.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ .Release.Name }}-data
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: skills
+        configMap:
+          name: {{ .Release.Name }}-skills
