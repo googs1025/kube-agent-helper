@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,8 +30,14 @@ func (r *DiagnosticSkillReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	toolsJSON, _ := json.Marshal(skill.Spec.Tools)
-	requiresJSON, _ := json.Marshal(skill.Spec.RequiresData)
+	toolsJSON, err := json.Marshal(skill.Spec.Tools)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("marshal tools: %w", err)
+	}
+	requiresJSON, err := json.Marshal(skill.Spec.RequiresData)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("marshal requiresData: %w", err)
+	}
 
 	priority := 100
 	if skill.Spec.Priority != nil {

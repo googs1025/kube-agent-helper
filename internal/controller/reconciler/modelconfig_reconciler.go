@@ -28,6 +28,11 @@ func (r *ModelConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Validate APIKeyRef.Key is set
+	if mc.Spec.APIKeyRef.Key == "" {
+		logger.Error(nil, "apiKeyRef.key is empty", "modelconfig", mc.Name)
+	}
+
 	// Validate the referenced Secret exists
 	var secret corev1.Secret
 	secretRef := client.ObjectKey{

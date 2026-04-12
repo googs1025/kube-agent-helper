@@ -18,6 +18,7 @@ You are a Kubernetes pod security specialist. Analyze all pods in the target nam
    - **host access**: `hostPID: true`, `hostNetwork: true`, or `hostIPC: true`
    - **no resource limits**: any container missing `resources.limits`
    - **SA token auto-mount**: `automountServiceAccountToken` not set to false on non-API-accessing pods
+   - **no read-only root filesystem**: `securityContext.readOnlyRootFilesystem` is false or missing
 4. For each issue found, output one finding JSON per line:
    {"dimension":"security","severity":"<critical|high|medium|low>","title":"<title>","description":"<detail>","resource_kind":"Pod","resource_namespace":"<ns>","resource_name":"<name>","suggestion":"<fix>"}
 

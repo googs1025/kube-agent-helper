@@ -61,7 +61,7 @@ func main() {
 	}
 	defer st.Close()
 
-	// Load built-in skills into DB (stub for Phase 0; replaced in Task 9)
+	// Load built-in skills from the skills directory into DB
 	if err := loadBuiltinSkills(context.Background(), st, skillsDir); err != nil {
 		slog.Error("load builtin skills", "error", err)
 		os.Exit(1)
@@ -141,6 +141,10 @@ func (r *runnableHTTP) NeedLeaderElection() bool { return false }
 func loadBuiltinSkills(ctx context.Context, st store.Store, dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			slog.Warn("skills directory not found, no builtin skills loaded", "dir", dir)
+			return nil
+		}
 		return err
 	}
 	for _, e := range entries {
@@ -149,6 +153,7 @@ func loadBuiltinSkills(ctx context.Context, st store.Store, dir string) error {
 		}
 		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
+			slog.Warn("skip skill file", "file", e.Name(), "error", err)
 			continue
 		}
 		sk := parseSkillMD(string(data))
