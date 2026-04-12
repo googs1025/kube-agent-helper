@@ -3,6 +3,7 @@ package translator
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -51,7 +52,7 @@ func (t *Translator) Compile(_ context.Context, run *k8saiV1.DiagnosticRun) ([]c
 
 	sa := t.buildSA(saName, runID)
 	cm := t.buildConfigMap(cmName, runID, selected)
-	rb := t.buildRoleBinding(saName, runID, namespaces)
+	rb := t.buildRoleBinding(saName, runID, run.Namespace)
 	job := t.buildJob(run, runID, saName, cmName, selected)
 
 	return []client.Object{sa, cm, rb, job}, nil
@@ -105,8 +106,8 @@ func (t *Translator) buildConfigMap(name, runID string, skills []*store.Skill) *
 	}
 }
 
-func (t *Translator) buildRoleBinding(saName, runID string, namespaces []string) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
+func (t *Translator) buildRoleBinding(saName, runID, saNamespace string) *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   saName,
 			Labels: map[string]string{"run-id": runID},
@@ -114,11 +115,12 @@ func (t *Translator) buildRoleBinding(saName, runID string, namespaces []string)
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
-			Name:     "view", // built-in read-only role
+			Name:     "view",
 		},
 		Subjects: []rbacv1.Subject{{
-			Kind: "ServiceAccount",
-			Name: saName,
+			Kind:      "ServiceAccount",
+			Name:      saName,
+			Namespace: saNamespace,
 		}},
 	}
 }
@@ -158,10 +160,12 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 						Command: []string{"python", "-m", "runtime.main"},
 						Env: []corev1.EnvVar{
 							{Name: "RUN_ID", Value: runID},
-							{Name: "TARGET_NAMESPACES", Value: joinStr(run.Spec.Target.Namespaces)},
+							{Name: "TARGET_NAMESPACES", Value: strings.Join(run.Spec.Target.Namespaces, ",")},
 							{Name: "CONTROLLER_URL", Value: t.cfg.ControllerURL},
 							{Name: "MCP_SERVER_PATH", Value: "/usr/local/bin/k8s-mcp-server"},
-							{Name: "SKILL_NAMES", Value: joinStr(skillNames)},
+							{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
+							// Phase 1 simplification: ModelConfigRef is used directly as the Secret name.
+							// Phase 2 will resolve the ModelConfig CR to read APIKeyRef.Name and APIKeyRef.Key.
 							{
 								Name: "ANTHROPIC_API_KEY",
 								ValueFrom: &corev1.EnvVarSource{
@@ -192,15 +196,4 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 			},
 		},
 	}
-}
-
-func joinStr(ss []string) string {
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += ","
-		}
-		result += s
-	}
-	return result
 }

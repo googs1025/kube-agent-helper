@@ -44,7 +44,7 @@ func TestTranslator_Compile_ProducesExpectedObjects(t *testing.T) {
 	var job *batchv1.Job
 	var cm *corev1.ConfigMap
 	var sa *corev1.ServiceAccount
-	var rb *rbacv1.RoleBinding
+	var rb *rbacv1.ClusterRoleBinding
 
 	for _, o := range objects {
 		switch v := o.(type) {
@@ -54,7 +54,7 @@ func TestTranslator_Compile_ProducesExpectedObjects(t *testing.T) {
 			cm = v
 		case *corev1.ServiceAccount:
 			sa = v
-		case *rbacv1.RoleBinding:
+		case *rbacv1.ClusterRoleBinding:
 			rb = v
 		}
 	}
@@ -62,9 +62,9 @@ func TestTranslator_Compile_ProducesExpectedObjects(t *testing.T) {
 	require.NotNil(t, job, "expected Job")
 	require.NotNil(t, cm, "expected ConfigMap")
 	require.NotNil(t, sa, "expected ServiceAccount")
-	require.NotNil(t, rb, "expected RoleBinding")
+	require.NotNil(t, rb, "expected ClusterRoleBinding")
 
 	assert.Contains(t, cm.Data, "pod-health-analyst.md")
-	assert.Equal(t, sa.Name, rb.Subjects[0].Name)
+	assert.Equal(t, sa.Name, rb.Subjects[0].Name, "RoleBinding subject must match SA name")
 	assert.Equal(t, "uid-123", job.Labels["run-id"])
 }
