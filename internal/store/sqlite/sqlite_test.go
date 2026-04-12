@@ -47,12 +47,14 @@ func TestRun_UpdateStatus(t *testing.T) {
 	require.NoError(t, s.CreateRun(ctx, run))
 
 	require.NoError(t, s.UpdateRunStatus(ctx, run.ID, store.PhaseRunning, ""))
-	got, _ := s.GetRun(ctx, run.ID)
+	got, err := s.GetRun(ctx, run.ID)
+	require.NoError(t, err)
 	assert.Equal(t, store.PhaseRunning, got.Status)
 	assert.NotNil(t, got.StartedAt)
 
 	require.NoError(t, s.UpdateRunStatus(ctx, run.ID, store.PhaseSucceeded, ""))
-	got, _ = s.GetRun(ctx, run.ID)
+	got, err = s.GetRun(ctx, run.ID)
+	require.NoError(t, err)
 	assert.Equal(t, store.PhaseSucceeded, got.Status)
 	assert.NotNil(t, got.CompletedAt)
 }

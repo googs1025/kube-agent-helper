@@ -29,6 +29,9 @@ func New(dsn string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	db.SetMaxOpenConns(1) // SQLite is single-writer
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
 	if err := runMigrations(db); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
@@ -73,28 +76,41 @@ func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.DiagnosticR
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, target_json, skills_json, status, message, started_at, completed_at, created_at
 		 FROM diagnostic_runs WHERE id = ?`, id)
-	return scanRun(row)
+	r, err := scanRun(row)
+	if err == sql.ErrNoRows {
+		return nil, store.ErrNotFound
+	}
+	return r, err
 }
 
 func (s *SQLiteStore) UpdateRunStatus(ctx context.Context, id string, phase store.Phase, msg string) error {
 	now := time.Now()
+	var (
+		result sql.Result
+		err    error
+	)
 	switch phase {
 	case store.PhaseRunning:
-		_, err := s.db.ExecContext(ctx,
+		result, err = s.db.ExecContext(ctx,
 			`UPDATE diagnostic_runs SET status=?, message=?, started_at=? WHERE id=?`,
 			string(phase), msg, now, id)
-		return err
 	case store.PhaseSucceeded, store.PhaseFailed:
-		_, err := s.db.ExecContext(ctx,
+		result, err = s.db.ExecContext(ctx,
 			`UPDATE diagnostic_runs SET status=?, message=?, completed_at=? WHERE id=?`,
 			string(phase), msg, now, id)
-		return err
 	default:
-		_, err := s.db.ExecContext(ctx,
+		result, err = s.db.ExecContext(ctx,
 			`UPDATE diagnostic_runs SET status=?, message=? WHERE id=?`,
 			string(phase), msg, id)
+	}
+	if err != nil {
 		return err
 	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *SQLiteStore) ListRuns(ctx context.Context, opts store.ListOpts) ([]*store.DiagnosticRun, error) {
@@ -110,7 +126,7 @@ func (s *SQLiteStore) ListRuns(ctx context.Context, opts store.ListOpts) ([]*sto
 		return nil, err
 	}
 	defer rows.Close()
-	var runs []*store.DiagnosticRun
+	runs := make([]*store.DiagnosticRun, 0)
 	for rows.Next() {
 		r, err := scanRun(rows)
 		if err != nil {
@@ -146,7 +162,7 @@ func (s *SQLiteStore) ListFindings(ctx context.Context, runID string) ([]*store.
 		return nil, err
 	}
 	defer rows.Close()
-	var findings []*store.Finding
+	findings := make([]*store.Finding, 0)
 	for rows.Next() {
 		f := &store.Finding{}
 		if err := rows.Scan(&f.ID, &f.RunID, &f.Dimension, &f.Severity, &f.Title,
@@ -187,7 +203,7 @@ func (s *SQLiteStore) ListSkills(ctx context.Context) ([]*store.Skill, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var skills []*store.Skill
+	skills := make([]*store.Skill, 0)
 	for rows.Next() {
 		sk := &store.Skill{}
 		if err := rows.Scan(&sk.ID, &sk.Name, &sk.Dimension, &sk.Prompt,
@@ -210,7 +226,7 @@ func (s *SQLiteStore) GetSkill(ctx context.Context, name string) (*store.Skill, 
 		&sk.ToolsJSON, &sk.RequiresDataJSON, &sk.Source, &sk.Enabled,
 		&sk.Priority, &sk.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, store.ErrNotFound
 	}
 	return sk, err
 }

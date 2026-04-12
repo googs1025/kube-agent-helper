@@ -35,3 +35,5 @@ CREATE TABLE IF NOT EXISTS skills (
     priority            INTEGER NOT NULL DEFAULT 100,
     updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_findings_run_id ON findings(run_id, created_at);
