@@ -19,12 +19,13 @@ type DiagnosticSkillSpec struct {
 	Dimension    string   `json:"dimension"`
 	Description  string   `json:"description"`
 	Prompt       string   `json:"prompt"`
+	// +kubebuilder:validation:MinItems=1
 	Tools        []string `json:"tools"`
 	RequiresData []string `json:"requiresData,omitempty"`
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled"`
 	// +kubebuilder:default=100
-	Priority int `json:"priority,omitempty"`
+	Priority *int `json:"priority,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -89,12 +90,13 @@ type ModelConfig struct {
 
 type ModelConfigSpec struct {
 	// +kubebuilder:default=anthropic
+	// +kubebuilder:validation:Enum=anthropic
 	Provider string `json:"provider"`
 	// +kubebuilder:default="claude-sonnet-4-6"
 	Model     string       `json:"model"`
 	APIKeyRef SecretKeyRef `json:"apiKeyRef"`
 	// +kubebuilder:default=20
-	MaxTurns int `json:"maxTurns,omitempty"`
+	MaxTurns *int `json:"maxTurns,omitempty"`
 }
 
 type SecretKeyRef struct {

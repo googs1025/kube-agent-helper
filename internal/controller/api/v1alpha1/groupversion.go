@@ -1,5 +1,6 @@
 // Package v1alpha1 contains the CRD types for kube-agent-helper.
 // +groupName=k8sai.io
+// +kubebuilder:object:generate=true
 package v1alpha1
 
 import (

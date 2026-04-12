@@ -55,6 +55,8 @@ spec:
                 type: string
               provider:
                 default: anthropic
+                enum:
+                - anthropic
                 type: string
             required:
             - apiKeyRef
