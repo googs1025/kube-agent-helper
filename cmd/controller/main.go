@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -93,6 +95,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&reconciler.DiagnosticSkillReconciler{
+		Client: mgr.GetClient(),
+		Store:  st,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("setup skill reconciler", "error", err)
+		os.Exit(1)
+	}
+
+	if err := (&reconciler.ModelConfigReconciler{
+		Client: mgr.GetClient(),
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("setup modelconfig reconciler", "error", err)
+		os.Exit(1)
+	}
+
 	// HTTP server as manager Runnable
 	httpSrv := httpserver.New(st)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
@@ -121,16 +138,64 @@ func (r *runnableHTTP) Start(ctx context.Context) error {
 
 func (r *runnableHTTP) NeedLeaderElection() bool { return false }
 
-// loadBuiltinSkills is a Phase 0 stub. Task 9 replaces this with a SKILL.md file scanner.
-func loadBuiltinSkills(ctx context.Context, st store.Store, _ string) error {
-	return st.UpsertSkill(ctx, &store.Skill{
-		Name:             "pod-health-analyst",
-		Dimension:        "health",
-		Prompt:           "You are a Kubernetes pod health specialist. See SKILL.md for full prompt.",
-		ToolsJSON:        `["kubectl_get","kubectl_describe","kubectl_logs","events_list"]`,
-		RequiresDataJSON: `["pods","events"]`,
+func loadBuiltinSkills(ctx context.Context, st store.Store, dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		sk := parseSkillMD(string(data))
+		if sk == nil {
+			continue
+		}
+		if err := st.UpsertSkill(ctx, sk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseSkillMD(content string) *store.Skill {
+	// Extract frontmatter between --- markers
+	parts := strings.SplitN(content, "---", 3)
+	if len(parts) < 3 {
+		return nil
+	}
+	// Simple key: value parsing
+	meta := map[string]string{}
+	for _, line := range strings.Split(parts[1], "\n") {
+		kv := strings.SplitN(strings.TrimSpace(line), ":", 2)
+		if len(kv) == 2 {
+			meta[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	name := meta["name"]
+	if name == "" {
+		return nil
+	}
+	toolsJSON := meta["tools"]
+	if toolsJSON == "" {
+		toolsJSON = "[]"
+	}
+	requiresJSON := meta["requires_data"]
+	if requiresJSON == "" {
+		requiresJSON = "[]"
+	}
+	return &store.Skill{
+		Name:             name,
+		Dimension:        meta["dimension"],
+		Prompt:           strings.TrimSpace(parts[2]),
+		ToolsJSON:        toolsJSON,
+		RequiresDataJSON: requiresJSON,
 		Source:           "builtin",
 		Enabled:          true,
 		Priority:         100,
-	})
+	}
 }
