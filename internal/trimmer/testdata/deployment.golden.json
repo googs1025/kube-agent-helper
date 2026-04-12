@@ -1,0 +1,6 @@
+{
+  "name": "api",
+  "namespace": "prod",
+  "labels": {"app": "api"},
+  "replicas": {"desired": 3, "ready": 2, "updated": 3, "available": 2}
+}

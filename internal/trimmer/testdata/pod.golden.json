@@ -1,0 +1,13 @@
+{
+  "name": "api-7d8-abc",
+  "namespace": "prod",
+  "phase": "Running",
+  "nodeName": "node-3",
+  "restarts": 4,
+  "ready": "1/2",
+  "labels": {"app": "api", "env": "prod"},
+  "containers": [
+    {"name": "main", "ready": true, "restartCount": 1, "state": "Running"},
+    {"name": "sidecar", "ready": false, "restartCount": 3, "state": "CrashLoopBackOff"}
+  ]
+}

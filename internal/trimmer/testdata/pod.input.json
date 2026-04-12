@@ -1,0 +1,22 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "api-7d8-abc",
+    "namespace": "prod",
+    "creationTimestamp": "2026-04-08T09:00:00Z",
+    "labels": {"app": "api", "env": "prod"},
+    "managedFields": [{"manager": "kubectl"}]
+  },
+  "spec": {
+    "nodeName": "node-3",
+    "containers": [{"name": "main"}, {"name": "sidecar"}]
+  },
+  "status": {
+    "phase": "Running",
+    "containerStatuses": [
+      {"name": "main",    "ready": true,  "restartCount": 1, "state": {"running": {}}},
+      {"name": "sidecar", "ready": false, "restartCount": 3, "state": {"waiting": {"reason": "CrashLoopBackOff"}}}
+    ]
+  }
+}

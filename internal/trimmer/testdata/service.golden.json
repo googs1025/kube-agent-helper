@@ -1,0 +1,11 @@
+{
+  "name": "api",
+  "namespace": "prod",
+  "labels": {"app": "api"},
+  "type": "ClusterIP",
+  "clusterIP": "10.0.1.42",
+  "selector": {"app": "api"},
+  "ports": [
+    {"name": "http", "port": 80, "targetPort": 8080, "protocol": "TCP"}
+  ]
+}
