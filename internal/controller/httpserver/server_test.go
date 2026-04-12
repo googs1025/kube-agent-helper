@@ -94,11 +94,11 @@ func TestGetFindings(t *testing.T) {
 }
 
 func TestGetSkills(t *testing.T) {
-	st := &fakeStore{}
+	fs := &fakeStore{}
 	ctx := context.Background()
-	_ = st.UpsertSkill(ctx, &store.Skill{Name: "s1", Dimension: "health", Enabled: true})
+	_ = fs.UpsertSkill(ctx, &store.Skill{Name: "s1", Dimension: "health", Enabled: true})
 
-	srv := httpserver.New(st)
+	srv := httpserver.New(fs)
 	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)

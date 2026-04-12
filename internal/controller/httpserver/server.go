@@ -90,6 +90,9 @@ func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if runs == nil {
+			runs = make([]*store.DiagnosticRun, 0)
+		}
 		writeJSON(w, runs)
 	case http.MethodPost:
 		http.Error(w, "not implemented", http.StatusNotImplemented)
