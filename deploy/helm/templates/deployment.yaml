@@ -22,7 +22,7 @@ spec:
         - --http-addr={{ .Values.controller.httpAddr }}
         - --db={{ .Values.controller.dbPath }}
         - --agent-image={{ .Values.image.agent }}
-        - --controller-url={{ .Values.controller.controllerURL }}
+        - --controller-url={{ .Values.controller.controllerURL | default (printf "http://%s.%s.svc.cluster.local:8080" .Release.Name .Release.Namespace) }}
         - --skills-dir=/skills
         ports:
         - containerPort: 8080

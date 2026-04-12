@@ -8,7 +8,7 @@ image:
 controller:
   httpAddr: ":8080"
   dbPath: "/data/kube-agent-helper.db"
-  controllerURL: "http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:8080"
+  controllerURL: ""  # if empty, defaults to http://<release>.<namespace>.svc.cluster.local:8080
 
 resources:
   requests:
