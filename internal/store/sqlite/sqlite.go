@@ -1,0 +1,238 @@
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	"embed"
+	"fmt"
+	"time"
+
+	"github.com/golang-migrate/migrate/v4"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/google/uuid"
+	_ "modernc.org/sqlite"
+
+	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
+)
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
+
+type SQLiteStore struct {
+	db *sql.DB
+}
+
+func New(dsn string) (*SQLiteStore, error) {
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+	db.SetMaxOpenConns(1) // SQLite is single-writer
+	if err := runMigrations(db); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	return &SQLiteStore{db: db}, nil
+}
+
+func runMigrations(db *sql.DB) error {
+	src, err := iofs.New(migrationsFS, "migrations")
+	if err != nil {
+		return err
+	}
+	driver, err := migratesqlite.WithInstance(db, &migratesqlite.Config{})
+	if err != nil {
+		return err
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "sqlite", driver)
+	if err != nil {
+		return err
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLiteStore) Close() error { return s.db.Close() }
+
+func (s *SQLiteStore) CreateRun(ctx context.Context, run *store.DiagnosticRun) error {
+	if run.ID == "" {
+		run.ID = uuid.NewString()
+	}
+	run.CreatedAt = time.Now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO diagnostic_runs (id, target_json, skills_json, status, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		run.ID, run.TargetJSON, run.SkillsJSON, string(run.Status), run.CreatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.DiagnosticRun, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, target_json, skills_json, status, message, started_at, completed_at, created_at
+		 FROM diagnostic_runs WHERE id = ?`, id)
+	return scanRun(row)
+}
+
+func (s *SQLiteStore) UpdateRunStatus(ctx context.Context, id string, phase store.Phase, msg string) error {
+	now := time.Now()
+	switch phase {
+	case store.PhaseRunning:
+		_, err := s.db.ExecContext(ctx,
+			`UPDATE diagnostic_runs SET status=?, message=?, started_at=? WHERE id=?`,
+			string(phase), msg, now, id)
+		return err
+	case store.PhaseSucceeded, store.PhaseFailed:
+		_, err := s.db.ExecContext(ctx,
+			`UPDATE diagnostic_runs SET status=?, message=?, completed_at=? WHERE id=?`,
+			string(phase), msg, now, id)
+		return err
+	default:
+		_, err := s.db.ExecContext(ctx,
+			`UPDATE diagnostic_runs SET status=?, message=? WHERE id=?`,
+			string(phase), msg, id)
+		return err
+	}
+}
+
+func (s *SQLiteStore) ListRuns(ctx context.Context, opts store.ListOpts) ([]*store.DiagnosticRun, error) {
+	limit := opts.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, target_json, skills_json, status, message, started_at, completed_at, created_at
+		 FROM diagnostic_runs ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		limit, opts.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var runs []*store.DiagnosticRun
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
+}
+
+func (s *SQLiteStore) CreateFinding(ctx context.Context, f *store.Finding) error {
+	if f.ID == "" {
+		f.ID = uuid.NewString()
+	}
+	f.CreatedAt = time.Now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO findings
+		 (id, run_id, dimension, severity, title, description,
+		  resource_kind, resource_namespace, resource_name, suggestion, created_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		f.ID, f.RunID, f.Dimension, f.Severity, f.Title, f.Description,
+		f.ResourceKind, f.ResourceNamespace, f.ResourceName, f.Suggestion, f.CreatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListFindings(ctx context.Context, runID string) ([]*store.Finding, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, dimension, severity, title, description,
+		        resource_kind, resource_namespace, resource_name, suggestion, created_at
+		 FROM findings WHERE run_id = ? ORDER BY created_at ASC`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var findings []*store.Finding
+	for rows.Next() {
+		f := &store.Finding{}
+		if err := rows.Scan(&f.ID, &f.RunID, &f.Dimension, &f.Severity, &f.Title,
+			&f.Description, &f.ResourceKind, &f.ResourceNamespace, &f.ResourceName,
+			&f.Suggestion, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		findings = append(findings, f)
+	}
+	return findings, rows.Err()
+}
+
+func (s *SQLiteStore) UpsertSkill(ctx context.Context, sk *store.Skill) error {
+	if sk.ID == "" {
+		sk.ID = uuid.NewString()
+	}
+	sk.UpdatedAt = time.Now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO skills (id, name, dimension, prompt, tools_json, requires_data_json, source, enabled, priority, updated_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)
+		 ON CONFLICT(name) DO UPDATE SET
+		   dimension=excluded.dimension, prompt=excluded.prompt,
+		   tools_json=excluded.tools_json, requires_data_json=excluded.requires_data_json,
+		   source=excluded.source, enabled=excluded.enabled, priority=excluded.priority,
+		   updated_at=excluded.updated_at`,
+		sk.ID, sk.Name, sk.Dimension, sk.Prompt, sk.ToolsJSON, sk.RequiresDataJSON,
+		sk.Source, sk.Enabled, sk.Priority, sk.UpdatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListSkills(ctx context.Context) ([]*store.Skill, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, dimension, prompt, tools_json, requires_data_json,
+		        source, enabled, priority, updated_at
+		 FROM skills ORDER BY priority ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var skills []*store.Skill
+	for rows.Next() {
+		sk := &store.Skill{}
+		if err := rows.Scan(&sk.ID, &sk.Name, &sk.Dimension, &sk.Prompt,
+			&sk.ToolsJSON, &sk.RequiresDataJSON, &sk.Source, &sk.Enabled,
+			&sk.Priority, &sk.UpdatedAt); err != nil {
+			return nil, err
+		}
+		skills = append(skills, sk)
+	}
+	return skills, rows.Err()
+}
+
+func (s *SQLiteStore) GetSkill(ctx context.Context, name string) (*store.Skill, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, dimension, prompt, tools_json, requires_data_json,
+		        source, enabled, priority, updated_at
+		 FROM skills WHERE name = ?`, name)
+	sk := &store.Skill{}
+	err := row.Scan(&sk.ID, &sk.Name, &sk.Dimension, &sk.Prompt,
+		&sk.ToolsJSON, &sk.RequiresDataJSON, &sk.Source, &sk.Enabled,
+		&sk.Priority, &sk.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return sk, err
+}
+
+// scanner unifies *sql.Row and *sql.Rows
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanRun(s scanner) (*store.DiagnosticRun, error) {
+	r := &store.DiagnosticRun{}
+	var startedAt, completedAt sql.NullTime
+	err := s.Scan(&r.ID, &r.TargetJSON, &r.SkillsJSON, &r.Status, &r.Message,
+		&startedAt, &completedAt, &r.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if startedAt.Valid {
+		r.StartedAt = &startedAt.Time
+	}
+	if completedAt.Valid {
+		r.CompletedAt = &completedAt.Time
+	}
+	return r, nil
+}
