@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
@@ -30,7 +31,9 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	srv := &http.Server{Addr: addr, Handler: s.mux}
 	go func() {
 		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
 	}()
 	return srv.ListenAndServe()
 }
@@ -39,11 +42,19 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	// parts: ["internal","runs","{id}","findings"]
-	if len(parts) != 4 || parts[3] != "findings" || r.Method != http.MethodPost {
+	if len(parts) != 4 || parts[3] != "findings" {
 		http.NotFound(w, r)
 		return
 	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	runID := parts[2]
+	if runID == "" {
+		http.Error(w, "missing run ID", http.StatusBadRequest)
+		return
+	}
 
 	var payload map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -85,6 +96,10 @@ func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/runs/{id}  and  GET /api/runs/{id}/findings
 func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	// parts: ["api","runs","{id}"] or ["api","runs","{id}","findings"]
 	if len(parts) < 3 {
@@ -98,6 +113,9 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if findings == nil {
+			findings = make([]*store.Finding, 0)
 		}
 		writeJSON(w, findings)
 		return
