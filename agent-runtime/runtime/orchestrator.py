@@ -120,7 +120,12 @@ def _stream_message(client, tools, messages) -> dict:
     }
 
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-    url = base_url.rstrip("/") + "/v1/messages"
+    base_url = base_url.rstrip("/")
+    # If base_url already ends with /v1/messages (some proxies), use as-is
+    if base_url.endswith("/v1/messages"):
+        url = base_url
+    else:
+        url = base_url + "/v1/messages"
 
     payload = {
         "model": os.environ.get("MODEL", "claude-sonnet-4-6"),
