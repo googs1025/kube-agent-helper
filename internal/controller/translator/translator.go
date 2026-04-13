@@ -17,8 +17,10 @@ import (
 )
 
 type Config struct {
-	AgentImage    string
-	ControllerURL string
+	AgentImage     string
+	ControllerURL  string
+	AnthropicBaseURL string
+	Model            string
 }
 
 type Translator struct {
@@ -164,6 +166,8 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 							{Name: "CONTROLLER_URL", Value: t.cfg.ControllerURL},
 							{Name: "MCP_SERVER_PATH", Value: "/usr/local/bin/k8s-mcp-server"},
 							{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
+							{Name: "ANTHROPIC_BASE_URL", Value: t.cfg.AnthropicBaseURL},
+							{Name: "MODEL", Value: t.cfg.Model},
 							// Phase 1 simplification: ModelConfigRef is used directly as the Secret name.
 							// Phase 2 will resolve the ModelConfig CR to read APIKeyRef.Name and APIKeyRef.Key.
 							{

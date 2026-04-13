@@ -1,45 +1,132 @@
 # kube-agent-helper
 
-> Kubernetes 原生的 AI 诊断与优化助手
+> Kubernetes-native AI diagnostic operator
 
-**kube-agent-helper** 是一个跑在 Kubernetes 集群里、专门分析和优化 K8s 资源的 AI Agent。通过 CRD 声明诊断任务，Controller 编排 Agent Pod 执行分析，结合 MCP 工具链和 LLM 能力产出结构化的 findings 报告。
+**kube-agent-helper** is an AI agent that runs inside your Kubernetes cluster and diagnoses workload issues. Declare a `DiagnosticRun` CR, and the controller spins up an isolated agent Pod that calls Claude via MCP tools, then writes structured findings back to the API server.
 
-## ✨ 核心特性
+[![CI](https://github.com/kube-agent-helper/kube-agent-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/kube-agent-helper/kube-agent-helper/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-- 🔍 **四维度诊断** — 健康 / 安全 / 成本 / 可靠性
-- 📦 **CRD 驱动** — 用 `DiagnosticSkill` 和 `DiagnosticRun` 声明扩展点与任务
-- 🧩 **声明式 Skill 系统** — Skill 即 CR，支持内置 + 用户自定义，GitOps 友好
-- 🤖 **Claude Agent SDK 引擎** — 原生支持 SKILL.md，multi-turn agentic loop 直接读 K8s 资源并深挖根因
-- 🔐 **最小权限自动生成** — Translator 根据 Skill 需求自动收缩 SA/Role
-- 🧠 **向量案例库** — 历史 finding embedding 入库，新诊断检索相似案例注入 prompt
-- 🔄 **双通道数据采集** — 实时 Watch K8s events + 按需 prefetch
+## Features
 
-## 🏗️ 架构概览
+- **CRD-driven** — declare diagnostic tasks with `DiagnosticRun`; extend with `DiagnosticSkill`
+- **Declarative skill system** — skills are `SKILL.md` files loaded as CRs; GitOps-friendly
+- **Claude-powered agentic loop** — multi-turn reasoning over live cluster data
+- **MCP tool layer** — 9 read-only tools (`kubectl_get`, `kubectl_logs`, `events_list`, `top_pods`, …)
+- **Minimal RBAC** — Translator auto-generates least-privilege ServiceAccount per run
+- **SQLite persistence** — findings stored locally; no external database required
+
+## Architecture
 
 ```
-用户 → CR apply → Controller → Translator → Agent Job/Pod
-                     ↓                         ↓
-                  SkillRegistry           MCP Tools
-                     ↓                         ↓
-                  Postgres (findings, case_memory, events)
-                     ↑
-                Event Collector (Watch + Prometheus)
+kubectl apply DiagnosticRun
+        │
+        ▼
+┌──────────────┐    translates    ┌─────────────┐    stdio MCP    ┌──────────────────┐
+│  Controller  │ ──────────────▶  │  Agent Pod  │ ─────────────▶  │ k8s-mcp-server   │
+│  (Operator)  │                  │  (Python)   │                  │ (Go, in-cluster) │
+└──────┬───────┘                  └──────┬──────┘                  └──────────────────┘
+       │                                 │
+       │ REST API                        │ findings JSON
+       ▼                                 ▼
+  /api/runs                       POST /api/runs/:id/findings
+  /api/skills
 ```
 
-详细设计见 [docs/design.md](docs/design.md)。
+## Quick Start
 
-## 📚 参考项目
+### Prerequisites
 
-- [kagent](https://github.com/kagent-dev/kagent) — K8s 原生 Agent 编排框架（借 CRD / Operator / Translator / DB 层 / A2A+MCP 协议）
-- [ci-agent](https://github.com/googs1025/ci-agent) — GitHub CI 流水线 AI 分析器（借声明式 Skill / 动态 Orchestrator / 双引擎 / 双数据通道）
+- Kubernetes cluster (minikube, kind, or any cloud cluster)
+- `helm` ≥ 3.14
+- An Anthropic API key (or compatible proxy)
 
-## 🗺️ 路线图
+### 1. Create the API key secret
 
-- **Phase 1** — Operator MVP：三个 CRD + 单次诊断 Job + 2 个内置 Skill
-- **Phase 2** — Skill Registry + 多维度分析 + Dashboard
-- **Phase 3** — 实时事件采集 + 向量记忆库
-- **Phase 4** — 生产加固：最小权限 / Sandbox / OIDC / HITL
+```bash
+kubectl create secret generic anthropic-credentials \
+  --from-literal=apiKey=sk-ant-...
+```
 
-## 📄 License
+### 2. Install with Helm
 
-Apache License 2.0
+```bash
+helm install kube-agent-helper deploy/helm \
+  --namespace kube-agent-helper --create-namespace
+```
+
+With a custom proxy:
+
+```bash
+helm install kube-agent-helper deploy/helm \
+  --namespace kube-agent-helper --create-namespace \
+  --set anthropic.baseURL=https://my-proxy.example.com/v1/messages \
+  --set anthropic.model=claude-3-5-sonnet-20241022
+```
+
+### 3. Run a diagnostic
+
+```yaml
+apiVersion: diagnostics.kube-agent-helper.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: cluster-health-check
+  namespace: kube-agent-helper
+spec:
+  targetNamespaces:
+    - default
+  skillNames:
+    - pod-health-analyst
+```
+
+```bash
+kubectl apply -f the-above.yaml
+
+# Watch progress
+kubectl get diagnosticrun cluster-health-check -w
+
+# View findings
+kubectl get diagnosticrun cluster-health-check -o jsonpath='{.status.findings}' | jq .
+```
+
+## Built-in Skills
+
+| Skill | Dimension | Description |
+|-------|-----------|-------------|
+| `pod-health-analyst` | health | Detects CrashLoopBackOff, OOMKilled, pending pods |
+| `pod-security-analyst` | security | Checks privileged containers, missing securityContext |
+| `pod-cost-analyst` | cost | Finds over-provisioned resource requests |
+
+Custom skills can be added by creating a `DiagnosticSkill` CR or placing a `SKILL.md` file in the `skills/` directory.
+
+## Development
+
+```bash
+# Run all unit tests
+make test
+
+# Run integration tests (requires kubebuilder binaries)
+make envtest
+
+# Build binaries
+make build
+
+# Build Docker images
+make image
+```
+
+## Roadmap
+
+- **Phase 1** (current) — Operator MVP: 3 CRDs, single-run Job, 3 built-in skills
+- **Phase 2** — Skill Registry UI, multi-dimension parallel analysis, Dashboard
+- **Phase 3** — Real-time event streaming, vector case memory (RAG)
+- **Phase 4** — Production hardening: minimal RBAC sandbox, OIDC, HITL approval
+
+## References
+
+- [kagent](https://github.com/kagent-dev/kagent) — Kubernetes-native agent orchestration framework
+- [ci-agent](https://github.com/googs1025/ci-agent) — GitHub CI pipeline AI analyzer
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).

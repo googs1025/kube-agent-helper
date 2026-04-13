@@ -25,7 +25,9 @@ def main() -> None:
     try:
         findings = run_agent(skills)
     except Exception as e:
+        import traceback
         print(f"[error] agent failed: {e}")
+        traceback.print_exc()
         sys.exit(1)
     print(f"[info] found {len(findings)} findings")
 

@@ -12,53 +12,81 @@ import (
 
 // RegisterCore adds the four core diagnostic tools (M5) to the server.
 func RegisterCore(s *server.MCPServer, d *Deps) {
-	register(s, d, "kubectl_get",
-		"Get a Kubernetes resource (list mode if no name, get mode if name is provided)",
-		[]string{"kind", "apiVersion", "namespace", "name", "labelSelector", "fieldSelector", "limit"},
-		NewKubectlGetHandler(d))
+	registerTool(s, d, mcp.NewTool("kubectl_get",
+		mcp.WithDescription("Get or list Kubernetes resources. kind is required. Omit name to list all."),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind, e.g. Pod, Deployment, Node")),
+		mcp.WithString("apiVersion", mcp.Description("API version, e.g. apps/v1 (optional, auto-detected)")),
+		mcp.WithString("namespace", mcp.Description("Namespace (required for namespaced kinds in get mode)")),
+		mcp.WithString("name", mcp.Description("Resource name for single-resource get (omit to list)")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector, e.g. app=nginx")),
+		mcp.WithString("fieldSelector", mcp.Description("Field selector, e.g. status.phase=Running")),
+		mcp.WithNumber("limit", mcp.Description("Max results to return (default 100, max 500)")),
+	), []string{"kind", "apiVersion", "namespace", "name", "labelSelector", "fieldSelector", "limit"}, NewKubectlGetHandler(d))
 
-	register(s, d, "kubectl_describe",
-		"Describe a single resource with related events",
-		[]string{"kind", "apiVersion", "namespace", "name"},
-		NewKubectlDescribeHandler(d))
+	registerTool(s, d, mcp.NewTool("kubectl_describe",
+		mcp.WithDescription("Describe a single Kubernetes resource including events"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind, e.g. Pod")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
+		mcp.WithString("namespace", mcp.Description("Namespace (required for namespaced kinds)")),
+		mcp.WithString("apiVersion", mcp.Description("API version (optional, auto-detected)")),
+	), []string{"kind", "apiVersion", "namespace", "name"}, NewKubectlDescribeHandler(d))
 
-	register(s, d, "kubectl_logs",
-		"Fetch container logs (supports tailLines, previous, sinceSeconds)",
-		[]string{"namespace", "pod", "container", "tailLines", "previous", "sinceSeconds"},
-		NewKubectlLogsHandler(d))
+	registerTool(s, d, mcp.NewTool("kubectl_logs",
+		mcp.WithDescription("Fetch container logs from a Pod"),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace of the Pod")),
+		mcp.WithString("pod", mcp.Required(), mcp.Description("Pod name")),
+		mcp.WithString("container", mcp.Description("Container name (optional if Pod has one container)")),
+		mcp.WithNumber("tailLines", mcp.Description("Number of lines from the end (default 100)")),
+		mcp.WithBoolean("previous", mcp.Description("Return logs from the previous container instance")),
+		mcp.WithNumber("sinceSeconds", mcp.Description("Return logs newer than this many seconds")),
+	), []string{"namespace", "pod", "container", "tailLines", "previous", "sinceSeconds"}, NewKubectlLogsHandler(d))
 
-	register(s, d, "events_list",
-		"List events, optionally filtered by type or involvedObject",
-		[]string{"namespace", "involvedKind", "involvedName", "types", "limit"},
-		NewEventsListHandler(d))
+	registerTool(s, d, mcp.NewTool("events_list",
+		mcp.WithDescription("List Kubernetes events, optionally filtered by namespace or involved object"),
+		mcp.WithString("namespace", mcp.Description("Namespace to filter events (omit for all namespaces)")),
+		mcp.WithString("involvedKind", mcp.Description("Filter by involvedObject kind, e.g. Pod")),
+		mcp.WithString("involvedName", mcp.Description("Filter by involvedObject name")),
+		mcp.WithString("types", mcp.Description("Comma-separated event types to include, e.g. Warning,Normal")),
+		mcp.WithNumber("limit", mcp.Description("Max events to return (default 100)")),
+	), []string{"namespace", "involvedKind", "involvedName", "types", "limit"}, NewEventsListHandler(d))
 }
 
 // RegisterExtension adds the five extension tools (M6) to the server.
 func RegisterExtension(s *server.MCPServer, d *Deps) {
-	register(s, d, "top_pods",
-		"Show CPU/memory usage for pods, sorted by cpu or memory (requires metrics-server)",
-		[]string{"namespace", "labelSelector", "sortBy", "limit"},
-		NewTopPodsHandler(d))
+	registerTool(s, d, mcp.NewTool("top_pods",
+		mcp.WithDescription("Show CPU/memory usage for pods (requires metrics-server)"),
+		mcp.WithString("namespace", mcp.Description("Namespace to filter (omit for all namespaces)")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector to filter pods")),
+		mcp.WithString("sortBy", mcp.Description("Sort by: cpu or memory (default cpu)")),
+		mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
+	), []string{"namespace", "labelSelector", "sortBy", "limit"}, NewTopPodsHandler(d))
 
-	register(s, d, "top_nodes",
-		"Show CPU/memory usage for nodes, sorted by cpu or memory (requires metrics-server)",
-		[]string{"sortBy", "limit"},
-		NewTopNodesHandler(d))
+	registerTool(s, d, mcp.NewTool("top_nodes",
+		mcp.WithDescription("Show CPU/memory usage for nodes (requires metrics-server)"),
+		mcp.WithString("sortBy", mcp.Description("Sort by: cpu or memory (default cpu)")),
+		mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
+	), []string{"sortBy", "limit"}, NewTopNodesHandler(d))
 
-	register(s, d, "list_api_resources",
-		"List available API resource types, optionally filtered by verb or namespaced",
-		[]string{"verb", "namespaced"},
-		NewListAPIResourcesHandler(d))
+	registerTool(s, d, mcp.NewTool("list_api_resources",
+		mcp.WithDescription("List available Kubernetes API resource types"),
+		mcp.WithString("verb", mcp.Description("Filter by supported verb, e.g. list, watch")),
+		mcp.WithBoolean("namespaced", mcp.Description("Filter to only namespaced (true) or cluster-scoped (false) resources")),
+	), []string{"verb", "namespaced"}, NewListAPIResourcesHandler(d))
 
-	register(s, d, "prometheus_query",
-		"Execute a PromQL instant or range query (requires --prometheus-url)",
-		[]string{"query", "mode", "time", "start", "end", "step"},
-		NewPrometheusQueryHandler(d))
+	registerTool(s, d, mcp.NewTool("prometheus_query",
+		mcp.WithDescription("Execute a PromQL query (requires --prometheus-url flag)"),
+		mcp.WithString("query", mcp.Required(), mcp.Description("PromQL expression")),
+		mcp.WithString("mode", mcp.Description("instant or range (default instant)")),
+		mcp.WithString("time", mcp.Description("Evaluation time for instant queries (RFC3339)")),
+		mcp.WithString("start", mcp.Description("Start time for range queries (RFC3339)")),
+		mcp.WithString("end", mcp.Description("End time for range queries (RFC3339)")),
+		mcp.WithString("step", mcp.Description("Step duration for range queries, e.g. 1m")),
+	), []string{"query", "mode", "time", "start", "end", "step"}, NewPrometheusQueryHandler(d))
 
-	register(s, d, "kubectl_explain",
-		"Show OpenAPI schema for a Kubernetes resource kind or field path (e.g. Pod.spec.containers)",
-		[]string{"resource"},
-		NewKubectlExplainHandler(d))
+	registerTool(s, d, mcp.NewTool("kubectl_explain",
+		mcp.WithDescription("Show OpenAPI schema for a Kubernetes resource kind or field path"),
+		mcp.WithString("resource", mcp.Required(), mcp.Description("Kind or field path, e.g. Pod or Pod.spec.containers")),
+	), []string{"resource"}, NewKubectlExplainHandler(d))
 }
 
 // RegisterAll registers all core and extension tools.
@@ -67,14 +95,13 @@ func RegisterAll(s *server.MCPServer, d *Deps) {
 	RegisterExtension(s, d)
 }
 
-func register(s *server.MCPServer, d *Deps, name, desc string, whitelist []string, handler audit.Handler) {
+func registerTool(s *server.MCPServer, d *Deps, tool mcp.Tool, whitelist []string, handler audit.Handler) {
 	logger := d.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	tool := mcp.NewTool(name, mcp.WithDescription(desc))
 	wrapped := audit.Wrap(logger, audit.ToolSpec{
-		Name:         name,
+		Name:         tool.Name,
 		ArgWhitelist: whitelist,
 		Cluster:      d.Cluster,
 	}, handler)

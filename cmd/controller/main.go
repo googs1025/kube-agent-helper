@@ -14,6 +14,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
@@ -24,11 +25,13 @@ import (
 )
 
 var (
-	dbPath        string
-	httpAddr      string
-	agentImage    string
-	controllerURL string
-	skillsDir     string
+	dbPath           string
+	httpAddr         string
+	agentImage       string
+	controllerURL    string
+	skillsDir        string
+	anthropicBaseURL string
+	model            string
 )
 
 func main() {
@@ -37,6 +40,8 @@ func main() {
 	flag.StringVar(&agentImage, "agent-image", "ghcr.io/kube-agent-helper/agent-runtime:latest", "Agent Pod image")
 	flag.StringVar(&controllerURL, "controller-url", "http://controller.kube-agent-helper.svc:8080", "Controller URL for Agent callbacks")
 	flag.StringVar(&skillsDir, "skills-dir", "/skills", "Directory containing built-in SKILL.md files")
+	flag.StringVar(&anthropicBaseURL, "anthropic-base-url", "", "Anthropic API base URL (empty = default)")
+	flag.StringVar(&model, "model", "", "LLM model name (empty = agent default)")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
@@ -68,7 +73,10 @@ func main() {
 	}
 
 	// Manager
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{Scheme: scheme})
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:         scheme,
+		Metrics: metricsserver.Options{BindAddress: ":9090"},
+	})
 	if err != nil {
 		slog.Error("new manager", "error", err)
 		os.Exit(1)
@@ -82,8 +90,10 @@ func main() {
 	}
 
 	tr := translator.New(translator.Config{
-		AgentImage:    agentImage,
-		ControllerURL: controllerURL,
+		AgentImage:       agentImage,
+		ControllerURL:    controllerURL,
+		AnthropicBaseURL: anthropicBaseURL,
+		Model:            model,
 	}, skills)
 
 	if err := (&reconciler.DiagnosticRunReconciler{

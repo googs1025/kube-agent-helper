@@ -25,3 +25,5 @@ persistence:
 anthropic:
   secretName: "anthropic-credentials"
   secretKey: "apiKey"
+  baseURL: ""
+  model: ""
