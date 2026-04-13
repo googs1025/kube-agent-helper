@@ -4,7 +4,7 @@
 
 **kube-agent-helper** is an AI agent that runs inside your Kubernetes cluster and diagnoses workload issues. Declare a `DiagnosticRun` CR, and the controller spins up an isolated agent Pod that calls Claude via MCP tools, then writes structured findings back to the API server.
 
-[![CI](https://github.com/kube-agent-helper/kube-agent-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/kube-agent-helper/kube-agent-helper/actions/workflows/ci.yml)
+[![CI](https://github.com/googs1025/kube-agent-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/googs1025/kube-agent-helper/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ## Features
