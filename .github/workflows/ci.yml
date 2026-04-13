@@ -23,7 +23,7 @@ jobs:
         run: go vet ./...
 
       - name: Unit tests
-        run: go test ./... -race -count=1 -timeout=120s
+        run: go test $(go list ./... | grep -v test/envtest) -race -count=1 -timeout=120s
 
   envtest:
     name: Integration Tests (envtest)
