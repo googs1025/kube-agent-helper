@@ -363,35 +363,39 @@ case_memory(id, embedding vector(1536), finding_id, outcome, created_at)
 ## 10. 技术栈建议
 
 
-| 层                | 选型                                                 | 理由                                               |
+| 层                | 设计选型                                             | 实际实现（Phase 1）                                |
 | ----------------- | ---------------------------------------------------- | -------------------------------------------------- |
-| Controller / HTTP | Go + controller-runtime + gorilla/mux                | 照搬 kagent，单进程 manager 模式                   |
-| DB                | PostgreSQL + pgx + sqlc + golang-migrate + pgvector  | 照搬 kagent                                        |
-| Agent Runtime     | Python +**Claude Agent SDK**（含 Claude CLI 子进程） | SKILL.md 一等公民，胶水最少，agentic loop 质量最强 |
-| 协议              | MCP（工具接入） + A2A（Pod 对外暴露）                | MCP 接 K8s 数据；A2A 只给 Controller/UI 调用       |
-| 内置 MCP Server   | `k8s-mcp-server`（Go）封装 client-go + prometheus    | 避免每个 Agent 重复实现                            |
-| UI                | Next.js 14 + shadcn + Tailwind                       | 照搬 ci-agent，够用                                |
-| LLM 接入          | Anthropic（Claude Sonnet/Opus）                      | 单 vendor 换简洁度，P4 之后再评估多引擎            |
+| Controller / HTTP | Go + controller-runtime + gorilla/mux                | Go + controller-runtime + net/http（stdlib）       |
+| DB                | PostgreSQL + pgx + sqlc + golang-migrate + pgvector  | SQLite（Phase 1 足够；Phase 3 迁移 Postgres）      |
+| Agent Runtime     | Python + Claude Agent SDK（含 Claude CLI 子进程）    | Python + Anthropic API + httpx 原生 SSE streaming  |
+| 协议              | MCP（工具接入） + A2A（Pod 对外暴露）                | MCP stdio（工具接入）；A2A 留 Phase 2              |
+| 内置 MCP Server   | `k8s-mcp-server`（Go）封装 client-go + prometheus    | 已实现，9 个工具                                   |
+| UI                | Next.js 14 + shadcn + Tailwind                       | 留 Phase 2（当前通过 kubectl + REST API 查看）     |
+| LLM 接入          | Anthropic（Claude Sonnet/Opus）                      | Anthropic（支持自定义 proxy + 模型选择）           |
 
 ---
 
 ## 11. 实施路线
 
-### Phase 1 — 最小可用（Operator MVP）
+### Phase 1 — 最小可用（Operator MVP） ✅ 已完成
 
-- [ ]  定义 `DiagnosticSkill` / `DiagnosticRun` / `ModelConfig` 三个 CRD
-- [ ]  Go Controller 单 binary：manager + HTTP server 同进程（照搬 kagent `app.Start`）
-- [ ]  DB 层 sqlc + migrate（可直接拷 kagent 的基础设施代码）
-- [ ]  Translator：把 `DiagnosticRun` 编译成一次性 Job（`kind: Job`），Skill CR 序列化为 ConfigMap 内的 `SKILL.md` 文件树
-- [ ]  Python Agent 镜像：
-  - 基础镜像含 Python + Claude CLI（Node.js）
-  - 读挂载的 `/workspace/skills/*/SKILL.md`
-  - 通过 `claude_agent_sdk.query(options=ClaudeAgentOptions(agents=...))` 跑 agentic loop
-  - 写回 Finding 表（通过 Controller HTTP API）
-- [ ]  `k8s-mcp-server` 最小子集：`kubectl_get`、`kubectl_describe`、`kubectl_logs`、`events_list`
-- [ ]  1-2 个内置 Skill：`pod-health-analyst`、`pod-security-analyst`（SKILL.md 形式）
+- [x]  定义 `DiagnosticSkill` / `DiagnosticRun` / `ModelConfig` 三个 CRD
+- [x]  Go Controller 单 binary：manager + HTTP server 同进程
+- [x]  DB 层 SQLite（Phase 1 简化，Phase 3 迁移 Postgres）
+- [x]  Translator：把 `DiagnosticRun` 编译成一次性 Job + ConfigMap + SA + ClusterRoleBinding
+- [x]  Python Agent 镜像：
+  - 基础镜像含 Python + Go MCP Server 二进制
+  - 读挂载的 `/workspace/skills/*.md`
+  - 通过 Anthropic API + httpx streaming SSE 跑 agentic loop
+  - 写回 findings（通过 Controller HTTP API `POST /internal/runs/{id}/findings`）
+- [x]  `k8s-mcp-server`：9 个工具（4 core + 5 extension）
+- [x]  3 个内置 Skill：`pod-health-analyst`、`pod-security-analyst`、`pod-cost-analyst`
+- [x]  Job completion watch：Running → Succeeded/Failed 自动转换
+- [x]  Findings 写回 DiagnosticRun CR status（`findingCounts` + `findings` 摘要）
+- [x]  Helm chart 一键部署
+- [x]  GitHub Actions CI：unit test + envtest + build + helm lint + kind smoke test
 
-**交付物**：`kubectl apply -f run.yaml` 能跑一次诊断，Report 入库。
+**交付物**：`kubectl apply -f run.yaml` 能跑一次诊断，findings 写回 CR status + SQLite。
 
 ### Phase 2 — Skill 系统与多维度
 
