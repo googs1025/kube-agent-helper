@@ -17,24 +17,24 @@
 
 ### 与参考项目的对比
 
-| 维度 | ci-agent | kagent | **kube-agent-helper** |
-|---|---|---|---|
-| 分析对象 | GitHub repo + workflow | 任意 agent workload | **K8s cluster + 工作负载** |
-| 运行形态 | 本地单进程 + Web | 多 Agent Pod + Controller | **Operator + 每次诊断独立 Job/Pod** |
-| 触发方式 | CLI / Web 按需 | CR apply | **CR apply + K8s Event Watch + 定时** |
-| 扩展性 | `SKILL.md` 声明式 | CRD + Translator | **Skill CRD（合并两者）** |
-| 分析产出 | 四维度 JSON 报告 | Agent 执行结果 | **DiagnosticReport CR + 结构化 findings** |
+| 维度     | ci-agent               | kagent                    | **kube-agent-helper**                     |
+| -------- | ---------------------- | ------------------------- | ----------------------------------------- |
+| 分析对象 | GitHub repo + workflow | 任意 agent workload       | **K8s cluster + 工作负载**                |
+| 运行形态 | 本地单进程 + Web       | 多 Agent Pod + Controller | **Operator + 每次诊断独立 Job/Pod**       |
+| 触发方式 | CLI / Web 按需         | CR apply                  | **CR apply + K8s Event Watch + 定时**     |
+| 扩展性   | `SKILL.md` 声明式      | CRD + Translator          | **Skill CRD（合并两者）**                 |
+| 分析产出 | 四维度 JSON 报告       | Agent 执行结果            | **DiagnosticReport CR + 结构化 findings** |
 
 ### 核心取舍总结
 
-| 借 kagent 的 | 借 ci-agent 的 | 自己新增的 |
-|---|---|---|
-| CRD + Operator 形态 | SKILL.md 声明式扩展 | 最小权限 SA 自动生成 |
-| Translator 两阶段编译 | 动态 Orchestrator prompt | pgvector 案例库做 RAG |
-| 单 binary（Controller+HTTP） | `requiresData` 按需加载 | MCP Server 层脱敏 Secret |
-| sqlc + migrate + pgvector | SKILL.md 格式复用（CR spec 与 SDK 加载格式 1:1）| LLM 审计日志 + trace |
-| A2A/MCP 协议 | Next.js Dashboard | Skill CR 而非文件（GitOps 友好） |
-| Sandbox + NetworkPolicy | 实时+按需双通道 | 命名空间白名单强约束 |
+| 借 kagent 的                 | 借 ci-agent 的                                   | 自己新增的                       |
+| ---------------------------- | ------------------------------------------------ | -------------------------------- |
+| CRD + Operator 形态          | SKILL.md 声明式扩展                              | 最小权限 SA 自动生成             |
+| Translator 两阶段编译        | 动态 Orchestrator prompt                         | pgvector 案例库做 RAG            |
+| 单 binary（Controller+HTTP） | `requiresData` 按需加载                          | MCP Server 层脱敏 Secret         |
+| sqlc + migrate + pgvector    | SKILL.md 格式复用（CR spec 与 SDK 加载格式 1:1） | LLM 审计日志 + trace             |
+| A2A/MCP 协议                 | Next.js Dashboard                                | Skill CR 而非文件（GitOps 友好） |
+| Sandbox + NetworkPolicy      | 实时+按需双通道                                  | 命名空间白名单强约束             |
 
 ---
 
@@ -219,10 +219,11 @@ CompileInputs { model, skills, targets, tools }
 
 ## 6. 数据通道设计（借 ci-agent 双通道）
 
-| 通道 | 数据源 | 用途 | 写入 |
-|---|---|---|---|
+
+| 通道         | 数据源                                      | 用途                 | 写入                |
+| ------------ | ------------------------------------------- | -------------------- | ------------------- |
 | **实时采集** | `Watch` K8s events / Prometheus / audit log | 趋势、告警、历史基线 | `cluster_events` 表 |
-| **按需分析** | Agent Pod 跑时按 `requiresData` 拉数据 | 深度诊断 + LLM 分析 | `findings` 表 |
+| **按需分析** | Agent Pod 跑时按`requiresData` 拉数据       | 深度诊断 + LLM 分析  | `findings` 表       |
 
 实时通道不走 LLM，只入库；分析通道的 Agent 可以**查这些实时数据表**来做上下文增强（类似 ci-agent 的 prefetch）。
 
@@ -361,15 +362,16 @@ case_memory(id, embedding vector(1536), finding_id, outcome, created_at)
 
 ## 10. 技术栈建议
 
-| 层 | 选型 | 理由 |
-|---|---|---|
-| Controller / HTTP | Go + controller-runtime + gorilla/mux | 照搬 kagent，单进程 manager 模式 |
-| DB | PostgreSQL + pgx + sqlc + golang-migrate + pgvector | 照搬 kagent |
-| Agent Runtime | Python + **Claude Agent SDK**（含 Claude CLI 子进程）| SKILL.md 一等公民，胶水最少，agentic loop 质量最强 |
-| 协议 | MCP（工具接入） + A2A（Pod 对外暴露）| MCP 接 K8s 数据；A2A 只给 Controller/UI 调用 |
-| 内置 MCP Server | `k8s-mcp-server`（Go）封装 client-go + prometheus | 避免每个 Agent 重复实现 |
-| UI | Next.js 14 + shadcn + Tailwind | 照搬 ci-agent，够用 |
-| LLM 接入 | Anthropic（Claude Sonnet/Opus）| 单 vendor 换简洁度，P4 之后再评估多引擎 |
+
+| 层                | 选型                                                 | 理由                                               |
+| ----------------- | ---------------------------------------------------- | -------------------------------------------------- |
+| Controller / HTTP | Go + controller-runtime + gorilla/mux                | 照搬 kagent，单进程 manager 模式                   |
+| DB                | PostgreSQL + pgx + sqlc + golang-migrate + pgvector  | 照搬 kagent                                        |
+| Agent Runtime     | Python +**Claude Agent SDK**（含 Claude CLI 子进程） | SKILL.md 一等公民，胶水最少，agentic loop 质量最强 |
+| 协议              | MCP（工具接入） + A2A（Pod 对外暴露）                | MCP 接 K8s 数据；A2A 只给 Controller/UI 调用       |
+| 内置 MCP Server   | `k8s-mcp-server`（Go）封装 client-go + prometheus    | 避免每个 Agent 重复实现                            |
+| UI                | Next.js 14 + shadcn + Tailwind                       | 照搬 ci-agent，够用                                |
+| LLM 接入          | Anthropic（Claude Sonnet/Opus）                      | 单 vendor 换简洁度，P4 之后再评估多引擎            |
 
 ---
 
@@ -377,43 +379,43 @@ case_memory(id, embedding vector(1536), finding_id, outcome, created_at)
 
 ### Phase 1 — 最小可用（Operator MVP）
 
-- [ ] 定义 `DiagnosticSkill` / `DiagnosticRun` / `ModelConfig` 三个 CRD
-- [ ] Go Controller 单 binary：manager + HTTP server 同进程（照搬 kagent `app.Start`）
-- [ ] DB 层 sqlc + migrate（可直接拷 kagent 的基础设施代码）
-- [ ] Translator：把 `DiagnosticRun` 编译成一次性 Job（`kind: Job`），Skill CR 序列化为 ConfigMap 内的 `SKILL.md` 文件树
-- [ ] Python Agent 镜像：
+- [ ]  定义 `DiagnosticSkill` / `DiagnosticRun` / `ModelConfig` 三个 CRD
+- [ ]  Go Controller 单 binary：manager + HTTP server 同进程（照搬 kagent `app.Start`）
+- [ ]  DB 层 sqlc + migrate（可直接拷 kagent 的基础设施代码）
+- [ ]  Translator：把 `DiagnosticRun` 编译成一次性 Job（`kind: Job`），Skill CR 序列化为 ConfigMap 内的 `SKILL.md` 文件树
+- [ ]  Python Agent 镜像：
   - 基础镜像含 Python + Claude CLI（Node.js）
   - 读挂载的 `/workspace/skills/*/SKILL.md`
   - 通过 `claude_agent_sdk.query(options=ClaudeAgentOptions(agents=...))` 跑 agentic loop
   - 写回 Finding 表（通过 Controller HTTP API）
-- [ ] `k8s-mcp-server` 最小子集：`kubectl_get`、`kubectl_describe`、`kubectl_logs`、`events_list`
-- [ ] 1-2 个内置 Skill：`pod-health-analyst`、`pod-security-analyst`（SKILL.md 形式）
+- [ ]  `k8s-mcp-server` 最小子集：`kubectl_get`、`kubectl_describe`、`kubectl_logs`、`events_list`
+- [ ]  1-2 个内置 Skill：`pod-health-analyst`、`pod-security-analyst`（SKILL.md 形式）
 
 **交付物**：`kubectl apply -f run.yaml` 能跑一次诊断，Report 入库。
 
 ### Phase 2 — Skill 系统与多维度
 
-- [ ] `SkillRegistry`：扫描内置 ConfigMap + Watch Skill CR，合并去重
-- [ ] Orchestrator prompt 动态生成（照搬 ci-agent `build_orchestrator_prompt`）
-- [ ] `requiresData` 按需拉取（借 ci-agent prefetch 思路）
-- [ ] 扩展内置 Skill 到 5-6 个（health / security / cost / reliability / config-drift）
-- [ ] Next.js Dashboard 看 Reports
+- [ ]  `SkillRegistry`：扫描内置 ConfigMap + Watch Skill CR，合并去重
+- [ ]  Orchestrator prompt 动态生成（照搬 ci-agent `build_orchestrator_prompt`）
+- [ ]  `requiresData` 按需拉取（借 ci-agent prefetch 思路）
+- [ ]  扩展内置 Skill 到 5-6 个（health / security / cost / reliability / config-drift）
+- [ ]  Next.js Dashboard 看 Reports
 
 ### Phase 3 — 实时通道 + 向量记忆
 
-- [ ] 新增 `EventCollector` runnable：Watch K8s events + 定时抓 Prometheus，写 `cluster_events`
-- [ ] Agent 里把实时数据作为 prefetch 的一部分（类似 ci-agent webhook 表被分析时查询）
-- [ ] 新 finding 落库时同步做 embedding → `case_memory`
-- [ ] 分析流程增加"检索相似历史 → 注入 prompt"步骤
-- [ ] 可选：周期诊断（`DiagnosticRun.schedule`）
+- [ ]  新增 `EventCollector` runnable：Watch K8s events + 定时抓 Prometheus，写 `cluster_events`
+- [ ]  Agent 里把实时数据作为 prefetch 的一部分（类似 ci-agent webhook 表被分析时查询）
+- [ ]  新 finding 落库时同步做 embedding → `case_memory`
+- [ ]  分析流程增加"检索相似历史 → 注入 prompt"步骤
+- [ ]  可选：周期诊断（`DiagnosticRun.schedule`）
 
 ### Phase 4 — 生产加固
 
-- [ ] Translator 根据 Skill 自动生成最小权限 Role
-- [ ] Sandbox 网络白名单（照搬 kagent PR #1648）
-- [ ] LLM 审计日志 + trace 链路
-- [ ] OIDC 接入（照搬 kagent `ProxyAuthenticator`）
-- [ ] HITL：finding 标记为"需人工确认"，Agent Pod 暂停等待回调
+- [ ]  Translator 根据 Skill 自动生成最小权限 Role
+- [ ]  Sandbox 网络白名单（照搬 kagent PR #1648）
+- [ ]  LLM 审计日志 + trace 链路
+- [ ]  OIDC 接入（照搬 kagent `ProxyAuthenticator`）
+- [ ]  HITL：finding 标记为"需人工确认"，Agent Pod 暂停等待回调
 
 ---
 

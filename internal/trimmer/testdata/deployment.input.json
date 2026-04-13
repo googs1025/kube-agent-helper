@@ -1,0 +1,9 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {"name": "api", "namespace": "prod",
+               "creationTimestamp": "2026-04-10T09:00:00Z",
+               "labels": {"app": "api"}},
+  "spec": {"replicas": 3},
+  "status": {"replicas": 3, "readyReplicas": 2, "updatedReplicas": 3, "availableReplicas": 2}
+}

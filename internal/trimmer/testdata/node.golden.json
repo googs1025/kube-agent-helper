@@ -1,0 +1,9 @@
+{
+  "name": "node-3",
+  "labels": {"kubernetes.io/arch": "amd64"},
+  "ready": true,
+  "kubeletVersion": "v1.31.0",
+  "osImage": "Ubuntu 22.04",
+  "capacity": {"cpu": "8", "memory": "16Gi"},
+  "allocatable": {"cpu": "7800m", "memory": "15Gi"}
+}

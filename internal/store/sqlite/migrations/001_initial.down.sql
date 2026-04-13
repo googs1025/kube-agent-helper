@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS findings;
+DROP TABLE IF EXISTS diagnostic_runs;
+DROP TABLE IF EXISTS skills;

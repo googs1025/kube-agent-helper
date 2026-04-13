@@ -1,0 +1,10 @@
+{
+  "namespace": "prod",
+  "type": "Warning",
+  "reason": "BackOff",
+  "message": "Back-off restarting failed container",
+  "count": 12,
+  "firstTimestamp": "2026-04-11T07:00:00Z",
+  "lastTimestamp": "2026-04-11T08:00:00Z",
+  "involvedObject": {"kind": "Pod", "name": "api-xxx", "namespace": "prod"}
+}

@@ -1,0 +1,5 @@
+/*
+Copyright 2026 kube-agent-helper authors.
+
+Licensed under the Apache License, Version 2.0.
+*/
