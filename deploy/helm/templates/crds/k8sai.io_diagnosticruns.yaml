@@ -77,6 +77,33 @@ spec:
               completedAt:
                 format: date-time
                 type: string
+              findingCounts:
+                additionalProperties:
+                  type: integer
+                type: object
+              findings:
+                items:
+                  properties:
+                    dimension:
+                      type: string
+                    resourceKind:
+                      type: string
+                    resourceName:
+                      type: string
+                    resourceNamespace:
+                      type: string
+                    severity:
+                      type: string
+                    suggestion:
+                      type: string
+                    title:
+                      type: string
+                  required:
+                  - dimension
+                  - severity
+                  - title
+                  type: object
+                type: array
               message:
                 type: string
               phase:

@@ -67,26 +67,32 @@ helm install kube-agent-helper deploy/helm \
 ### 3. Run a diagnostic
 
 ```yaml
-apiVersion: diagnostics.kube-agent-helper.io/v1alpha1
+apiVersion: k8sai.io/v1alpha1
 kind: DiagnosticRun
 metadata:
   name: cluster-health-check
   namespace: kube-agent-helper
 spec:
-  targetNamespaces:
-    - default
-  skillNames:
+  target:
+    scope: namespace
+    namespaces:
+      - default
+  skills:
     - pod-health-analyst
+  modelConfigRef: "anthropic-credentials"   # Secret name containing apiKey
 ```
 
 ```bash
 kubectl apply -f the-above.yaml
 
-# Watch progress
+# Watch progress (phase transitions: Pending → Running → Succeeded/Failed)
 kubectl get diagnosticrun cluster-health-check -w
 
-# View findings
+# View findings written back to CR status
 kubectl get diagnosticrun cluster-health-check -o jsonpath='{.status.findings}' | jq .
+
+# View severity counts
+kubectl get diagnosticrun cluster-health-check -o jsonpath='{.status.findingCounts}'
 ```
 
 ## Built-in Skills
