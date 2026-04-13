@@ -75,3 +75,88 @@ jobs:
 
       - name: Lint chart
         run: helm lint deploy/helm
+
+  smoke-test:
+    name: Smoke Test (kind)
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: smoke
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Apply CRDs
+        run: kubectl apply -f deploy/helm/templates/crds/
+
+      - name: Verify CRDs registered
+        run: |
+          kubectl wait --for=condition=Established crd/diagnosticruns.k8sai.io --timeout=30s
+          kubectl wait --for=condition=Established crd/diagnosticskills.k8sai.io --timeout=30s
+          kubectl wait --for=condition=Established crd/modelconfigs.k8sai.io --timeout=30s
+
+      - name: Build controller binary
+        run: CGO_ENABLED=0 GOOS=linux go build -o bin/controller ./cmd/controller
+
+      - name: Build MCP server binary
+        run: CGO_ENABLED=0 GOOS=linux go build -o bin/k8s-mcp-server ./cmd/main.go
+
+      - name: Create DiagnosticSkill CR
+        run: |
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: k8sai.io/v1alpha1
+          kind: DiagnosticSkill
+          metadata:
+            name: pod-health-analyst
+          spec:
+            dimension: health
+            description: "Analyzes pod health"
+            prompt: "Check pod status"
+            tools: ["kubectl_get"]
+            enabled: true
+            priority: 100
+          EOF
+
+      - name: Verify DiagnosticSkill created
+        run: kubectl get diagnosticskills pod-health-analyst -o jsonpath='{.spec.dimension}' | grep health
+
+      - name: Create DiagnosticRun CR
+        run: |
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: k8sai.io/v1alpha1
+          kind: DiagnosticRun
+          metadata:
+            name: smoke-test
+          spec:
+            target:
+              scope: namespace
+              namespaces: ["default"]
+            skills: ["pod-health-analyst"]
+            modelConfigRef: "anthropic-credentials"
+          EOF
+
+      - name: Verify DiagnosticRun created
+        run: kubectl get diagnosticrun smoke-test -o jsonpath='{.spec.target.scope}' | grep namespace
+
+      - name: Helm template renders
+        run: |
+          helm template test-release deploy/helm \
+            --set anthropic.secretName=test-secret \
+            --namespace test-ns | kubectl apply --dry-run=client -f -
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kubectl delete diagnosticrun smoke-test --ignore-not-found
+          kubectl delete diagnosticskill pod-health-analyst --ignore-not-found

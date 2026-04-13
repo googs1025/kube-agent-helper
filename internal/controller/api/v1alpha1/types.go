@@ -64,11 +64,24 @@ type TargetSpec struct {
 
 type DiagnosticRunStatus struct {
 	// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
-	Phase       string       `json:"phase,omitempty"`
-	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
-	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
-	ReportID    string       `json:"reportId,omitempty"`
-	Message     string       `json:"message,omitempty"`
+	Phase         string            `json:"phase,omitempty"`
+	StartedAt     *metav1.Time      `json:"startedAt,omitempty"`
+	CompletedAt   *metav1.Time      `json:"completedAt,omitempty"`
+	ReportID      string            `json:"reportId,omitempty"`
+	Message       string            `json:"message,omitempty"`
+	FindingCounts map[string]int    `json:"findingCounts,omitempty"`
+	Findings      []FindingSummary  `json:"findings,omitempty"`
+}
+
+// FindingSummary is a compact representation of a finding stored in CR status.
+type FindingSummary struct {
+	Dimension         string `json:"dimension"`
+	Severity          string `json:"severity"`
+	Title             string `json:"title"`
+	ResourceKind      string `json:"resourceKind,omitempty"`
+	ResourceNamespace string `json:"resourceNamespace,omitempty"`
+	ResourceName      string `json:"resourceName,omitempty"`
+	Suggestion        string `json:"suggestion,omitempty"`
 }
 
 // +kubebuilder:object:root=true

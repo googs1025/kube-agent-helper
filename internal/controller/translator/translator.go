@@ -130,6 +130,7 @@ func (t *Translator) buildRoleBinding(saName, runID, saNamespace string) *rbacv1
 func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName string, skills []*store.Skill) *batchv1.Job {
 	ttl := int32(3600)
 	backoff := int32(0)
+	isController := true
 
 	skillNames := make([]string, len(skills))
 	for i, s := range skills {
@@ -140,6 +141,13 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("agent-%s", run.Name),
 			Labels: map[string]string{"run-id": runID},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: run.APIVersion,
+				Kind:       run.Kind,
+				Name:       run.Name,
+				UID:        run.UID,
+				Controller: &isController,
+			}},
 		},
 		Spec: batchv1.JobSpec{
 			TTLSecondsAfterFinished: &ttl,

@@ -22,9 +22,19 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
-type memStore struct{ runs map[string]*store.DiagnosticRun }
+// ── memStore ──────────────────────────────────────────────────────────────────
 
-func newMemStore() *memStore { return &memStore{runs: map[string]*store.DiagnosticRun{}} }
+type memStore struct {
+	runs     map[string]*store.DiagnosticRun
+	findings map[string][]*store.Finding
+}
+
+func newMemStore() *memStore {
+	return &memStore{
+		runs:     map[string]*store.DiagnosticRun{},
+		findings: map[string][]*store.Finding{},
+	}
+}
 func (m *memStore) CreateRun(_ context.Context, r *store.DiagnosticRun) error {
 	if r.ID == "" {
 		r.ID = "test-id"
@@ -38,15 +48,19 @@ func (m *memStore) GetRun(_ context.Context, id string) (*store.DiagnosticRun, e
 func (m *memStore) UpdateRunStatus(_ context.Context, id string, p store.Phase, msg string) error {
 	if r, ok := m.runs[id]; ok {
 		r.Status = p
+		r.Message = msg
 	}
 	return nil
 }
 func (m *memStore) ListRuns(_ context.Context, _ store.ListOpts) ([]*store.DiagnosticRun, error) {
 	return nil, nil
 }
-func (m *memStore) CreateFinding(_ context.Context, _ *store.Finding) error { return nil }
-func (m *memStore) ListFindings(_ context.Context, _ string) ([]*store.Finding, error) {
-	return nil, nil
+func (m *memStore) CreateFinding(_ context.Context, f *store.Finding) error {
+	m.findings[f.RunID] = append(m.findings[f.RunID], f)
+	return nil
+}
+func (m *memStore) ListFindings(_ context.Context, runID string) ([]*store.Finding, error) {
+	return m.findings[runID], nil
 }
 func (m *memStore) UpsertSkill(_ context.Context, _ *store.Skill) error { return nil }
 func (m *memStore) ListSkills(_ context.Context) ([]*store.Skill, error) { return nil, nil }
@@ -55,15 +69,20 @@ func (m *memStore) GetSkill(_ context.Context, _ string) (*store.Skill, error) {
 }
 func (m *memStore) Close() error { return nil }
 
-func TestRunReconciler_PendingToRunning(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = clientgoscheme.AddToScheme(scheme)
-	_ = k8saiV1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = rbacv1.AddToScheme(scheme)
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-	run := &k8saiV1.DiagnosticRun{
+func testScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(s)
+	_ = k8saiV1.AddToScheme(s)
+	_ = batchv1.AddToScheme(s)
+	_ = corev1.AddToScheme(s)
+	_ = rbacv1.AddToScheme(s)
+	return s
+}
+
+func testRun() *k8saiV1.DiagnosticRun {
+	return &k8saiV1.DiagnosticRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-run", Namespace: "default", UID: "uid-1",
 		},
@@ -73,36 +92,203 @@ func TestRunReconciler_PendingToRunning(t *testing.T) {
 			ModelConfigRef: "claude-default",
 		},
 	}
+}
 
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(run).
-		WithStatusSubresource(run).
-		Build()
-
-	skill := &store.Skill{
+func testSkill() *store.Skill {
+	return &store.Skill{
 		Name: "pod-health-analyst", Dimension: "health",
 		Prompt: "You are...", ToolsJSON: "[]", Enabled: true,
 	}
-	tr := translator.New(translator.Config{
+}
+
+func testTranslator() *translator.Translator {
+	return translator.New(translator.Config{
 		AgentImage: "agent:test", ControllerURL: "http://ctrl:8080",
-	}, []*store.Skill{skill})
+	}, []*store.Skill{testSkill()})
+}
 
-	ms := newMemStore()
-	r := &reconciler.DiagnosticRunReconciler{
-		Client:     fakeClient,
-		Store:      ms,
-		Translator: tr,
-	}
-
+func reconcileOnce(t *testing.T, r *reconciler.DiagnosticRunReconciler) ctrl.Result {
+	t.Helper()
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-run", Namespace: "default"},
 	})
 	require.NoError(t, err)
-	assert.False(t, result.Requeue)
+	return result
+}
+
+func getRunStatus(t *testing.T, cl interface{ Get(context.Context, types.NamespacedName, ...interface{}) error }, name string) k8saiV1.DiagnosticRun {
+	t.Helper()
+	// Use the reconciler's client directly via type assertion
+	return k8saiV1.DiagnosticRun{}
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+func TestRunReconciler_PendingToRunning(t *testing.T) {
+	run := testRun()
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter, "should requeue to poll Job status")
 
 	var updated k8saiV1.DiagnosticRun
 	require.NoError(t, fakeClient.Get(context.Background(),
 		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
 	assert.Equal(t, "Running", updated.Status.Phase)
+	assert.NotNil(t, updated.Status.StartedAt)
+}
+
+func TestRunReconciler_RunningToSucceeded(t *testing.T) {
+	run := testRun()
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+
+	// Create a succeeded Job
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Succeeded: 1},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	// Pre-populate store
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+	ms.findings["uid-1"] = []*store.Finding{
+		{RunID: "uid-1", Dimension: "health", Severity: "critical", Title: "Pod CrashLooping", ResourceKind: "Pod", ResourceName: "nginx"},
+		{RunID: "uid-1", Dimension: "health", Severity: "medium", Title: "High restart count", ResourceKind: "Pod", ResourceName: "nginx"},
+	}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.Zero(t, result.RequeueAfter, "terminal state should not requeue")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+
+	assert.Equal(t, "Succeeded", updated.Status.Phase)
+	assert.NotNil(t, updated.Status.CompletedAt)
+	assert.Equal(t, "agent job completed successfully", updated.Status.Message)
+
+	// Findings written back
+	assert.Len(t, updated.Status.Findings, 2)
+	assert.Equal(t, 1, updated.Status.FindingCounts["critical"])
+	assert.Equal(t, 1, updated.Status.FindingCounts["medium"])
+	assert.Equal(t, "Pod CrashLooping", updated.Status.Findings[0].Title)
+
+	// Store also updated
+	assert.Equal(t, store.PhaseSucceeded, ms.runs["uid-1"].Status)
+}
+
+func TestRunReconciler_RunningToFailed(t *testing.T) {
+	run := testRun()
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{
+			Failed: 1,
+			Conditions: []batchv1.JobCondition{{
+				Type:    batchv1.JobFailed,
+				Status:  "True",
+				Message: "Back-off limit exceeded",
+			}},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.Zero(t, result.RequeueAfter)
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+
+	assert.Equal(t, "Failed", updated.Status.Phase)
+	assert.Contains(t, updated.Status.Message, "Back-off limit exceeded")
+	assert.NotNil(t, updated.Status.CompletedAt)
+}
+
+func TestRunReconciler_RunningJobStillActive(t *testing.T) {
+	run := testRun()
+	run.Status.Phase = "Running"
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter, "should requeue while job is active")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase, "should stay Running")
+}
+
+func TestRunReconciler_TerminalNoOp(t *testing.T) {
+	run := testRun()
+	run.Status.Phase = "Succeeded"
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.Zero(t, result.RequeueAfter)
 }

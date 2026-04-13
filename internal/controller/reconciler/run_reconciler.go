@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -66,8 +70,10 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 
+		now := metav1.Now()
 		run.Status.Phase = string(store.PhaseRunning)
 		run.Status.ReportID = string(run.UID)
+		run.Status.StartedAt = &now
 		if err := r.Status().Update(ctx, &run); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -76,24 +82,95 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{Requeue: true}, nil
 		}
 		logger.Info("run started", "name", run.Name)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	// Phase: Running → check Job status
+	if run.Status.Phase == string(store.PhaseRunning) {
+		jobName := fmt.Sprintf("agent-%s", run.Name)
+		var job batchv1.Job
+		if err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: run.Namespace}, &job); err != nil {
+			if errors.IsNotFound(err) {
+				// Job not created yet or was cleaned up
+				logger.Info("job not found, requeueing", "job", jobName)
+				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			}
+			return ctrl.Result{}, err
+		}
+
+		if job.Status.Succeeded > 0 {
+			return r.completeRun(ctx, &run, store.PhaseSucceeded, "agent job completed successfully")
+		}
+		if job.Status.Failed > 0 {
+			msg := "agent job failed"
+			for _, c := range job.Status.Conditions {
+				if c.Type == batchv1.JobFailed && c.Status == "True" {
+					msg = fmt.Sprintf("agent job failed: %s", c.Message)
+					break
+				}
+			}
+			return r.completeRun(ctx, &run, store.PhaseFailed, msg)
+		}
+
+		// Still running — requeue
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *DiagnosticRunReconciler) failRun(ctx context.Context, run *k8saiV1.DiagnosticRun, msg string) (ctrl.Result, error) {
-	run.Status.Phase = string(store.PhaseFailed)
-	run.Status.Message = msg
-	if err := r.Status().Update(ctx, run); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failRun status update: %w", err)
+// completeRun transitions a run to a terminal phase and writes findings back to CR status.
+func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.DiagnosticRun, phase store.Phase, msg string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Fetch findings from store
+	runID := string(run.UID)
+	findings, err := r.Store.ListFindings(ctx, runID)
+	if err != nil {
+		logger.Error(err, "failed to list findings")
+		findings = nil
 	}
-	_ = r.Store.UpdateRunStatus(ctx, string(run.UID), store.PhaseFailed, msg)
+
+	// Build severity counts and summaries
+	counts := map[string]int{}
+	var summaries []k8saiV1.FindingSummary
+	for _, f := range findings {
+		counts[f.Severity]++
+		summaries = append(summaries, k8saiV1.FindingSummary{
+			Dimension:         f.Dimension,
+			Severity:          f.Severity,
+			Title:             f.Title,
+			ResourceKind:      f.ResourceKind,
+			ResourceNamespace: f.ResourceNamespace,
+			ResourceName:      f.ResourceName,
+			Suggestion:        f.Suggestion,
+		})
+	}
+
+	now := metav1.Now()
+	run.Status.Phase = string(phase)
+	run.Status.CompletedAt = &now
+	run.Status.Message = msg
+	run.Status.FindingCounts = counts
+	run.Status.Findings = summaries
+
+	if err := r.Status().Update(ctx, run); err != nil {
+		return ctrl.Result{}, fmt.Errorf("completeRun status update: %w", err)
+	}
+	_ = r.Store.UpdateRunStatus(ctx, runID, phase, msg)
+
+	logger.Info("run completed", "name", run.Name, "phase", phase, "findings", len(findings))
 	return ctrl.Result{}, nil
+}
+
+func (r *DiagnosticRunReconciler) failRun(ctx context.Context, run *k8saiV1.DiagnosticRun, msg string) (ctrl.Result, error) {
+	return r.completeRun(ctx, run, store.PhaseFailed, msg)
 }
 
 func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&k8saiV1.DiagnosticRun{}).
+		Owns(&batchv1.Job{}).
 		Complete(r)
 }
 
