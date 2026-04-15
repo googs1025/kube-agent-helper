@@ -21,6 +21,8 @@ spec:
         ports:
         - containerPort: {{ .Values.dashboard.port }}
         env:
+        - name: HOSTNAME
+          value: "0.0.0.0"
         - name: API_URL
           value: "http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:8080"
         resources:
