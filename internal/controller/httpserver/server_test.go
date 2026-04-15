@@ -148,6 +148,47 @@ func TestPostRun(t *testing.T) {
 	assert.NotEmpty(t, resp["metadata"])
 }
 
+func TestPostSkill(t *testing.T) {
+	fs := &fakeStore{}
+	srv := httpserver.New(fs, newFakeK8sClient())
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":        "my-analyst",
+		"namespace":   "default",
+		"dimension":   "health",
+		"description": "Analyzes pod health",
+		"prompt":      "You are a health analyst...",
+		"tools":       []string{"kubectl_get"},
+		"enabled":     true,
+		"priority":    100,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/skills", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.NotEmpty(t, resp["metadata"])
+}
+
+func TestPostSkillMissingFields(t *testing.T) {
+	fs := &fakeStore{}
+	srv := httpserver.New(fs, newFakeK8sClient())
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"namespace": "default",
+		// name, dimension, prompt, tools missing
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/skills", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
 func TestPostRunMissingModelConfig(t *testing.T) {
 	fs := &fakeStore{}
 	srv := httpserver.New(fs, newFakeK8sClient())

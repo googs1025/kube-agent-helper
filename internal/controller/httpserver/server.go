@@ -153,21 +153,77 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, run)
 }
 
-// GET /api/skills
+// GET|POST /api/skills
 func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		skills, err := s.store.ListSkills(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if skills == nil {
+			skills = make([]*store.Skill, 0)
+		}
+		writeJSON(w, skills)
+	case http.MethodPost:
+		s.handleAPISkillsPost(w, r)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAPISkillsPost(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name         string   `json:"name"`
+		Namespace    string   `json:"namespace"`
+		Dimension    string   `json:"dimension"`
+		Description  string   `json:"description"`
+		Prompt       string   `json:"prompt"`
+		Tools        []string `json:"tools"`
+		RequiresData []string `json:"requiresData"`
+		Enabled      bool     `json:"enabled"`
+		Priority     int      `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	skills, err := s.store.ListSkills(r.Context())
-	if err != nil {
+	if req.Name == "" || req.Dimension == "" || req.Prompt == "" || len(req.Tools) == 0 {
+		http.Error(w, "name, dimension, prompt, and tools are required", http.StatusBadRequest)
+		return
+	}
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+	priority := req.Priority
+	if priority == 0 {
+		priority = 100
+	}
+
+	cr := &v1alpha1.DiagnosticSkill{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: req.Namespace,
+		},
+		Spec: v1alpha1.DiagnosticSkillSpec{
+			Dimension:    req.Dimension,
+			Description:  req.Description,
+			Prompt:       req.Prompt,
+			Tools:        req.Tools,
+			RequiresData: req.RequiresData,
+			Enabled:      req.Enabled,
+			Priority:     &priority,
+		},
+	}
+
+	if err := s.k8sClient.Create(r.Context(), cr); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if skills == nil {
-		skills = make([]*store.Skill, 0)
-	}
-	writeJSON(w, skills)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(cr)
 }
 
 // GET /api/fixes
