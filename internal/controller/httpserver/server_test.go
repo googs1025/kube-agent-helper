@@ -10,7 +10,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
@@ -116,4 +120,46 @@ func TestGetSkills(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&skills))
 	require.Len(t, skills, 1)
 	assert.Equal(t, "s1", skills[0].Name)
+}
+
+func newFakeK8sClient() client.Client {
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	return fake.NewClientBuilder().WithScheme(scheme).Build()
+}
+
+func TestPostRun(t *testing.T) {
+	fs := &fakeStore{}
+	srv := httpserver.New(fs, newFakeK8sClient())
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"namespace":      "default",
+		"target":         map[string]interface{}{"scope": "namespace", "namespaces": []string{"default"}},
+		"modelConfigRef": "anthropic-credentials",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.NotEmpty(t, resp["metadata"])
+}
+
+func TestPostRunMissingModelConfig(t *testing.T) {
+	fs := &fakeStore{}
+	srv := httpserver.New(fs, newFakeK8sClient())
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"namespace": "default",
+		"target":    map[string]interface{}{"scope": "namespace"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }

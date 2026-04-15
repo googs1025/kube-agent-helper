@@ -3,12 +3,17 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
 type Server struct {
@@ -99,7 +104,7 @@ func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, runs)
 	case http.MethodPost:
-		http.Error(w, "not implemented", http.StatusNotImplemented)
+		s.handleAPIRunsPost(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -232,6 +237,67 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.NotFound(w, r)
+}
+
+func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+		Target    struct {
+			Scope         string            `json:"scope"`
+			Namespaces    []string          `json:"namespaces"`
+			LabelSelector map[string]string `json:"labelSelector"`
+		} `json:"target"`
+		Skills         []string `json:"skills"`
+		ModelConfigRef string   `json:"modelConfigRef"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.ModelConfigRef == "" {
+		http.Error(w, "modelConfigRef is required", http.StatusBadRequest)
+		return
+	}
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+	if req.Name == "" {
+		req.Name = fmt.Sprintf("run-%s-%s", time.Now().Format("20060102"), randSuffix(4))
+	}
+
+	cr := &v1alpha1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: req.Namespace,
+		},
+		Spec: v1alpha1.DiagnosticRunSpec{
+			Target: v1alpha1.TargetSpec{
+				Scope:         req.Target.Scope,
+				Namespaces:    req.Target.Namespaces,
+				LabelSelector: req.Target.LabelSelector,
+			},
+			Skills:         req.Skills,
+			ModelConfigRef: req.ModelConfigRef,
+		},
+	}
+
+	if err := s.k8sClient.Create(r.Context(), cr); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(cr)
+}
+
+func randSuffix(n int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(b)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
