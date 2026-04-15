@@ -43,11 +43,25 @@ var testSkills = []*store.Skill{
 	},
 }
 
+type mockProvider struct {
+	skills []*store.Skill
+}
+
+func (m *mockProvider) ListEnabled(_ context.Context) ([]*store.Skill, error) {
+	var enabled []*store.Skill
+	for _, s := range m.skills {
+		if s.Enabled {
+			enabled = append(enabled, s)
+		}
+	}
+	return enabled, nil
+}
+
 func newTranslator(skills []*store.Skill) *translator.Translator {
 	return translator.New(translator.Config{
 		AgentImage:    "ghcr.io/kube-agent-helper/agent-runtime:latest",
 		ControllerURL: "http://controller.svc:8080",
-	}, skills)
+	}, &mockProvider{skills: skills})
 }
 
 func newRun(name, ns string, uid string, skills []string, namespaces []string) *k8saiV1.DiagnosticRun {

@@ -19,6 +19,7 @@ import (
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/reconciler"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 	sqlitestore "github.com/kube-agent-helper/kube-agent-helper/internal/store/sqlite"
@@ -82,19 +83,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load skills for translator
-	skills, err := st.ListSkills(context.Background())
-	if err != nil {
-		slog.Error("list skills", "error", err)
-		os.Exit(1)
-	}
+	// Create skill registry (reads from store on every call — hot-reload)
+	reg := registry.New(st)
 
 	tr := translator.New(translator.Config{
 		AgentImage:       agentImage,
 		ControllerURL:    controllerURL,
 		AnthropicBaseURL: anthropicBaseURL,
 		Model:            model,
-	}, skills)
+	}, reg)
 
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),

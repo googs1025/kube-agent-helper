@@ -102,10 +102,24 @@ func testSkill() *store.Skill {
 	}
 }
 
+type mockSkillProvider struct {
+	skills []*store.Skill
+}
+
+func (m *mockSkillProvider) ListEnabled(_ context.Context) ([]*store.Skill, error) {
+	var enabled []*store.Skill
+	for _, s := range m.skills {
+		if s.Enabled {
+			enabled = append(enabled, s)
+		}
+	}
+	return enabled, nil
+}
+
 func testTranslator() *translator.Translator {
 	return translator.New(translator.Config{
 		AgentImage: "agent:test", ControllerURL: "http://ctrl:8080",
-	}, []*store.Skill{testSkill()})
+	}, &mockSkillProvider{skills: []*store.Skill{testSkill()}})
 }
 
 func reconcileOnce(t *testing.T, r *reconciler.DiagnosticRunReconciler) ctrl.Result {
