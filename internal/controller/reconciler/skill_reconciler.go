@@ -25,6 +25,15 @@ func (r *DiagnosticSkillReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	var skill k8saiV1.DiagnosticSkill
 	if err := r.Get(ctx, req.NamespacedName, &skill); err != nil {
 		if errors.IsNotFound(err) {
+			// CR deleted — remove from store only if it was CR-sourced.
+			existing, getErr := r.Store.GetSkill(ctx, req.Name)
+			if getErr == nil && existing.Source == "cr" {
+				if delErr := r.Store.DeleteSkill(ctx, req.Name); delErr != nil {
+					logger.Error(delErr, "failed to delete skill from store", "name", req.Name)
+				} else {
+					logger.Info("deleted cr skill from store", "name", req.Name)
+				}
+			}
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
