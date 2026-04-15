@@ -1,0 +1,106 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: diagnosticfixes.k8sai.io
+spec:
+  group: k8sai.io
+  names:
+    kind: DiagnosticFix
+    listKind: DiagnosticFixList
+    plural: diagnosticfixes
+    singular: diagnosticfix
+    shortNames:
+      - dfix
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Target
+          type: string
+          jsonPath: .spec.target.name
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [diagnosticRunRef, findingTitle, target, patch]
+              properties:
+                diagnosticRunRef:
+                  type: string
+                findingTitle:
+                  type: string
+                target:
+                  type: object
+                  required: [kind, namespace, name]
+                  properties:
+                    kind:
+                      type: string
+                      enum: [Deployment, StatefulSet, DaemonSet, Service, ConfigMap]
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+                strategy:
+                  type: string
+                  enum: [auto, dry-run]
+                  default: auto
+                approvalRequired:
+                  type: boolean
+                  default: true
+                patch:
+                  type: object
+                  required: [content]
+                  properties:
+                    type:
+                      type: string
+                      enum: [strategic-merge, json-patch]
+                      default: strategic-merge
+                    content:
+                      type: string
+                rollback:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    snapshotBefore:
+                      type: boolean
+                      default: true
+                    autoRollbackOnFailure:
+                      type: boolean
+                      default: true
+                    healthCheckTimeout:
+                      type: integer
+                      default: 300
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [PendingApproval, Approved, Applying, Succeeded, Failed, RolledBack, DryRunComplete]
+                approvedBy:
+                  type: string
+                approvedAt:
+                  type: string
+                  format: date-time
+                appliedAt:
+                  type: string
+                  format: date-time
+                completedAt:
+                  type: string
+                  format: date-time
+                rollbackSnapshot:
+                  type: string
+                message:
+                  type: string

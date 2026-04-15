@@ -67,8 +67,15 @@ func (m *memStore) ListSkills(_ context.Context) ([]*store.Skill, error) { retur
 func (m *memStore) GetSkill(_ context.Context, _ string) (*store.Skill, error) {
 	return nil, nil
 }
-func (m *memStore) DeleteSkill(_ context.Context, _ string) error { return nil }
-func (m *memStore) Close() error                                  { return nil }
+func (m *memStore) DeleteSkill(_ context.Context, _ string) error                          { return nil }
+func (m *memStore) CreateFix(_ context.Context, _ *store.Fix) error                        { return nil }
+func (m *memStore) GetFix(_ context.Context, _ string) (*store.Fix, error)                 { return nil, store.ErrNotFound }
+func (m *memStore) ListFixes(_ context.Context, _ store.ListOpts) ([]*store.Fix, error)    { return nil, nil }
+func (m *memStore) ListFixesByRun(_ context.Context, _ string) ([]*store.Fix, error)       { return nil, nil }
+func (m *memStore) UpdateFixPhase(_ context.Context, _ string, _ store.FixPhase, _ string) error { return nil }
+func (m *memStore) UpdateFixApproval(_ context.Context, _ string, _ string) error          { return nil }
+func (m *memStore) UpdateFixSnapshot(_ context.Context, _ string, _ string) error          { return nil }
+func (m *memStore) Close() error                                                           { return nil }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

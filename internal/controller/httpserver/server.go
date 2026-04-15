@@ -21,6 +21,8 @@ func New(s store.Store) *Server {
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
 	srv.mux.HandleFunc("/api/runs/", srv.handleAPIRunDetail)
 	srv.mux.HandleFunc("/api/skills", srv.handleAPISkills)
+	srv.mux.HandleFunc("/api/fixes", srv.handleAPIFixes)
+	srv.mux.HandleFunc("/api/fixes/", srv.handleAPIFixDetail)
 	return srv
 }
 
@@ -159,6 +161,75 @@ func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
 		skills = make([]*store.Skill, 0)
 	}
 	writeJSON(w, skills)
+}
+
+// GET /api/fixes
+func (s *Server) handleAPIFixes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	fixes, err := s.store.ListFixes(r.Context(), store.ListOpts{Limit: 50})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if fixes == nil {
+		fixes = make([]*store.Fix, 0)
+	}
+	writeJSON(w, fixes)
+}
+
+// GET /api/fixes/{id}, PATCH /api/fixes/{id}/approve, PATCH /api/fixes/{id}/reject
+func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+	fixID := parts[2]
+
+	if len(parts) == 3 && r.Method == http.MethodGet {
+		fix, err := s.store.GetFix(r.Context(), fixID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, fix)
+		return
+	}
+
+	if len(parts) == 4 {
+		action := parts[3]
+		switch {
+		case action == "approve" && r.Method == http.MethodPatch:
+			var body struct {
+				ApprovedBy string `json:"approvedBy"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			if err := s.store.UpdateFixApproval(r.Context(), fixID, body.ApprovedBy); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		case action == "reject" && r.Method == http.MethodPatch:
+			if err := s.store.UpdateFixPhase(r.Context(), fixID, store.FixPhaseFailed, "rejected by user"); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

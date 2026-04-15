@@ -117,6 +117,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&reconciler.DiagnosticFixReconciler{
+		Client: mgr.GetClient(),
+		Store:  st,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("setup fix reconciler", "error", err)
+		os.Exit(1)
+	}
+
 	// HTTP server as manager Runnable
 	httpSrv := httpserver.New(st)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {

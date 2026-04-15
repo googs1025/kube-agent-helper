@@ -124,10 +124,82 @@ type ModelConfigList struct {
 	Items           []ModelConfig `json:"items"`
 }
 
+// ── DiagnosticFix ────────────────────────────────────────────────────────
+
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.target.name`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+type DiagnosticFix struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              DiagnosticFixSpec   `json:"spec,omitempty"`
+	Status            DiagnosticFixStatus `json:"status,omitempty"`
+}
+
+type DiagnosticFixSpec struct {
+	DiagnosticRunRef string    `json:"diagnosticRunRef"`
+	FindingTitle     string    `json:"findingTitle"`
+	Target           FixTarget `json:"target"`
+	// +kubebuilder:validation:Enum=auto;dry-run
+	// +kubebuilder:default=auto
+	Strategy         string `json:"strategy"`
+	// +kubebuilder:default=true
+	ApprovalRequired bool     `json:"approvalRequired"`
+	Patch            FixPatch `json:"patch"`
+	Rollback         RollbackConfig `json:"rollback,omitempty"`
+}
+
+type FixTarget struct {
+	// +kubebuilder:validation:Enum=Deployment;StatefulSet;DaemonSet;Service;ConfigMap
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+type FixPatch struct {
+	// +kubebuilder:validation:Enum=strategic-merge;json-patch
+	// +kubebuilder:default=strategic-merge
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
+type RollbackConfig struct {
+	// +kubebuilder:default=true
+	Enabled               bool `json:"enabled"`
+	// +kubebuilder:default=true
+	SnapshotBefore        bool `json:"snapshotBefore"`
+	// +kubebuilder:default=true
+	AutoRollbackOnFailure bool `json:"autoRollbackOnFailure"`
+	// +kubebuilder:default=300
+	HealthCheckTimeout    int  `json:"healthCheckTimeout,omitempty"`
+}
+
+type DiagnosticFixStatus struct {
+	// +kubebuilder:validation:Enum=PendingApproval;Approved;Applying;Succeeded;Failed;RolledBack;DryRunComplete
+	Phase            string       `json:"phase,omitempty"`
+	ApprovedBy       string       `json:"approvedBy,omitempty"`
+	ApprovedAt       *metav1.Time `json:"approvedAt,omitempty"`
+	AppliedAt        *metav1.Time `json:"appliedAt,omitempty"`
+	CompletedAt      *metav1.Time `json:"completedAt,omitempty"`
+	RollbackSnapshot string       `json:"rollbackSnapshot,omitempty"`
+	Message          string       `json:"message,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type DiagnosticFixList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []DiagnosticFix `json:"items"`
+}
+
 func init() {
 	SchemeBuilder.Register(
 		&DiagnosticSkill{}, &DiagnosticSkillList{},
 		&DiagnosticRun{}, &DiagnosticRunList{},
 		&ModelConfig{}, &ModelConfigList{},
+		&DiagnosticFix{}, &DiagnosticFixList{},
 	)
 }
