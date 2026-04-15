@@ -53,7 +53,8 @@ func (f *fakeStore) ListSkills(_ context.Context) ([]*store.Skill, error) {
 func (f *fakeStore) GetSkill(_ context.Context, name string) (*store.Skill, error) {
 	return nil, nil
 }
-func (f *fakeStore) Close() error { return nil }
+func (f *fakeStore) DeleteSkill(_ context.Context, _ string) error { return nil }
+func (f *fakeStore) Close() error                                  { return nil }
 
 func TestPostFindings(t *testing.T) {
 	fs := &fakeStore{}

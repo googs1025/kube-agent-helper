@@ -67,7 +67,8 @@ func (m *memStore) ListSkills(_ context.Context) ([]*store.Skill, error) { retur
 func (m *memStore) GetSkill(_ context.Context, _ string) (*store.Skill, error) {
 	return nil, nil
 }
-func (m *memStore) Close() error { return nil }
+func (m *memStore) DeleteSkill(_ context.Context, _ string) error { return nil }
+func (m *memStore) Close() error                                  { return nil }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
