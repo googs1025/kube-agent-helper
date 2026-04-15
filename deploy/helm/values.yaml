@@ -3,7 +3,19 @@ replicaCount: 1
 image:
   controller: ghcr.io/kube-agent-helper/controller:latest
   agent: ghcr.io/kube-agent-helper/agent-runtime:latest
+  dashboard: ghcr.io/kube-agent-helper/dashboard:latest
   pullPolicy: IfNotPresent
+
+dashboard:
+  enabled: true
+  replicas: 1
+  port: 3000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
 
 controller:
   httpAddr: ":8080"
