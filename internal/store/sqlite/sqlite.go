@@ -231,6 +231,18 @@ func (s *SQLiteStore) GetSkill(ctx context.Context, name string) (*store.Skill, 
 	return sk, err
 }
 
+func (s *SQLiteStore) DeleteSkill(ctx context.Context, name string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM skills WHERE name = ?`, name)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 // scanner unifies *sql.Row and *sql.Rows
 type scanner interface {
 	Scan(dest ...any) error

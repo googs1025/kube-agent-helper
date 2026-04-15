@@ -76,6 +76,7 @@ type Store interface {
 	UpsertSkill(ctx context.Context, s *Skill) error
 	ListSkills(ctx context.Context) ([]*Skill, error)
 	GetSkill(ctx context.Context, name string) (*Skill, error)
+	DeleteSkill(ctx context.Context, name string) error
 
 	Close() error
 }
