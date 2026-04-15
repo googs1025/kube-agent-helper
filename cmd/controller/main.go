@@ -126,7 +126,7 @@ func main() {
 	}
 
 	// HTTP server as manager Runnable
-	httpSrv := httpserver.New(st)
+	httpSrv := httpserver.New(st, mgr.GetClient())
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
 		slog.Error("add http server", "error", err)
 		os.Exit(1)

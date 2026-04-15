@@ -11,7 +11,7 @@ metadata:
 rules:
 - apiGroups: ["k8sai.io"]
   resources: ["diagnosticruns","diagnosticskills","modelconfigs","diagnosticfixes"]
-  verbs: ["get","list","watch","update","patch"]
+  verbs: ["get","list","watch","create","update","patch"]
 - apiGroups: ["k8sai.io"]
   resources: ["diagnosticruns/status","diagnosticfixes/status"]
   verbs: ["update","patch"]

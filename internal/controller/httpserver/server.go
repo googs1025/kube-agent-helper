@@ -8,15 +8,17 @@ import (
 	"time"
 
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Server struct {
-	store store.Store
-	mux   *http.ServeMux
+	store     store.Store
+	k8sClient client.Client
+	mux       *http.ServeMux
 }
 
-func New(s store.Store) *Server {
-	srv := &Server{store: s, mux: http.NewServeMux()}
+func New(s store.Store, k8sClient client.Client) *Server {
+	srv := &Server{store: s, k8sClient: k8sClient, mux: http.NewServeMux()}
 	srv.mux.HandleFunc("/internal/runs/", srv.handleInternal)
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
 	srv.mux.HandleFunc("/api/runs/", srv.handleAPIRunDetail)

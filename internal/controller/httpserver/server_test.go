@@ -65,7 +65,7 @@ func (f *fakeStore) Close() error                                               
 
 func TestPostFindings(t *testing.T) {
 	fs := &fakeStore{}
-	srv := httpserver.New(fs)
+	srv := httpserver.New(fs, nil)
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"dimension": "health", "severity": "critical",
@@ -89,7 +89,7 @@ func TestGetFindings(t *testing.T) {
 	_ = fs.CreateFinding(context.Background(), &store.Finding{
 		RunID: "run-abc", Dimension: "security", Severity: "high", Title: "Root container",
 	})
-	srv := httpserver.New(fs)
+	srv := httpserver.New(fs, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/runs/run-abc/findings", nil)
 	rr := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestGetSkills(t *testing.T) {
 	ctx := context.Background()
 	_ = fs.UpsertSkill(ctx, &store.Skill{Name: "s1", Dimension: "health", Enabled: true})
 
-	srv := httpserver.New(fs)
+	srv := httpserver.New(fs, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
