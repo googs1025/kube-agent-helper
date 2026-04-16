@@ -9,27 +9,31 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
 type Server struct {
-	store     store.Store
-	k8sClient client.Client
-	mux       *http.ServeMux
+	store        store.Store
+	k8sClient    client.Client
+	fixGenerator *translator.FixGenerator
+	mux          *http.ServeMux
 }
 
-func New(s store.Store, k8sClient client.Client) *Server {
-	srv := &Server{store: s, k8sClient: k8sClient, mux: http.NewServeMux()}
+func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *Server {
+	srv := &Server{store: s, k8sClient: k8sClient, fixGenerator: fg, mux: http.NewServeMux()}
 	srv.mux.HandleFunc("/internal/runs/", srv.handleInternal)
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
 	srv.mux.HandleFunc("/api/runs/", srv.handleAPIRunDetail)
 	srv.mux.HandleFunc("/api/skills", srv.handleAPISkills)
 	srv.mux.HandleFunc("/api/fixes", srv.handleAPIFixes)
 	srv.mux.HandleFunc("/api/fixes/", srv.handleAPIFixDetail)
+	srv.mux.HandleFunc("/api/findings/", srv.handleAPIFindingAction)
 	return srv
 }
 
@@ -349,6 +353,109 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(cr)
+}
+
+// POST /api/findings/{findingID}/generate-fix
+func (s *Server) handleAPIFindingAction(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// expected: ["api", "findings", "{id}", "generate-fix"]
+	if len(parts) != 4 || parts[3] != "generate-fix" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	findingID := parts[2]
+	if findingID == "" {
+		http.Error(w, "missing finding id", http.StatusBadRequest)
+		return
+	}
+	if s.fixGenerator == nil {
+		http.Error(w, "fix generator not configured", http.StatusInternalServerError)
+		return
+	}
+
+	// 1. Find the finding in the store
+	finding, err := s.findFindingByID(r.Context(), findingID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if finding == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 2. Idempotency: if a fix already exists for this finding, return it.
+	fixes, err := s.store.ListFixesByRun(r.Context(), finding.RunID)
+	if err == nil {
+		for _, f := range fixes {
+			if f.FindingID == findingID {
+				writeJSON(w, map[string]string{"fixID": f.ID})
+				return
+			}
+		}
+	}
+
+	// 3. Fetch DiagnosticRun CR (need namespace + spec.modelConfigRef)
+	var runCR v1alpha1.DiagnosticRun
+	if err := s.findRunByUID(r.Context(), finding.RunID, &runCR); err != nil {
+		http.Error(w, "run CR not found: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 4. Compile Job
+	job, err := s.fixGenerator.Compile(&runCR, finding)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.k8sClient.Create(r.Context(), job); err != nil {
+		if errors.IsAlreadyExists(err) {
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "already-generating"})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "generating"})
+}
+
+func (s *Server) findFindingByID(ctx context.Context, id string) (*store.Finding, error) {
+	runs, err := s.store.ListRuns(ctx, store.ListOpts{Limit: 200})
+	if err != nil {
+		return nil, err
+	}
+	for _, run := range runs {
+		fs, err := s.store.ListFindings(ctx, run.ID)
+		if err != nil {
+			continue
+		}
+		for _, f := range fs {
+			if f.ID == id {
+				return f, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (s *Server) findRunByUID(ctx context.Context, uid string, out *v1alpha1.DiagnosticRun) error {
+	var list v1alpha1.DiagnosticRunList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		return err
+	}
+	for _, r := range list.Items {
+		if string(r.UID) == uid {
+			*out = r
+			return nil
+		}
+	}
+	return fmt.Errorf("no DiagnosticRun with UID %s", uid)
 }
 
 func randSuffix(n int) string {

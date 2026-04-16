@@ -93,6 +93,13 @@ func main() {
 		Model:            model,
 	}, reg)
 
+	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{
+		AgentImage:       agentImage,
+		ControllerURL:    controllerURL,
+		AnthropicBaseURL: anthropicBaseURL,
+		Model:            model,
+	})
+
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
 		Store:      st,
@@ -126,7 +133,7 @@ func main() {
 	}
 
 	// HTTP server as manager Runnable
-	httpSrv := httpserver.New(st, mgr.GetClient())
+	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
 		slog.Error("add http server", "error", err)
 		os.Exit(1)
