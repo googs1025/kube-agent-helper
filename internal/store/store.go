@@ -82,6 +82,8 @@ type Fix struct {
 	ApprovedBy       string
 	RollbackSnapshot string
 	Message          string
+	FindingID        string
+	BeforeSnapshot   string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }

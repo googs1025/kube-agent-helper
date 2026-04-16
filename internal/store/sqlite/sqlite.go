@@ -253,11 +253,12 @@ func (s *SQLiteStore) CreateFix(ctx context.Context, f *store.Fix) error {
 	f.UpdatedAt = f.CreatedAt
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO fixes (id, run_id, finding_title, target_kind, target_namespace, target_name,
-		  strategy, approval_required, patch_type, patch_content, phase, message, created_at, updated_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		  strategy, approval_required, patch_type, patch_content, phase, message,
+		  finding_id, before_snapshot, created_at, updated_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		f.ID, f.RunID, f.FindingTitle, f.TargetKind, f.TargetNamespace, f.TargetName,
 		f.Strategy, f.ApprovalRequired, f.PatchType, f.PatchContent,
-		string(f.Phase), f.Message, f.CreatedAt, f.UpdatedAt)
+		string(f.Phase), f.Message, f.FindingID, f.BeforeSnapshot, f.CreatedAt, f.UpdatedAt)
 	return err
 }
 
@@ -265,7 +266,8 @@ func (s *SQLiteStore) GetFix(ctx context.Context, id string) (*store.Fix, error)
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
 		        strategy, approval_required, patch_type, patch_content, phase,
-		        approved_by, rollback_snapshot, message, created_at, updated_at
+		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+		        created_at, updated_at
 		 FROM fixes WHERE id = ?`, id)
 	return scanFix(row)
 }
@@ -278,7 +280,8 @@ func (s *SQLiteStore) ListFixes(ctx context.Context, opts store.ListOpts) ([]*st
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
 		        strategy, approval_required, patch_type, patch_content, phase,
-		        approved_by, rollback_snapshot, message, created_at, updated_at
+		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+		        created_at, updated_at
 		 FROM fixes ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, opts.Offset)
 	if err != nil {
 		return nil, err
@@ -299,7 +302,8 @@ func (s *SQLiteStore) ListFixesByRun(ctx context.Context, runID string) ([]*stor
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
 		        strategy, approval_required, patch_type, patch_content, phase,
-		        approved_by, rollback_snapshot, message, created_at, updated_at
+		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+		        created_at, updated_at
 		 FROM fixes WHERE run_id = ? ORDER BY created_at ASC`, runID)
 	if err != nil {
 		return nil, err
@@ -363,7 +367,9 @@ func scanFix(s scanner) (*store.Fix, error) {
 	var phase string
 	err := s.Scan(&f.ID, &f.RunID, &f.FindingTitle, &f.TargetKind, &f.TargetNamespace,
 		&f.TargetName, &f.Strategy, &f.ApprovalRequired, &f.PatchType, &f.PatchContent,
-		&phase, &f.ApprovedBy, &f.RollbackSnapshot, &f.Message, &f.CreatedAt, &f.UpdatedAt)
+		&phase, &f.ApprovedBy, &f.RollbackSnapshot, &f.Message,
+		&f.FindingID, &f.BeforeSnapshot,
+		&f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, store.ErrNotFound
