@@ -1,16 +1,20 @@
-import { Badge } from "@/components/ui/badge";
+"use client";
 
-const phaseStyles: Record<string, string> = {
-  Pending: "bg-yellow-100 text-yellow-800 hover:bg-yellow-100",
-  Running: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  Succeeded: "bg-green-100 text-green-800 hover:bg-green-100",
-  Failed: "bg-red-100 text-red-800 hover:bg-red-100",
+import { useI18n } from "@/i18n/context";
+
+const colors: Record<string, string> = {
+  Pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  Running: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  Succeeded: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+  Failed: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
 };
 
-export function PhaseBadge({ phase }: { phase: string }) {
-  return (
-    <Badge variant="outline" className={phaseStyles[phase] || ""}>
-      {phase || "Unknown"}
-    </Badge>
-  );
+interface Props {
+  phase: string;
+}
+
+export function PhaseBadge({ phase }: Props) {
+  const { t } = useI18n();
+  const cls = colors[phase] || "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{t(`phase.${phase}`)}</span>;
 }

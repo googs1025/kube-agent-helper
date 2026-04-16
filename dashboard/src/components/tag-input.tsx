@@ -38,11 +38,11 @@ export function TagInput({ value, onChange, placeholder, className, suggestions 
 
   return (
     <div className={cn("space-y-2", className)}>
-      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20">
+      <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900">
         {value.map((tag) => (
-          <span key={tag} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+          <span key={tag} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
             {tag}
-            <button type="button" onClick={() => removeTag(tag)} className="text-blue-400 hover:text-blue-700">
+            <button type="button" onClick={() => removeTag(tag)} className="text-blue-400 hover:text-blue-700 dark:text-blue-500 dark:hover:text-blue-200">
               <X size={10} />
             </button>
           </span>
@@ -54,7 +54,7 @@ export function TagInput({ value, onChange, placeholder, className, suggestions 
             onKeyDown={onKeyDown}
             onBlur={() => input && addTag(input)}
             placeholder={value.length === 0 ? placeholder : ""}
-            className="min-w-[80px] flex-1 border-none bg-transparent text-sm outline-none placeholder:text-gray-400"
+            className="min-w-[80px] flex-1 border-none bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
           />
         )}
       </div>
@@ -62,7 +62,7 @@ export function TagInput({ value, onChange, placeholder, className, suggestions 
         <div className="flex flex-wrap gap-1.5">
           {remaining.map((s) => (
             <button key={s} type="button" onClick={() => addTag(s)}
-              className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:border-blue-300 hover:text-blue-600">
+              className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-blue-700 dark:hover:text-blue-400">
               + {s}
             </button>
           ))}

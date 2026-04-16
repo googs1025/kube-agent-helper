@@ -1,16 +1,20 @@
-import { Badge } from "@/components/ui/badge";
+"use client";
 
-const severityStyles: Record<string, string> = {
-  critical: "bg-red-600 text-white hover:bg-red-600",
-  high: "bg-orange-500 text-white hover:bg-orange-500",
-  medium: "bg-yellow-500 text-white hover:bg-yellow-500",
-  low: "bg-blue-400 text-white hover:bg-blue-400",
+import { useI18n } from "@/i18n/context";
+
+const colors: Record<string, string> = {
+  critical: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+  high: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
+  medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
+  low: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
 };
 
-export function SeverityBadge({ severity }: { severity: string }) {
-  return (
-    <Badge className={severityStyles[severity] || ""}>
-      {severity}
-    </Badge>
-  );
+interface Props {
+  severity: string;
+}
+
+export function SeverityBadge({ severity }: Props) {
+  const { t } = useI18n();
+  const cls = colors[severity] || "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{t(`severity.${severity}`)}</span>;
 }
