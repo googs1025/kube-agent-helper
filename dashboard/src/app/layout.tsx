@@ -1,27 +1,47 @@
-import type { Metadata } from "next";
+"use client";
+
 import Link from "next/link";
 import "./globals.css";
+import { ClientProviders } from "@/components/client-providers";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useI18n } from "@/i18n/context";
+import { preHydrationScript } from "@/theme/context";
 
-export const metadata: Metadata = {
-  title: "Kube Agent Helper",
-  description: "Kubernetes diagnostic dashboard",
-};
+function Nav() {
+  const { t } = useI18n();
+  return (
+    <nav className="border-b bg-white px-6 py-3 dark:bg-gray-900 dark:border-gray-800">
+      <div className="mx-auto flex max-w-7xl items-center gap-8">
+        <Link href="/" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          {t("nav.brand")}
+        </Link>
+        <div className="flex flex-1 gap-6 text-sm">
+          <Link href="/" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.runs")}</Link>
+          <Link href="/skills" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.skills")}</Link>
+          <Link href="/fixes" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.fixes")}</Link>
+        </div>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <LanguageToggle />
+        </div>
+      </div>
+    </nav>
+  );
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-gray-50">
-        <nav className="border-b bg-white px-6 py-3">
-          <div className="mx-auto flex max-w-7xl items-center gap-8">
-            <Link href="/" className="text-lg font-semibold">Kube Agent Helper</Link>
-            <div className="flex gap-6 text-sm">
-              <Link href="/" className="text-gray-600 hover:text-gray-900">Runs</Link>
-              <Link href="/skills" className="text-gray-600 hover:text-gray-900">Skills</Link>
-              <Link href="/fixes" className="text-gray-600 hover:text-gray-900">Fixes</Link>
-            </div>
-          </div>
-        </nav>
-        <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+    <html lang="zh">
+      <head>
+        <title>Kube Agent Helper</title>
+        <script dangerouslySetInnerHTML={{ __html: preHydrationScript }} />
+      </head>
+      <body className="min-h-screen bg-gray-50 dark:bg-gray-950">
+        <ClientProviders>
+          <Nav />
+          <main className="mx-auto max-w-7xl px-6 py-8 text-gray-900 dark:text-gray-100">{children}</main>
+        </ClientProviders>
       </body>
     </html>
   );
