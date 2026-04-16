@@ -402,3 +402,22 @@ func TestInternalFixes_RejectsMissingFields(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestGetFindings_IncludesFixID(t *testing.T) {
+	fs := &fakeStore{}
+	finding := &store.Finding{ID: "f-1", RunID: "run-1", Title: "t"}
+	fs.findings = append(fs.findings, finding)
+	fs.fixes = append(fs.fixes, &store.Fix{
+		ID: "fix-uid-1", RunID: "run-1", FindingID: "f-1",
+	})
+	fc := newFakeK8sClient()
+	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{AgentImage: "a", ControllerURL: "http://x"})
+	srv := httpserver.New(fs, fc, fg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/run-1/findings", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"FixID":"fix-uid-1"`)
+}

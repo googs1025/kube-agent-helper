@@ -234,7 +234,24 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 		if findings == nil {
 			findings = make([]*store.Finding, 0)
 		}
-		writeJSON(w, findings)
+		// Join: findingID -> fixID (if any)
+		fixes, _ := s.store.ListFixesByRun(r.Context(), runID)
+		fixByFinding := make(map[string]string, len(fixes))
+		for _, f := range fixes {
+			if f.FindingID != "" {
+				fixByFinding[f.FindingID] = f.ID
+			}
+		}
+
+		type findingWithFix struct {
+			*store.Finding
+			FixID string
+		}
+		out := make([]findingWithFix, 0, len(findings))
+		for _, f := range findings {
+			out = append(out, findingWithFix{Finding: f, FixID: fixByFinding[f.ID]})
+		}
+		writeJSON(w, out)
 		return
 	}
 
