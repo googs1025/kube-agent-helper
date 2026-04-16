@@ -22,8 +22,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python's lib/ directory, but NOT dashboard/src/lib which is part of the Next.js app
+/lib/
+/lib64/
 parts/
 sdist/
 var/
