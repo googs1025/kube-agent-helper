@@ -55,6 +55,9 @@ type DiagnosticRunSpec struct {
 	ModelConfigRef string     `json:"modelConfigRef"`
 	// +optional
 	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Enum=zh;en
+	OutputLanguage string `json:"outputLanguage,omitempty"`
 }
 
 type TargetSpec struct {
