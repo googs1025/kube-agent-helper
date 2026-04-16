@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ResourceDiff } from "@/components/resource-diff";
+import { computeAfter, decodeBefore } from "@/lib/utils";
 
 const phaseColors: Record<string, string> = {
   PendingApproval: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
@@ -86,6 +88,27 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
       )}
 
       <Separator className="mb-6" />
+
+      {fix.BeforeSnapshot && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-base">{t("fixes.detail.diffTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              if (fix.PatchType === "json-patch") {
+                return <p className="text-sm text-gray-500 dark:text-gray-400">{t("fixes.detail.diffUnavailable")}</p>;
+              }
+              const before = decodeBefore(fix.BeforeSnapshot);
+              const after = computeAfter(fix.BeforeSnapshot, fix.PatchType, fix.PatchContent);
+              if (!after) {
+                return <p className="text-sm text-gray-500 dark:text-gray-400">{t("fixes.detail.diffUnavailable")}</p>;
+              }
+              return <ResourceDiff before={before} after={after} />;
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
