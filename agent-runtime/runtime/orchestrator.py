@@ -18,7 +18,22 @@ def build_prompt(skills: List[Skill]) -> str:
         f"- **{s.name}** ({s.dimension}): {s.prompt[:200]}..."
         for s in skills
     )
+    output_lang = os.environ.get("OUTPUT_LANGUAGE", "en")
+    if output_lang == "zh":
+        lang_instruction = (
+            "Output the `title`, `description`, and `suggestion` fields in Simplified Chinese "
+            "(简体中文). Keep enum fields (dimension, severity, resource_kind, resource_namespace, "
+            "resource_name) as English values."
+        )
+    else:
+        lang_instruction = (
+            "Output the `title`, `description`, and `suggestion` fields in English. "
+            "Keep enum fields (dimension, severity, resource_kind, resource_namespace, "
+            "resource_name) as English values."
+        )
     return f"""You are a Kubernetes diagnostic orchestrator.
+
+{lang_instruction}
 
 Target namespaces: {TARGET_NAMESPACES}
 
