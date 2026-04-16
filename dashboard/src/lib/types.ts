@@ -47,6 +47,7 @@ export interface CreateRunRequest {
   skills?: string[];
   modelConfigRef: string;
   timeoutSeconds?: number;
+  outputLanguage?: "zh" | "en";
 }
 
 export interface CreateSkillRequest {
