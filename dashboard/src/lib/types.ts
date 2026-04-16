@@ -21,6 +21,7 @@ export interface Finding {
   ResourceName: string;
   Suggestion: string;
   CreatedAt: string;
+  FixID?: string;
 }
 
 export interface Skill {
@@ -65,6 +66,7 @@ export interface CreateSkillRequest {
 export interface Fix {
   ID: string;
   RunID: string;
+  FindingID: string;
   FindingTitle: string;
   TargetKind: string;
   TargetNamespace: string;
@@ -76,6 +78,7 @@ export interface Fix {
   Phase: "PendingApproval" | "Approved" | "Applying" | "Succeeded" | "Failed" | "RolledBack" | "DryRunComplete";
   ApprovedBy: string;
   RollbackSnapshot: string;
+  BeforeSnapshot: string;
   Message: string;
   CreatedAt: string;
   UpdatedAt: string;

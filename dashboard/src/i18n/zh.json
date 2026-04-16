@@ -68,6 +68,9 @@
     "findings.loading": "加载诊断发现...",
     "findings.loadFailed": "加载诊断发现失败",
     "findings.suggestion": "建议",
+    "findings.generateFix": "生成修复建议",
+    "findings.generating": "生成中...",
+    "findings.viewFix": "查看修复建议",
     "form.name": "名称",
     "form.namePlaceholder": "留空自动生成",
     "form.namespace": "命名空间",
@@ -157,6 +160,8 @@
     "detail.run": "所属任务",
     "detail.patchContent": "补丁内容",
     "detail.finding": "对应发现",
-    "detail.backToFixes": "返回修复列表"
+    "detail.backToFixes": "返回修复列表",
+    "detail.diffTitle": "资源变更预览",
+    "detail.diffUnavailable": "json-patch 类型的预览暂不支持"
   }
 }

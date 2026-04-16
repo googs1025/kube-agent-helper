@@ -68,6 +68,9 @@
     "findings.loading": "Loading findings...",
     "findings.loadFailed": "Failed to load findings.",
     "findings.suggestion": "Suggestion",
+    "findings.generateFix": "Generate Fix",
+    "findings.generating": "Generating...",
+    "findings.viewFix": "View Fix",
     "form.name": "Name",
     "form.namePlaceholder": "auto-generated if empty",
     "form.namespace": "Namespace",
@@ -157,6 +160,8 @@
     "detail.run": "Run",
     "detail.patchContent": "Patch Content",
     "detail.finding": "Finding",
-    "detail.backToFixes": "Back to Fixes"
+    "detail.backToFixes": "Back to Fixes",
+    "detail.diffTitle": "Resource Change Preview",
+    "detail.diffUnavailable": "Preview unavailable for json-patch"
   }
 }

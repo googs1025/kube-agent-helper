@@ -74,3 +74,15 @@ export async function rejectFix(id: string): Promise<void> {
     throw new Error(text || `HTTP ${res.status}`);
   }
 }
+
+export async function generateFix(findingID: string): Promise<{ fixID?: string; status?: string }> {
+  const res = await fetch(`/api/findings/${findingID}/generate-fix`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
