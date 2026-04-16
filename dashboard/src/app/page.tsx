@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRuns } from "@/lib/api";
 import { PhaseBadge } from "@/components/phase-badge";
+import { CreateRunDialog } from "@/components/create-run-dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,12 +23,34 @@ function duration(start: string | null, end: string | null): string {
 }
 
 export default function RunsPage() {
-  const { data: runs, error, isLoading } = useRuns();
+  const { data: runs, error, isLoading, mutate } = useRuns();
   if (isLoading) return <p className="text-gray-500">Loading runs...</p>;
   if (error) return <p className="text-red-600">Failed to load runs.</p>;
+
+  const total = runs?.length ?? 0;
+  const running = runs?.filter((r) => r.Status === "Running").length ?? 0;
+  const succeeded = runs?.filter((r) => r.Status === "Succeeded").length ?? 0;
+  const failed = runs?.filter((r) => r.Status === "Failed").length ?? 0;
+
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Diagnostic Runs</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Diagnostic Runs</h1>
+        <CreateRunDialog onCreated={() => mutate()} />
+      </div>
+      <div className="mb-6 grid grid-cols-4 gap-4">
+        {[
+          { label: "Total", value: total, color: "text-gray-900" },
+          { label: "Running", value: running, color: "text-blue-600" },
+          { label: "Succeeded", value: succeeded, color: "text-green-600" },
+          { label: "Failed", value: failed, color: "text-red-600" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="rounded-lg border bg-white p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+            <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+          </div>
+        ))}
+      </div>
       {runs && runs.length === 0 ? (
         <p className="text-gray-500">No runs yet.</p>
       ) : (
