@@ -350,3 +350,55 @@ func TestGenerateFix_FindingNotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+func TestInternalFixes_CreatesCRAndStoreEntry(t *testing.T) {
+	fs := &fakeStore{}
+	fc := newFakeK8sClient()
+	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{AgentImage: "a", ControllerURL: "http://x"})
+	srv := httpserver.New(fs, fc, fg)
+
+	body := `{
+	  "findingID":"f-1",
+	  "diagnosticRunRef":"run-uid-1",
+	  "findingTitle":"t",
+	  "target":{"kind":"Deployment","namespace":"ns","name":"nginx"},
+	  "patch":{"type":"strategic-merge","content":"{\"spec\":{\"replicas\":2}}"},
+	  "beforeSnapshot":"YXBpVmVyc2lvbjogdjE=",
+	  "explanation":"Scale up to reduce risk."
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/internal/fixes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// CR exists in fake k8s client
+	var cr v1alpha1.DiagnosticFixList
+	_ = fc.List(context.Background(), &cr)
+	assert.Len(t, cr.Items, 1)
+	assert.Equal(t, "f-1", cr.Items[0].Spec.FindingID)
+	assert.Equal(t, "run-uid-1", cr.Items[0].Spec.DiagnosticRunRef)
+	assert.Equal(t, "Deployment", cr.Items[0].Spec.Target.Kind)
+	assert.Equal(t, "strategic-merge", cr.Items[0].Spec.Patch.Type)
+
+	// Store has matching entry
+	assert.Len(t, fs.fixes, 1)
+	assert.Equal(t, "f-1", fs.fixes[0].FindingID)
+	assert.Equal(t, "YXBpVmVyc2lvbjogdjE=", fs.fixes[0].BeforeSnapshot)
+	assert.Equal(t, "Scale up to reduce risk.", fs.fixes[0].Message)
+}
+
+func TestInternalFixes_RejectsMissingFields(t *testing.T) {
+	fs := &fakeStore{}
+	fc := newFakeK8sClient()
+	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{AgentImage: "a", ControllerURL: "http://x"})
+	srv := httpserver.New(fs, fc, fg)
+
+	body := `{"findingID":"f-1"}`
+	req := httptest.NewRequest(http.MethodPost, "/internal/fixes", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

@@ -28,6 +28,7 @@ type Server struct {
 func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *Server {
 	srv := &Server{store: s, k8sClient: k8sClient, fixGenerator: fg, mux: http.NewServeMux()}
 	srv.mux.HandleFunc("/internal/runs/", srv.handleInternal)
+	srv.mux.HandleFunc("/internal/fixes", srv.handleInternalFixCallback)
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
 	srv.mux.HandleFunc("/api/runs/", srv.handleAPIRunDetail)
 	srv.mux.HandleFunc("/api/skills", srv.handleAPISkills)
@@ -92,6 +93,98 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// POST /internal/fixes — called by fix-generator Pod after producing a patch
+func (s *Server) handleInternalFixCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		FindingID        string `json:"findingID"`
+		DiagnosticRunRef string `json:"diagnosticRunRef"`
+		FindingTitle     string `json:"findingTitle"`
+		Target           struct {
+			Kind      string `json:"kind"`
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+		} `json:"target"`
+		Patch struct {
+			Type    string `json:"type"`
+			Content string `json:"content"`
+		} `json:"patch"`
+		BeforeSnapshot string `json:"beforeSnapshot"`
+		Explanation    string `json:"explanation"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.FindingID == "" || req.DiagnosticRunRef == "" ||
+		req.Target.Kind == "" || req.Target.Namespace == "" || req.Target.Name == "" ||
+		req.Patch.Content == "" {
+		http.Error(w, "findingID, diagnosticRunRef, target{kind,namespace,name}, patch.content are required",
+			http.StatusBadRequest)
+		return
+	}
+	if req.Patch.Type == "" {
+		req.Patch.Type = "strategic-merge"
+	}
+
+	name := fmt.Sprintf("fix-%s", req.FindingID)
+	cr := &v1alpha1.DiagnosticFix{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: req.Target.Namespace,
+		},
+		Spec: v1alpha1.DiagnosticFixSpec{
+			DiagnosticRunRef: req.DiagnosticRunRef,
+			FindingTitle:     req.FindingTitle,
+			FindingID:        req.FindingID,
+			Target: v1alpha1.FixTarget{
+				Kind:      req.Target.Kind,
+				Namespace: req.Target.Namespace,
+				Name:      req.Target.Name,
+			},
+			Strategy:         "dry-run",
+			ApprovalRequired: true,
+			Patch: v1alpha1.FixPatch{
+				Type:    req.Patch.Type,
+				Content: req.Patch.Content,
+			},
+			Rollback: v1alpha1.RollbackConfig{
+				Enabled:               true,
+				SnapshotBefore:        true,
+				AutoRollbackOnFailure: true,
+			},
+		},
+	}
+	if err := s.k8sClient.Create(r.Context(), cr); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = s.store.CreateFix(r.Context(), &store.Fix{
+		ID:               string(cr.UID),
+		RunID:            req.DiagnosticRunRef,
+		FindingID:        req.FindingID,
+		FindingTitle:     req.FindingTitle,
+		TargetKind:       req.Target.Kind,
+		TargetNamespace:  req.Target.Namespace,
+		TargetName:       req.Target.Name,
+		Strategy:         "dry-run",
+		ApprovalRequired: true,
+		PatchType:        req.Patch.Type,
+		PatchContent:     req.Patch.Content,
+		Phase:            store.FixPhasePendingApproval,
+		Message:          req.Explanation,
+		BeforeSnapshot:   req.BeforeSnapshot,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(cr)
 }
 
 // GET /api/runs
