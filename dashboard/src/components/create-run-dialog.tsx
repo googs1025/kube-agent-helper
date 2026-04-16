@@ -24,6 +24,7 @@ export function CreateRunDialog({ onCreated }: Props) {
   const [labelSelector, setLabelSelector] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [modelConfigRef, setModelConfigRef] = useState("anthropic-credentials");
+  const [timeoutSeconds, setTimeoutSeconds] = useState<string>("");
 
   function parseLabelSelector(tags: string[]): Record<string, string> {
     const result: Record<string, string> = {};
@@ -47,13 +48,14 @@ export function CreateRunDialog({ onCreated }: Props) {
       },
       skills: skills.length > 0 ? skills : undefined,
       modelConfigRef,
+      timeoutSeconds: timeoutSeconds ? Number(timeoutSeconds) : undefined,
     };
     setLoading(true);
     try {
       await createRun(body);
       setOpen(false);
       onCreated();
-      setName(""); setNamespaces([]); setLabelSelector([]); setSkills([]);
+      setName(""); setNamespaces([]); setLabelSelector([]); setSkills([]); setTimeoutSeconds("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "创建失败");
     } finally {
@@ -123,6 +125,15 @@ export function CreateRunDialog({ onCreated }: Props) {
               <input required value={modelConfigRef} onChange={(e) => setModelConfigRef(e.target.value)} placeholder="anthropic-credentials"
                 className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
               <p className="text-xs text-gray-400">引用集群中 ModelConfig CR 的名称</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Timeout <span className="font-normal normal-case text-gray-400">（秒，留空 = 不超时）</span>
+              </label>
+              <input type="number" min={0} value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)}
+                placeholder="600"
+                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
