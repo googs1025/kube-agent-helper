@@ -63,6 +63,7 @@ export default function RunsPage() {
                 <TableHead>Created</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Target</TableHead>
+                <TableHead>Message</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -85,6 +86,9 @@ export default function RunsPage() {
                     <TableCell className="text-sm text-gray-600">{formatTime(run.CreatedAt)}</TableCell>
                     <TableCell className="text-sm text-gray-600">{duration(run.StartedAt, run.CompletedAt)}</TableCell>
                     <TableCell className="text-sm text-gray-600">{target}</TableCell>
+                    <TableCell className="max-w-xs truncate text-sm text-gray-600" title={run.Message || ""}>
+                      {run.Message || "-"}
+                    </TableCell>
                   </TableRow>
                 );
               })}

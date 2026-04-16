@@ -52,7 +52,17 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
           <div><span className="font-medium">Completed:</span> {formatTime(run.CompletedAt)}</div>
           <div><span className="font-medium">Findings:</span> {findings?.length ?? 0}</div>
         </div>
-        {run.Message && <p className="mt-2 text-sm text-gray-700">{run.Message}</p>}
+        {run.Message && (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+            run.Status === "Failed"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : run.Status === "Running"
+                ? "border-yellow-200 bg-yellow-50 text-yellow-800"
+                : "border-gray-200 bg-gray-50 text-gray-700"
+          }`}>
+            {run.Message}
+          </div>
+        )}
       </div>
       <Separator className="mb-6" />
       <h2 className="mb-4 text-xl font-semibold">Findings</h2>
