@@ -32,7 +32,7 @@ function Nav() {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh">
+    <html lang="zh" suppressHydrationWarning>
       <head>
         <title>Kube Agent Helper</title>
         <script dangerouslySetInnerHTML={{ __html: preHydrationScript }} />
