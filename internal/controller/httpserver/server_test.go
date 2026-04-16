@@ -220,3 +220,18 @@ func TestPostRunWithTimeout(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Contains(t, w.Body.String(), `"timeoutSeconds":300`)
 }
+
+func TestPostRunWithOutputLanguage(t *testing.T) {
+	fs := &fakeStore{}
+	fc := newFakeK8sClient()
+	srv := httpserver.New(fs, fc)
+
+	body := `{"namespace":"default","target":{"scope":"namespace"},"modelConfigRef":"creds","outputLanguage":"zh"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Contains(t, w.Body.String(), `"outputLanguage":"zh"`)
+}

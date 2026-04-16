@@ -337,3 +337,63 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 	}
 	return m
 }
+
+func TestCompile_OutputLanguageEnv(t *testing.T) {
+	run := &k8saiV1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", UID: "u-1"},
+		Spec: k8saiV1.DiagnosticRunSpec{
+			Target:         k8saiV1.TargetSpec{Scope: "namespace"},
+			ModelConfigRef: "creds",
+			OutputLanguage: "zh",
+		},
+	}
+	tr := translator.New(translator.Config{AgentImage: "img", ControllerURL: "http://ctrl"},
+		&mockProvider{skills: []*store.Skill{{Name: "s", Enabled: true}}})
+
+	objs, err := tr.Compile(context.Background(), run)
+	assert.NoError(t, err)
+
+	var job *batchv1.Job
+	for _, o := range objs {
+		if j, ok := o.(*batchv1.Job); ok {
+			job = j
+			break
+		}
+	}
+	assert.NotNil(t, job, "translator should emit a Job")
+	var gotLang string
+	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "OUTPUT_LANGUAGE" {
+			gotLang = e.Value
+		}
+	}
+	assert.Equal(t, "zh", gotLang)
+}
+
+func TestCompile_OutputLanguageDefaultsToEn(t *testing.T) {
+	run := &k8saiV1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", UID: "u-2"},
+		Spec: k8saiV1.DiagnosticRunSpec{
+			Target:         k8saiV1.TargetSpec{Scope: "namespace"},
+			ModelConfigRef: "creds",
+			// OutputLanguage not set
+		},
+	}
+	tr := translator.New(translator.Config{AgentImage: "img", ControllerURL: "http://ctrl"},
+		&mockProvider{skills: []*store.Skill{{Name: "s", Enabled: true}}})
+
+	objs, _ := tr.Compile(context.Background(), run)
+	var job *batchv1.Job
+	for _, o := range objs {
+		if j, ok := o.(*batchv1.Job); ok {
+			job = j
+		}
+	}
+	var gotLang string
+	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "OUTPUT_LANGUAGE" {
+			gotLang = e.Value
+		}
+	}
+	assert.Equal(t, "en", gotLang, "default should be 'en'")
+}

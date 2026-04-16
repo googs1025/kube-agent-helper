@@ -180,6 +180,12 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 							{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
 							{Name: "ANTHROPIC_BASE_URL", Value: t.cfg.AnthropicBaseURL},
 							{Name: "MODEL", Value: t.cfg.Model},
+							{Name: "OUTPUT_LANGUAGE", Value: func() string {
+								if run.Spec.OutputLanguage != "" {
+									return run.Spec.OutputLanguage
+								}
+								return "en"
+							}()},
 							// Phase 1 simplification: ModelConfigRef is used directly as the Secret name.
 							// Phase 2 will resolve the ModelConfig CR to read APIKeyRef.Name and APIKeyRef.Key.
 							{
