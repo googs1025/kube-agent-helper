@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -203,4 +204,19 @@ func TestPostRunMissingModelConfig(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestPostRunWithTimeout(t *testing.T) {
+	fs := &fakeStore{}
+	fc := newFakeK8sClient()
+	srv := httpserver.New(fs, fc)
+
+	body := `{"namespace":"default","target":{"scope":"namespace"},"modelConfigRef":"creds","timeoutSeconds":300}`
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Contains(t, w.Body.String(), `"timeoutSeconds":300`)
 }

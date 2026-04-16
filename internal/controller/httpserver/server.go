@@ -306,6 +306,7 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 		} `json:"target"`
 		Skills         []string `json:"skills"`
 		ModelConfigRef string   `json:"modelConfigRef"`
+		TimeoutSeconds *int32   `json:"timeoutSeconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -335,6 +336,7 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 			},
 			Skills:         req.Skills,
 			ModelConfigRef: req.ModelConfigRef,
+			TimeoutSeconds: req.TimeoutSeconds,
 		},
 	}
 
