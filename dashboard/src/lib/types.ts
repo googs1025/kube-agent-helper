@@ -60,3 +60,22 @@ export interface CreateSkillRequest {
   enabled: boolean;
   priority?: number;
 }
+
+export interface Fix {
+  ID: string;
+  RunID: string;
+  FindingTitle: string;
+  TargetKind: string;
+  TargetNamespace: string;
+  TargetName: string;
+  Strategy: string;
+  ApprovalRequired: boolean;
+  PatchType: string;
+  PatchContent: string;
+  Phase: "PendingApproval" | "Approved" | "Applying" | "Succeeded" | "Failed" | "RolledBack" | "DryRunComplete";
+  ApprovedBy: string;
+  RollbackSnapshot: string;
+  Message: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
