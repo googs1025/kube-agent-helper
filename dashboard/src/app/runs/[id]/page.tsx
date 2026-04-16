@@ -1,11 +1,12 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
-import { useRun, useFindings } from "@/lib/api";
+import { useRun, useFindings, generateFix } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { SeverityBadge } from "@/components/severity-badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
@@ -19,6 +20,20 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
   const { id } = use(params);
   const { data: run, error: runErr, isLoading: runLoading } = useRun(id);
   const { data: findings, error: findErr, isLoading: findLoading } = useFindings(id);
+  const [generating, setGenerating] = useState<Record<string, boolean>>({});
+
+  async function handleGenerate(findingID: string) {
+    setGenerating((g) => ({ ...g, [findingID]: true }));
+    try {
+      await generateFix(findingID);
+      // SWR polling (5s interval) will pick up the new FixID; no explicit mutate needed
+    } catch (err) {
+      console.error("generateFix failed:", err);
+    } finally {
+      // Keep the "Generating..." label until SWR sees the new FixID (max 60s)
+      setTimeout(() => setGenerating((g) => ({ ...g, [findingID]: false })), 60000);
+    }
+  }
 
   if (runLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
   if (runErr) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
@@ -92,6 +107,17 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
                         <span className="font-medium">{t("runs.findings.suggestion")}: </span>{f.Suggestion}
                       </div>
                     )}
+                    <div className="mt-3 flex justify-end">
+                      {f.FixID ? (
+                        <Link href={`/fixes/${f.FixID}`} className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+                          {t("runs.findings.viewFix")} →
+                        </Link>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => handleGenerate(f.ID)} disabled={generating[f.ID]}>
+                          {generating[f.ID] ? t("runs.findings.generating") : t("runs.findings.generateFix")}
+                        </Button>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               ))}
