@@ -83,6 +83,8 @@ spec:
                     healthCheckTimeout:
                       type: integer
                       default: 300
+                findingID:
+                  type: string
             status:
               type: object
               properties:

@@ -155,6 +155,8 @@ type DiagnosticFixSpec struct {
 	ApprovalRequired bool     `json:"approvalRequired"`
 	Patch            FixPatch `json:"patch"`
 	Rollback         RollbackConfig `json:"rollback,omitempty"`
+	// +optional
+	FindingID string `json:"findingID,omitempty"`
 }
 
 type FixTarget struct {
