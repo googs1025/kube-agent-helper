@@ -7,6 +7,7 @@ import (
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -112,7 +113,15 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return r.completeRun(ctx, &run, store.PhaseFailed, msg)
 		}
 
-		// Still running — requeue
+		// Still running — check Pod health for early error signals
+		msg := r.podWaitingReason(ctx, job.Name, run.Namespace)
+		if msg != "" && msg != run.Status.Message {
+			run.Status.Message = msg
+			if err := r.Status().Update(ctx, &run); err != nil {
+				logger.Error(err, "failed to update run message")
+			}
+			_ = r.Store.UpdateRunStatus(ctx, string(run.UID), store.PhaseRunning, msg)
+		}
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -165,6 +174,41 @@ func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.
 
 func (r *DiagnosticRunReconciler) failRun(ctx context.Context, run *k8saiV1.DiagnosticRun, msg string) (ctrl.Result, error) {
 	return r.completeRun(ctx, run, store.PhaseFailed, msg)
+}
+
+// podWaitingReason lists pods for the given job and returns a human-readable
+// message if any container is in a waiting state (e.g. ImagePullBackOff).
+func (r *DiagnosticRunReconciler) podWaitingReason(ctx context.Context, jobName, namespace string) string {
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{"job-name": jobName},
+	); err != nil {
+		return ""
+	}
+	for _, pod := range podList.Items {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+				reason := cs.State.Waiting.Reason
+				detail := cs.State.Waiting.Message
+				if detail != "" {
+					return fmt.Sprintf("pod %s: %s — %s", pod.Name, reason, detail)
+				}
+				return fmt.Sprintf("pod %s: %s", pod.Name, reason)
+			}
+		}
+		for _, cs := range pod.Status.InitContainerStatuses {
+			if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+				reason := cs.State.Waiting.Reason
+				detail := cs.State.Waiting.Message
+				if detail != "" {
+					return fmt.Sprintf("pod %s (init): %s — %s", pod.Name, reason, detail)
+				}
+				return fmt.Sprintf("pod %s (init): %s", pod.Name, reason)
+			}
+		}
+	}
+	return ""
 }
 
 func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -296,6 +296,118 @@ func TestRunReconciler_RunningJobStillActive(t *testing.T) {
 	assert.Equal(t, "Running", updated.Status.Phase, "should stay Running")
 }
 
+func TestRunReconciler_RunningPodImagePullBackOff(t *testing.T) {
+	run := testRun()
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	now := metav1.Now()
+	run.Status.StartedAt = &now
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run-abc", Namespace: "default",
+			Labels: map[string]string{"job-name": "agent-test-run"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name: "agent",
+				State: corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{
+						Reason:  "ImagePullBackOff",
+						Message: "Back-off pulling image \"ghcr.io/kube-agent-helper/agent-runtime:latest\"",
+					},
+				},
+			}},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job, pod).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter, "should still requeue — not terminal yet")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase, "phase stays Running")
+	assert.Contains(t, updated.Status.Message, "ImagePullBackOff")
+}
+
+func TestRunReconciler_RunningPodCrashLoopBackOff(t *testing.T) {
+	run := testRun()
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	now := metav1.Now()
+	run.Status.StartedAt = &now
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run-xyz", Namespace: "default",
+			Labels: map[string]string{"job-name": "agent-test-run"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name: "agent",
+				State: corev1.ContainerState{
+					Waiting: &corev1.ContainerStateWaiting{
+						Reason:  "CrashLoopBackOff",
+						Message: "back-off 5m0s restarting failed container",
+					},
+				},
+			}},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job, pod).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter)
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase)
+	assert.Contains(t, updated.Status.Message, "CrashLoopBackOff")
+}
+
 func TestRunReconciler_TerminalNoOp(t *testing.T) {
 	run := testRun()
 	run.Status.Phase = "Succeeded"
