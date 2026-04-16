@@ -3,6 +3,7 @@ package reconciler_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -406,6 +407,83 @@ func TestRunReconciler_RunningPodCrashLoopBackOff(t *testing.T) {
 		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
 	assert.Equal(t, "Running", updated.Status.Phase)
 	assert.Contains(t, updated.Status.Message, "CrashLoopBackOff")
+}
+
+func TestRunReconciler_RunningTimeout(t *testing.T) {
+	timeout := int32(60) // 60 seconds
+	run := testRun()
+	run.Spec.TimeoutSeconds = &timeout
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	// StartedAt was 2 minutes ago — past the 60s timeout
+	past := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+	run.Status.StartedAt = &past
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.Zero(t, result.RequeueAfter, "terminal — should not requeue")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Failed", updated.Status.Phase)
+	assert.Contains(t, updated.Status.Message, "timed out")
+}
+
+func TestRunReconciler_RunningNoTimeoutWhenNil(t *testing.T) {
+	run := testRun()
+	// No TimeoutSeconds set — run.Spec.TimeoutSeconds is nil
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	past := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+	run.Status.StartedAt = &past
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter, "should keep polling — no timeout configured")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase)
 }
 
 func TestRunReconciler_TerminalNoOp(t *testing.T) {

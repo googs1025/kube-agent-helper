@@ -53,6 +53,8 @@ type DiagnosticRunSpec struct {
 	Target         TargetSpec `json:"target"`
 	Skills         []string   `json:"skills,omitempty"`
 	ModelConfigRef string     `json:"modelConfigRef"`
+	// +optional
+	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
 }
 
 type TargetSpec struct {
