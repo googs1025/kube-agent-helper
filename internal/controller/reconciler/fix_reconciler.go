@@ -205,7 +205,19 @@ func kindToGVK(kind string) schema.GroupVersionKind {
 	switch kind {
 	case "Deployment", "StatefulSet", "DaemonSet":
 		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: kind}
-	case "Service", "ConfigMap":
+	case "Pod", "Service", "ConfigMap", "Secret", "ServiceAccount", "Namespace", "PersistentVolumeClaim":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: kind}
+	case "Job", "CronJob":
+		return schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: kind}
+	case "Ingress", "NetworkPolicy":
+		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: kind}
+	case "PodDisruptionBudget":
+		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: kind}
+	case "HorizontalPodAutoscaler":
+		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: kind}
+	case "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding":
+		return schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: kind}
+	case "ResourceQuota", "LimitRange":
 		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: kind}
 	default:
 		return schema.GroupVersionKind{}

@@ -175,8 +175,21 @@ def _api_version_for_kind(kind: str) -> str:
         "Deployment":  "apps/v1",
         "StatefulSet": "apps/v1",
         "DaemonSet":   "apps/v1",
+        "Pod":         "v1",
         "Service":     "v1",
         "ConfigMap":   "v1",
+        "Secret":      "v1",
+        "ServiceAccount": "v1",
+        "Namespace":   "v1",
+        "PersistentVolumeClaim": "v1",
+        "ResourceQuota": "v1",
+        "LimitRange":  "v1",
+        "Job":         "batch/v1",
+        "CronJob":     "batch/v1",
+        "Ingress":     "networking.k8s.io/v1",
+        "NetworkPolicy": "networking.k8s.io/v1",
+        "PodDisruptionBudget": "policy/v1",
+        "HorizontalPodAutoscaler": "autoscaling/v2",
     }.get(kind, "")
 
 
