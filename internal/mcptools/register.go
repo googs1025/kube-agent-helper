@@ -87,6 +87,13 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithDescription("Show OpenAPI schema for a Kubernetes resource kind or field path"),
 		mcp.WithString("resource", mcp.Required(), mcp.Description("Kind or field path, e.g. Pod or Pod.spec.containers")),
 	), []string{"resource"}, NewKubectlExplainHandler(d))
+
+	registerTool(s, d, mcp.NewTool("kubectl_rollout_status",
+		mcp.WithDescription("Show Deployment or StatefulSet rollout status with ReplicaSet history"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Deployment or StatefulSet")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace")),
+	), []string{"kind", "name", "namespace"}, NewRolloutStatusHandler(d))
 }
 
 // RegisterAll registers all core and extension tools.
