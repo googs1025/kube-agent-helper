@@ -396,9 +396,26 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "bad json", http.StatusBadRequest)
 				return
 			}
+			// Update store
 			if err := s.store.UpdateFixApproval(r.Context(), fixID, body.ApprovedBy); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
+			}
+			// Also update the DiagnosticFix CR so the reconciler transitions
+			// from DryRunComplete/PendingApproval → Approved → applies the patch.
+			if s.k8sClient != nil {
+				if fixCR, err := s.findFixCRByStoreID(r.Context(), fixID); err == nil && fixCR != nil {
+					// Switch strategy from dry-run to auto so reconciler will apply
+					if fixCR.Spec.Strategy == "dry-run" {
+						fixCR.Spec.Strategy = "auto"
+						_ = s.k8sClient.Update(r.Context(), fixCR)
+					}
+					now := metav1.Now()
+					fixCR.Status.Phase = "Approved"
+					fixCR.Status.ApprovedBy = body.ApprovedBy
+					fixCR.Status.ApprovedAt = &now
+					_ = s.k8sClient.Status().Update(r.Context(), fixCR)
+				}
 			}
 			w.WriteHeader(http.StatusOK)
 			return
@@ -406,6 +423,16 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 			if err := s.store.UpdateFixPhase(r.Context(), fixID, store.FixPhaseFailed, "rejected by user"); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
+			}
+			// Also update the CR
+			if s.k8sClient != nil {
+				if fixCR, err := s.findFixCRByStoreID(r.Context(), fixID); err == nil && fixCR != nil {
+					now := metav1.Now()
+					fixCR.Status.Phase = "Failed"
+					fixCR.Status.Message = "rejected by user"
+					fixCR.Status.CompletedAt = &now
+					_ = s.k8sClient.Status().Update(r.Context(), fixCR)
+				}
 			}
 			w.WriteHeader(http.StatusOK)
 			return
@@ -571,6 +598,29 @@ func (s *Server) findRunByUID(ctx context.Context, uid string, out *v1alpha1.Dia
 		}
 	}
 	return fmt.Errorf("no DiagnosticRun with UID %s", uid)
+}
+
+func (s *Server) findFixCRByStoreID(ctx context.Context, storeID string) (*v1alpha1.DiagnosticFix, error) {
+	// Store ID = CR UID. List all Fix CRs and match.
+	var list v1alpha1.DiagnosticFixList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		return nil, err
+	}
+	for i := range list.Items {
+		if string(list.Items[i].UID) == storeID {
+			return &list.Items[i], nil
+		}
+	}
+	// Fallback: match by findingID-based name pattern
+	for i := range list.Items {
+		if list.Items[i].Spec.FindingID != "" {
+			fix, _ := s.store.GetFix(ctx, storeID)
+			if fix != nil && list.Items[i].Spec.FindingID == fix.FindingID {
+				return &list.Items[i], nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("no DiagnosticFix CR for store ID %s", storeID)
 }
 
 func randSuffix(n int) string {
