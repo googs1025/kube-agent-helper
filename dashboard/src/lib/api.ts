@@ -86,3 +86,26 @@ export async function generateFix(findingID: string): Promise<{ fixID?: string; 
   }
   return res.json();
 }
+
+export function useK8sNamespaces() {
+  return useSWR<{ name: string }[]>("/api/k8s/resources?kind=Namespace", fetcher);
+}
+
+export function useK8sResources(kind: string, namespace: string) {
+  const url = namespace
+    ? `/api/k8s/resources?kind=${kind}&namespace=${namespace}`
+    : null;
+  return useSWR<{ name: string; namespace: string }[]>(url, fetcher);
+}
+
+export async function getK8sResourceDetail(
+  kind: string,
+  namespace: string,
+  name: string
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `/api/k8s/resources?kind=${kind}&namespace=${namespace}&name=${name}`
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
