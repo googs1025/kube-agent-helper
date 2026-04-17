@@ -3,7 +3,42 @@
     "brand": "Kube Agent Helper",
     "runs": "诊断任务",
     "skills": "技能",
-    "fixes": "修复建议"
+    "fixes": "修复建议",
+    "about": "关于"
+  },
+  "overview": {
+    "title": "Kubernetes AI 诊断平台",
+    "subtitle": "声明式 CRD 驱动，AI 自动分析集群问题并生成修复建议",
+    "card.runs.title": "诊断任务",
+    "card.runs.desc": "创建 DiagnosticRun CR，AI Agent 自动扫描集群中的健康、安全、成本、可靠性问题",
+    "card.skills.title": "技能管理",
+    "card.skills.desc": "5 个内置分析技能 + 支持自定义 DiagnosticSkill CR，灵活扩展诊断维度",
+    "card.fixes.title": "智能修复",
+    "card.fixes.desc": "基于诊断发现一键生成 patch 或新资源，支持 Before/After diff 预览和人工审批"
+  },
+  "about": {
+    "title": "架构与功能",
+    "arch.title": "系统架构",
+    "arch.desc": "Controller 监听 CRD 变更，为每次诊断创建独立的 Agent Pod。Agent 通过 MCP 工具读取集群数据，调用 LLM 分析并产出结构化 Findings。用户可对 Finding 触发 Fix 生成，LLM 产出补丁后经审批由 Reconciler 应用。",
+    "crd.title": "CRD 概览",
+    "crd.run": "DiagnosticRun — 声明一次诊断任务，指定目标 namespace、技能列表、超时时间和输出语言",
+    "crd.skill": "DiagnosticSkill — 定义一个诊断维度的分析逻辑（Prompt + 工具白名单），支持内置和自定义",
+    "crd.model": "ModelConfig — LLM 提供商配置（API Key Secret 引用、模型名称）",
+    "crd.fix": "DiagnosticFix — 一条修复建议（patch 或新建资源），经人工审批后由 Reconciler 执行",
+    "flow.title": "诊断与修复流程",
+    "flow.step1": "1. 创建 DiagnosticRun",
+    "flow.step1.desc": "通过 Dashboard 或 kubectl 声明诊断任务，指定扫描范围和参数",
+    "flow.step2": "2. Agent Pod 执行诊断",
+    "flow.step2.desc": "Controller 创建隔离的 Agent Job，LLM 多轮调用 MCP 工具分析集群",
+    "flow.step3": "3. 查看 Findings",
+    "flow.step3.desc": "诊断完成后，结构化问题按维度（健康/安全/成本/可靠性）分组展示",
+    "flow.step4": "4. 生成修复建议",
+    "flow.step4.desc": "对任意 Finding 点击「生成修复建议」，LLM 读取目标资源后产出 patch",
+    "flow.step5": "5. 审批与执行",
+    "flow.step5.desc": "查看 Before/After diff，批准后 Reconciler 自动应用，失败时可自动回滚",
+    "tools.title": "MCP 工具集",
+    "tools.desc": "Agent Pod 内嵌 k8s-mcp-server（Go），提供 9 个只读工具：",
+    "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query"
   },
   "common": {
     "cancel": "取消",

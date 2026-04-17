@@ -3,7 +3,42 @@
     "brand": "Kube Agent Helper",
     "runs": "Runs",
     "skills": "Skills",
-    "fixes": "Fixes"
+    "fixes": "Fixes",
+    "about": "About"
+  },
+  "overview": {
+    "title": "Kubernetes AI Diagnostic Platform",
+    "subtitle": "CRD-driven, AI-powered cluster analysis with auto-fix capabilities",
+    "card.runs.title": "Diagnostic Runs",
+    "card.runs.desc": "Create a DiagnosticRun CR — an AI Agent automatically scans your cluster for health, security, cost, and reliability issues",
+    "card.skills.title": "Skill Management",
+    "card.skills.desc": "5 built-in analysis skills + custom DiagnosticSkill CRs for flexible diagnostic extensions",
+    "card.fixes.title": "Smart Fixes",
+    "card.fixes.desc": "Generate patches or new resources from findings with Before/After diff preview and human-in-the-loop approval"
+  },
+  "about": {
+    "title": "Architecture & Features",
+    "arch.title": "System Architecture",
+    "arch.desc": "The Controller watches CRD changes and creates isolated Agent Pods per diagnostic run. Agents read cluster data via MCP tools, call the LLM for analysis, and produce structured Findings. Users can trigger Fix generation from any Finding — the LLM produces a patch that goes through approval before the Reconciler applies it.",
+    "crd.title": "CRD Overview",
+    "crd.run": "DiagnosticRun — Declares a diagnostic task with target namespaces, skills, timeout, and output language",
+    "crd.skill": "DiagnosticSkill — Defines analysis logic for a dimension (Prompt + tool whitelist), built-in or custom",
+    "crd.model": "ModelConfig — LLM provider configuration (API Key Secret reference, model name)",
+    "crd.fix": "DiagnosticFix — A proposed fix (patch or new resource) with approval workflow and optional auto-rollback",
+    "flow.title": "Diagnostic & Fix Flow",
+    "flow.step1": "1. Create DiagnosticRun",
+    "flow.step1.desc": "Declare a diagnostic task via Dashboard or kubectl, specifying scan scope and parameters",
+    "flow.step2": "2. Agent Pod Executes",
+    "flow.step2.desc": "Controller creates an isolated Agent Job — LLM makes multi-turn MCP tool calls to analyze the cluster",
+    "flow.step3": "3. View Findings",
+    "flow.step3.desc": "Structured issues grouped by dimension (health / security / cost / reliability)",
+    "flow.step4": "4. Generate Fix",
+    "flow.step4.desc": "Click 'Generate Fix' on any finding — LLM reads the target resource and produces a patch",
+    "flow.step5": "5. Approve & Apply",
+    "flow.step5.desc": "Review Before/After diff, approve to let the Reconciler apply. Auto-rollback on failure.",
+    "tools.title": "MCP Tool Set",
+    "tools.desc": "Agent Pod embeds k8s-mcp-server (Go) with 9 read-only tools:",
+    "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query"
   },
   "common": {
     "cancel": "Cancel",

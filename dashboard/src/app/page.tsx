@@ -5,6 +5,7 @@ import { useRuns } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { CreateRunDialog } from "@/components/create-run-dialog";
+import { Activity, Cpu, Wrench } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -34,10 +35,32 @@ export default function RunsPage() {
   const succeeded = runs?.filter((r) => r.Status === "Succeeded").length ?? 0;
   const failed = runs?.filter((r) => r.Status === "Failed").length ?? 0;
 
+  const featureCards = [
+    { icon: Activity, title: t("overview.card.runs.title"), desc: t("overview.card.runs.desc"), href: "#runs", color: "text-blue-600 dark:text-blue-400" },
+    { icon: Cpu, title: t("overview.card.skills.title"), desc: t("overview.card.skills.desc"), href: "/skills", color: "text-green-600 dark:text-green-400" },
+    { icon: Wrench, title: t("overview.card.fixes.title"), desc: t("overview.card.fixes.desc"), href: "/fixes", color: "text-orange-600 dark:text-orange-400" },
+  ];
+
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t("runs.title")}</h1>
+      {/* Overview hero */}
+      <div className="mb-8 rounded-xl border bg-gradient-to-br from-blue-50 to-indigo-50 p-6 dark:border-gray-800 dark:from-gray-900 dark:to-gray-800">
+        <h1 className="text-2xl font-bold">{t("overview.title")}</h1>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t("overview.subtitle")}</p>
+        <div className="mt-4 grid grid-cols-3 gap-4">
+          {featureCards.map((card) => (
+            <Link key={card.title} href={card.href} className="group rounded-lg border bg-white p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
+              <card.icon className={`size-5 ${card.color}`} />
+              <h3 className="mt-2 text-sm font-semibold">{card.title}</h3>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{card.desc}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Runs section */}
+      <div id="runs" className="mb-6 flex items-center justify-between">
+        <h2 className="text-2xl font-bold">{t("runs.title")}</h2>
         <CreateRunDialog onCreated={() => mutate()} />
       </div>
       <div className="mb-6 grid grid-cols-4 gap-4">
