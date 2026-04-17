@@ -89,6 +89,24 @@ jobs:
         working-directory: dashboard
         run: npm run build
 
+  python-check:
+    name: Python Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify all Python files parse
+        run: |
+          find agent-runtime -name '*.py' | while read f; do
+            python3 -c "import ast; ast.parse(open('$f').read())" || exit 1
+            echo "  OK: $f"
+          done
+
   helm-lint:
     name: Helm Lint
     runs-on: ubuntu-latest
@@ -170,12 +188,17 @@ jobs:
               namespaces: ["default"]
             skills: ["pod-health-analyst"]
             modelConfigRef: "anthropic-credentials"
+            timeoutSeconds: 300
+            outputLanguage: zh
           EOF
 
       - name: Verify DiagnosticRun created
-        run: kubectl get diagnosticrun smoke-test -o jsonpath='{.spec.target.scope}' | grep namespace
+        run: |
+          kubectl get diagnosticrun smoke-test -o jsonpath='{.spec.target.scope}' | grep namespace
+          kubectl get diagnosticrun smoke-test -o jsonpath='{.spec.timeoutSeconds}' | grep 300
+          kubectl get diagnosticrun smoke-test -o jsonpath='{.spec.outputLanguage}' | grep zh
 
-      - name: Create DiagnosticFix CR
+      - name: Create DiagnosticFix CR (patch strategy)
         run: |
           cat <<'EOF' | kubectl apply -f -
           apiVersion: k8sai.io/v1alpha1
@@ -185,6 +208,7 @@ jobs:
           spec:
             diagnosticRunRef: "smoke-test"
             findingTitle: "Test finding"
+            findingID: "finding-123"
             target:
               kind: Deployment
               namespace: default
@@ -197,7 +221,34 @@ jobs:
           EOF
 
       - name: Verify DiagnosticFix created
-        run: kubectl get diagnosticfix smoke-fix -o jsonpath='{.spec.strategy}' | grep dry-run
+        run: |
+          kubectl get diagnosticfix smoke-fix -o jsonpath='{.spec.strategy}' | grep dry-run
+          kubectl get diagnosticfix smoke-fix -o jsonpath='{.spec.findingID}' | grep finding-123
+
+      - name: Create DiagnosticFix CR (create strategy)
+        run: |
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: k8sai.io/v1alpha1
+          kind: DiagnosticFix
+          metadata:
+            name: smoke-fix-create
+          spec:
+            diagnosticRunRef: "smoke-test"
+            findingTitle: "Missing NetworkPolicy"
+            findingID: "finding-456"
+            target:
+              kind: NetworkPolicy
+              namespace: default
+              name: default-deny
+            strategy: create
+            approvalRequired: true
+            patch:
+              type: strategic-merge
+              content: '{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"default-deny","namespace":"default"},"spec":{"podSelector":{}}}'
+          EOF
+
+      - name: Verify create-strategy Fix
+        run: kubectl get diagnosticfix smoke-fix-create -o jsonpath='{.spec.strategy}' | grep create
 
       - name: Helm template renders
         run: |
@@ -208,6 +259,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          kubectl delete diagnosticfix smoke-fix --ignore-not-found
+          kubectl delete diagnosticfix smoke-fix smoke-fix-create --ignore-not-found
           kubectl delete diagnosticrun smoke-test --ignore-not-found
           kubectl delete diagnosticskill pod-health-analyst --ignore-not-found
