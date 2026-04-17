@@ -69,7 +69,7 @@ export default function DiagnosePage() {
         ? `diagnose-${resourceName}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`
         : `diagnose-${namespace}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`;
 
-      await createRun({
+      const runId = await createRun({
         name: runName,
         namespace: "kube-agent-helper",
         target: {
@@ -82,7 +82,7 @@ export default function DiagnosePage() {
         outputLanguage: outputLang,
       });
 
-      router.push(`/diagnose/${encodeURIComponent(runName)}`);
+      router.push(`/diagnose/${encodeURIComponent(runId)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

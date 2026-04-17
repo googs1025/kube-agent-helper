@@ -5,7 +5,8 @@ export const dynamic = "force-dynamic";
 async function handler(req: NextRequest) {
   const apiURL = process.env.API_URL || "http://localhost:8080";
   const path = req.nextUrl.pathname;
-  const url = `${apiURL}${path}`;
+  const search = req.nextUrl.search;
+  const url = `${apiURL}${path}${search}`;
 
   const res = await fetch(url, {
     method: req.method,

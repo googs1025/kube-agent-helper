@@ -19,7 +19,7 @@ export function useSkills() {
   return useSWR<Skill[]>("/api/skills", fetcher, { refreshInterval: 10000 });
 }
 
-export async function createRun(body: CreateRunRequest): Promise<void> {
+export async function createRun(body: CreateRunRequest): Promise<string> {
   const res = await fetch("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -29,6 +29,9 @@ export async function createRun(body: CreateRunRequest): Promise<void> {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
   }
+  const obj = await res.json();
+  // Backend returns K8s object; uid is stored as ID in the run store
+  return (obj?.metadata?.uid as string) ?? "";
 }
 
 export async function createSkill(body: CreateSkillRequest): Promise<void> {
