@@ -116,6 +116,7 @@ func (s *Server) handleInternalFixCallback(w http.ResponseWriter, r *http.Reques
 		} `json:"patch"`
 		BeforeSnapshot string `json:"beforeSnapshot"`
 		Explanation    string `json:"explanation"`
+		Strategy       string `json:"strategy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -130,6 +131,10 @@ func (s *Server) handleInternalFixCallback(w http.ResponseWriter, r *http.Reques
 	}
 	if req.Patch.Type == "" {
 		req.Patch.Type = "strategic-merge"
+	}
+	strategy := req.Strategy
+	if strategy == "" {
+		strategy = "dry-run"
 	}
 
 	name := fmt.Sprintf("fix-%s", req.FindingID)
@@ -147,7 +152,7 @@ func (s *Server) handleInternalFixCallback(w http.ResponseWriter, r *http.Reques
 				Namespace: req.Target.Namespace,
 				Name:      req.Target.Name,
 			},
-			Strategy:         "dry-run",
+			Strategy:         strategy,
 			ApprovalRequired: true,
 			Patch: v1alpha1.FixPatch{
 				Type:    req.Patch.Type,
@@ -495,16 +500,6 @@ func (s *Server) handleAPIFindingAction(w http.ResponseWriter, r *http.Request) 
 	}
 	if finding == nil {
 		http.NotFound(w, r)
-		return
-	}
-
-	// Validate target kind is in the Fix CRD's allowed set
-	supportedKinds := map[string]bool{
-		"Deployment": true, "StatefulSet": true, "DaemonSet": true,
-		"Service": true, "ConfigMap": true,
-	}
-	if !supportedKinds[finding.ResourceKind] {
-		http.Error(w, fmt.Sprintf("unsupported target kind %q for fix generation (supported: Deployment, StatefulSet, DaemonSet, Service, ConfigMap)", finding.ResourceKind), http.StatusBadRequest)
 		return
 	}
 

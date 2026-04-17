@@ -33,21 +33,26 @@ def main() -> int:
         "name": target["name"],
         "apiVersion": _api_version_for_kind(target["kind"]),
     })
-    if not raw or raw.startswith("tool error") or raw.startswith("{\"error\""):
-        print(f"[error] failed to fetch target: {raw[:200]}", file=sys.stderr)
-        return 1
-    # raw is usually a JSON document (single object) from the MCP server.
-    # Pretty-print it for display + as the "before" snapshot.
-    try:
-        obj = json.loads(raw)
-        current_yaml = json.dumps(obj, indent=2)
-    except json.JSONDecodeError:
-        current_yaml = raw
 
-    # 2. Single LLM call to produce patch.
-    # Use httpx streaming (not the SDK's non-streaming call) to work around
-    # proxies that omit the initial text field in content_block_start events.
-    prompt = build_prompt(finding, current_yaml, OUTPUT_LANG)
+    # Determine if this is a patch-existing or create-new scenario.
+    resource_exists = True
+    current_yaml = ""
+    if not raw or raw.startswith("tool error") or "not found" in raw.lower() or raw.startswith("{\"error\""):
+        print(f"[info] target resource not found or inaccessible, will use create strategy")
+        resource_exists = False
+        current_yaml = ""
+    else:
+        try:
+            obj = json.loads(raw)
+            current_yaml = json.dumps(obj, indent=2)
+        except json.JSONDecodeError:
+            current_yaml = raw
+
+    # 2. LLM call — different prompt depending on patch vs create.
+    if resource_exists:
+        prompt = build_prompt(finding, current_yaml, OUTPUT_LANG)
+    else:
+        prompt = build_create_prompt(finding, OUTPUT_LANG)
     try:
         text = _stream_llm_call(prompt)
     except Exception as e:
@@ -60,22 +65,54 @@ def main() -> int:
         return 2
 
     # 3. POST callback
+    strategy = "dry-run" if resource_exists else "create"
     payload = {
         "findingID": finding["findingID"],
         "diagnosticRunRef": finding["runID"],
         "findingTitle": finding.get("title", ""),
         "target": target,
+        "strategy": strategy,
         "patch": {
             "type": parsed.get("type", "strategic-merge"),
             "content": parsed.get("content", ""),
         },
-        "beforeSnapshot": base64.b64encode(current_yaml.encode("utf-8")).decode(),
+        "beforeSnapshot": base64.b64encode(current_yaml.encode("utf-8")).decode() if current_yaml else "",
         "explanation": parsed.get("explanation", ""),
     }
     r = httpx.post(f"{CONTROLLER_URL}/internal/fixes", json=payload, timeout=30)
     r.raise_for_status()
     print(f"[info] fix created: {r.json().get('metadata', {}).get('name', '')}")
     return 0
+
+
+def build_create_prompt(finding: dict, lang: str) -> str:
+    """Prompt for creating a NEW resource (target doesn't exist yet)."""
+    lang_clause = (
+        "Write the `explanation` field in Simplified Chinese (简体中文)."
+        if lang == "zh"
+        else "Write the `explanation` field in English."
+    )
+    return f"""You are a Kubernetes fix suggestion generator.
+
+## Finding
+Title: {finding.get('title', '')}
+Description: {finding.get('description', '')}
+Suggestion: {finding.get('suggestion', '')}
+
+Target namespace: {finding.get('target', {}).get('namespace', 'default')}
+
+## Instructions
+The target resource does not exist yet. Generate a complete Kubernetes resource manifest
+that resolves this finding.
+
+Output a single JSON object with this exact schema:
+{{"type": "create", "content": "<full resource manifest as a JSON string>", "explanation": "<1-3 sentences>"}}
+
+- The `content` field must be a valid JSON string containing a complete Kubernetes resource
+  (with apiVersion, kind, metadata.name, metadata.namespace, and spec).
+- {lang_clause}
+- Output ONLY the JSON object. No prose, no code fences.
+"""
 
 
 def build_prompt(finding: dict, current_yaml: str, lang: str) -> str:

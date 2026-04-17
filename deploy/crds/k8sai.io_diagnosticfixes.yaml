@@ -46,14 +46,13 @@ spec:
                   properties:
                     kind:
                       type: string
-                      enum: [Deployment, StatefulSet, DaemonSet, Service, ConfigMap]
                     namespace:
                       type: string
                     name:
                       type: string
                 strategy:
                   type: string
-                  enum: [auto, dry-run]
+                  enum: [auto, dry-run, create]
                   default: auto
                 approvalRequired:
                   type: boolean

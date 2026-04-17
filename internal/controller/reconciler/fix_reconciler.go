@@ -62,19 +62,29 @@ func (r *DiagnosticFixReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 
-		if err := r.applyPatch(ctx, &fix); err != nil {
-			return r.failFix(ctx, &fix, fmt.Sprintf("apply patch failed: %s", err))
+		if fix.Spec.Strategy == "create" {
+			if err := r.createResource(ctx, &fix); err != nil {
+				return r.failFix(ctx, &fix, fmt.Sprintf("create resource failed: %s", err))
+			}
+		} else {
+			if err := r.applyPatch(ctx, &fix); err != nil {
+				return r.failFix(ctx, &fix, fmt.Sprintf("apply patch failed: %s", err))
+			}
 		}
 
+		msg := "Patch applied successfully"
+		if fix.Spec.Strategy == "create" {
+			msg = "Resource created successfully"
+		}
 		fix.Status.Phase = "Succeeded"
-		fix.Status.Message = "Patch applied successfully"
+		fix.Status.Message = msg
 		completedNow := metav1.Now()
 		fix.Status.CompletedAt = &completedNow
 		if err := r.Status().Update(ctx, &fix); err != nil {
 			return ctrl.Result{}, err
 		}
-		_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseSucceeded, "patch applied")
-		logger.Info("fix applied", "name", fix.Name)
+		_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseSucceeded, msg)
+		logger.Info("fix applied", "name", fix.Name, "strategy", fix.Spec.Strategy)
 		return ctrl.Result{}, nil
 
 	case "PendingApproval", "DryRunComplete", "Succeeded", "Failed", "RolledBack":
@@ -152,6 +162,24 @@ func (r *DiagnosticFixReconciler) rollback(ctx context.Context, fix *k8saiV1.Dia
 	_ = r.Status().Update(ctx, fix)
 	_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseRolledBack, "auto-rollback")
 	logger.Info("fix rolled back", "name", fix.Name)
+	return nil
+}
+
+// createResource handles strategy=create: parses patch.content as a full JSON
+// resource manifest and creates it in the cluster.
+func (r *DiagnosticFixReconciler) createResource(ctx context.Context, fix *k8saiV1.DiagnosticFix) error {
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(fix.Spec.Patch.Content), &obj); err != nil {
+		return fmt.Errorf("parse resource JSON: %w", err)
+	}
+	u := &unstructured.Unstructured{Object: obj}
+	// Ensure namespace matches the fix target
+	if u.GetNamespace() == "" {
+		u.SetNamespace(fix.Spec.Target.Namespace)
+	}
+	if err := r.Create(ctx, u); err != nil {
+		return fmt.Errorf("create %s/%s: %w", u.GetKind(), u.GetName(), err)
+	}
 	return nil
 }
 

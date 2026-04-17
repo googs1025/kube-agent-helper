@@ -148,7 +148,7 @@ type DiagnosticFixSpec struct {
 	DiagnosticRunRef string    `json:"diagnosticRunRef"`
 	FindingTitle     string    `json:"findingTitle"`
 	Target           FixTarget `json:"target"`
-	// +kubebuilder:validation:Enum=auto;dry-run
+	// +kubebuilder:validation:Enum=auto;dry-run;create
 	// +kubebuilder:default=auto
 	Strategy         string `json:"strategy"`
 	// +kubebuilder:default=true
@@ -160,7 +160,6 @@ type DiagnosticFixSpec struct {
 }
 
 type FixTarget struct {
-	// +kubebuilder:validation:Enum=Deployment;StatefulSet;DaemonSet;Service;ConfigMap
 	Kind      string `json:"kind"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
