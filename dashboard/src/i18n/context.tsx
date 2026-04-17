@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, ReactNode } from "react";
 import zh from "./zh.json";
 import en from "./en.json";
 
@@ -44,13 +44,16 @@ interface I18nCtx {
 
 const Ctx = createContext<I18nCtx | null>(null);
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("zh");
+function getInitialLang(): Lang {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("lang");
+    if (stored === "zh" || stored === "en") return stored;
+  }
+  return "zh";
+}
 
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem("lang") : null;
-    if (stored === "zh" || stored === "en") setLangState(stored);
-  }, []);
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>(getInitialLang);
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);

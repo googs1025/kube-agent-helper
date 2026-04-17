@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+// useEffect kept for applyClass side-effect only (not for setState)
 
 export type Theme = "dark" | "light";
 
@@ -11,15 +12,21 @@ interface ThemeCtx {
 
 const Ctx = createContext<ThemeCtx | null>(null);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+function getInitialTheme(): Theme {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("theme");
+    if (stored === "light") return "light";
+  }
+  return "dark";
+}
 
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+
+  // Apply the dark class on mount (side-effect only, no setState)
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem("theme") : null;
-    const initial: Theme = stored === "light" ? "light" : "dark";
-    setThemeState(initial);
-    applyClass(initial);
-  }, []);
+    applyClass(theme);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
