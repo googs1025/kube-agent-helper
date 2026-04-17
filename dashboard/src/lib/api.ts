@@ -19,7 +19,7 @@ export function useSkills() {
   return useSWR<Skill[]>("/api/skills", fetcher, { refreshInterval: 10000 });
 }
 
-export async function createRun(body: CreateRunRequest): Promise<void> {
+export async function createRun(body: CreateRunRequest): Promise<string> {
   const res = await fetch("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -29,6 +29,9 @@ export async function createRun(body: CreateRunRequest): Promise<void> {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
   }
+  const obj = await res.json();
+  // Backend returns K8s object; uid is stored as ID in the run store
+  return (obj?.metadata?.uid as string) ?? "";
 }
 
 export async function createSkill(body: CreateSkillRequest): Promise<void> {
@@ -84,5 +87,28 @@ export async function generateFix(findingID: string): Promise<{ fixID?: string; 
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
   }
+  return res.json();
+}
+
+export function useK8sNamespaces() {
+  return useSWR<{ name: string }[]>("/api/k8s/resources?kind=Namespace", fetcher);
+}
+
+export function useK8sResources(kind: string, namespace: string) {
+  const url = namespace
+    ? `/api/k8s/resources?kind=${kind}&namespace=${namespace}`
+    : null;
+  return useSWR<{ name: string; namespace: string }[]>(url, fetcher);
+}
+
+export async function getK8sResourceDetail(
+  kind: string,
+  namespace: string,
+  name: string
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `/api/k8s/resources?kind=${kind}&namespace=${namespace}&name=${name}`
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

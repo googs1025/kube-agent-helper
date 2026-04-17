@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +37,7 @@ func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *S
 	srv.mux.HandleFunc("/api/fixes", srv.handleAPIFixes)
 	srv.mux.HandleFunc("/api/fixes/", srv.handleAPIFixDetail)
 	srv.mux.HandleFunc("/api/findings/", srv.handleAPIFindingAction)
+	srv.mux.HandleFunc("/api/k8s/resources", srv.handleAPIK8sResources)
 	return srv
 }
 
@@ -621,6 +624,102 @@ func (s *Server) findFixCRByStoreID(ctx context.Context, storeID string) (*v1alp
 		}
 	}
 	return nil, fmt.Errorf("no DiagnosticFix CR for store ID %s", storeID)
+}
+
+// GET /api/k8s/resources?kind=X&namespace=Y&name=Z
+func (s *Server) handleAPIK8sResources(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	kind := r.URL.Query().Get("kind")
+	namespace := r.URL.Query().Get("namespace")
+	name := r.URL.Query().Get("name")
+
+	if kind == "" {
+		http.Error(w, "kind query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch kind {
+	case "Namespace":
+		s.handleListNamespaces(ctx, w)
+	case "Deployment":
+		s.handleK8sResource(ctx, w, namespace, name, &appsv1.DeploymentList{}, &appsv1.Deployment{})
+	case "Pod":
+		s.handleK8sResource(ctx, w, namespace, name, &corev1.PodList{}, &corev1.Pod{})
+	case "StatefulSet":
+		s.handleK8sResource(ctx, w, namespace, name, &appsv1.StatefulSetList{}, &appsv1.StatefulSet{})
+	case "DaemonSet":
+		s.handleK8sResource(ctx, w, namespace, name, &appsv1.DaemonSetList{}, &appsv1.DaemonSet{})
+	default:
+		http.Error(w, "unsupported kind: "+kind, http.StatusBadRequest)
+	}
+}
+
+func (s *Server) handleListNamespaces(ctx context.Context, w http.ResponseWriter) {
+	var list corev1.NamespaceList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	systemNS := map[string]bool{
+		"kube-system": true, "kube-public": true, "kube-node-lease": true,
+	}
+	items := make([]map[string]string, 0)
+	for _, ns := range list.Items {
+		if systemNS[ns.Name] {
+			continue
+		}
+		items = append(items, map[string]string{"name": ns.Name})
+	}
+	writeJSON(w, items)
+}
+
+func (s *Server) handleK8sResource(ctx context.Context, w http.ResponseWriter, namespace, name string, listObj client.ObjectList, singleObj client.Object) {
+	if namespace == "" {
+		http.Error(w, "namespace is required for this kind", http.StatusBadRequest)
+		return
+	}
+
+	if name != "" {
+		key := client.ObjectKey{Namespace: namespace, Name: name}
+		if err := s.k8sClient.Get(ctx, key, singleObj); err != nil {
+			if errors.IsNotFound(err) {
+				http.NotFound(w, nil)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, singleObj)
+		return
+	}
+
+	if err := s.k8sClient.List(ctx, listObj, client.InNamespace(namespace)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	raw, _ := json.Marshal(listObj)
+	var parsed struct {
+		Items []struct {
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(raw, &parsed)
+	items := make([]map[string]string, 0, len(parsed.Items))
+	for _, item := range parsed.Items {
+		items = append(items, map[string]string{
+			"name":      item.Metadata.Name,
+			"namespace": item.Metadata.Namespace,
+		})
+	}
+	writeJSON(w, items)
 }
 
 func randSuffix(n int) string {

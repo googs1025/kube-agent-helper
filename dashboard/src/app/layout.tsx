@@ -17,6 +17,7 @@ function Nav() {
           {t("nav.brand")}
         </Link>
         <div className="flex flex-1 gap-6 text-sm">
+          <Link href="/diagnose" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.diagnose")}</Link>
           <Link href="/" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.runs")}</Link>
           <Link href="/skills" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.skills")}</Link>
           <Link href="/fixes" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.fixes")}</Link>

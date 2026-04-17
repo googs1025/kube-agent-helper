@@ -87,6 +87,38 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithDescription("Show OpenAPI schema for a Kubernetes resource kind or field path"),
 		mcp.WithString("resource", mcp.Required(), mcp.Description("Kind or field path, e.g. Pod or Pod.spec.containers")),
 	), []string{"resource"}, NewKubectlExplainHandler(d))
+
+	registerTool(s, d, mcp.NewTool("node_status_summary",
+		mcp.WithDescription("Show node conditions, capacity, allocated resources, and taints"),
+		mcp.WithString("name", mcp.Description("Specific node name (omit for all nodes, max 20)")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector to filter nodes")),
+	), []string{"name", "labelSelector"}, NewNodeStatusSummaryHandler(d))
+
+	registerTool(s, d, mcp.NewTool("prometheus_alerts",
+		mcp.WithDescription("List active Prometheus alerts, sorted by severity"),
+		mcp.WithString("state", mcp.Description("Filter: firing, pending, or all (default firing)")),
+		mcp.WithString("labelFilter", mcp.Description("Filter by labels, e.g. namespace=prod,severity=critical")),
+	), []string{"state", "labelFilter"}, NewPrometheusAlertsHandler(d))
+
+	registerTool(s, d, mcp.NewTool("kubectl_rollout_status",
+		mcp.WithDescription("Show Deployment or StatefulSet rollout status with ReplicaSet history"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Deployment or StatefulSet")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace")),
+	), []string{"kind", "name", "namespace"}, NewRolloutStatusHandler(d))
+
+	registerTool(s, d, mcp.NewTool("pvc_status",
+		mcp.WithDescription("List PersistentVolumeClaim status, capacity, and binding info"),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace")),
+		mcp.WithString("name", mcp.Description("Specific PVC name (omit to list all)")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector to filter PVCs")),
+	), []string{"namespace", "name", "labelSelector"}, NewPVCStatusHandler(d))
+
+	registerTool(s, d, mcp.NewTool("network_policy_check",
+		mcp.WithDescription("Analyze NetworkPolicies affecting a specific Pod"),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace of the target Pod")),
+		mcp.WithString("podName", mcp.Required(), mcp.Description("Name of the Pod to analyze")),
+	), []string{"namespace", "podName"}, NewNetworkPolicyCheckHandler(d))
 }
 
 // RegisterAll registers all core and extension tools.

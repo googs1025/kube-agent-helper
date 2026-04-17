@@ -83,3 +83,8 @@ export interface Fix {
   CreatedAt: string;
   UpdatedAt: string;
 }
+
+export interface K8sResourceItem {
+  name: string;
+  namespace?: string;
+}

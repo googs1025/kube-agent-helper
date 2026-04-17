@@ -4,6 +4,7 @@
     "runs": "Runs",
     "skills": "Skills",
     "fixes": "Fixes",
+    "diagnose": "Diagnose",
     "about": "About"
   },
   "overview": {
@@ -37,8 +38,8 @@
     "flow.step5": "5. Approve & Apply",
     "flow.step5.desc": "Review Before/After diff, approve to let the Reconciler apply. Auto-rollback on failure.",
     "tools.title": "MCP Tool Set",
-    "tools.desc": "Agent Pod embeds k8s-mcp-server (Go) with 9 read-only tools:",
-    "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query"
+    "tools.desc": "Agent Pod embeds k8s-mcp-server (Go) with 14 read-only tools:",
+    "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query · kubectl_rollout_status · node_status_summary · prometheus_alerts · pvc_status · network_policy_check"
   },
   "common": {
     "cancel": "Cancel",
@@ -207,5 +208,22 @@
     "toast.rejected": "Fix suggestion rejected",
     "verify.successHint": "Patch applied successfully. Verify the resource with:",
     "verify.failHint": "Operation did not succeed. Check the resource with:"
+  },
+  "diagnose": {
+    "title": "Quick Diagnose",
+    "namespace": "Namespace",
+    "namespacePlaceholder": "Select namespace",
+    "resourceType": "Resource Type",
+    "resourceName": "Resource Name",
+    "resourceNamePlaceholder": "Select resource",
+    "symptoms": "Observed Symptoms",
+    "symptomsHint": "Select one or more, platform auto-selects diagnostic skills",
+    "outputLanguage": "Output Language",
+    "submit": "Start Diagnosis",
+    "submitting": "Creating...",
+    "error": "Failed to create diagnosis",
+    "recent": "Recent Diagnoses",
+    "recentEmpty": "No diagnoses yet",
+    "findings_count": "findings"
   }
 }

@@ -11,7 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -420,4 +422,86 @@ func TestGetFindings_IncludesFixID(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"FixID":"fix-uid-1"`)
+}
+
+func TestK8sResources_ListNamespaces(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "production"}}
+	nsSys := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}}
+	k8s := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, nsSys).Build()
+	srv := httpserver.New(&fakeStore{}, k8s, nil)
+
+	req := httptest.NewRequest("GET", "/api/k8s/resources?kind=Namespace", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var items []map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &items))
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item["name"]
+	}
+	assert.Contains(t, names, "production")
+	assert.NotContains(t, names, "kube-system")
+}
+
+func TestK8sResources_ListDeployments(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "web", Namespace: "prod",
+			Labels: map[string]string{"app": "web"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
+		},
+	}
+	k8s := fake.NewClientBuilder().WithScheme(scheme).WithObjects(deploy).Build()
+	srv := httpserver.New(&fakeStore{}, k8s, nil)
+
+	req := httptest.NewRequest("GET", "/api/k8s/resources?kind=Deployment&namespace=prod", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var items []map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &items))
+	require.Len(t, items, 1)
+	assert.Equal(t, "web", items[0]["name"])
+}
+
+func TestK8sResources_GetSingleDeployment(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "web", Namespace: "prod",
+			Labels: map[string]string{"app": "web"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
+		},
+	}
+	k8s := fake.NewClientBuilder().WithScheme(scheme).WithObjects(deploy).Build()
+	srv := httpserver.New(&fakeStore{}, k8s, nil)
+
+	req := httptest.NewRequest("GET", "/api/k8s/resources?kind=Deployment&namespace=prod&name=web", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	meta := result["metadata"].(map[string]interface{})
+	assert.Equal(t, "web", meta["name"])
+	spec := result["spec"].(map[string]interface{})
+	selector := spec["selector"].(map[string]interface{})
+	matchLabels := selector["matchLabels"].(map[string]interface{})
+	assert.Equal(t, "web", matchLabels["app"])
 }
