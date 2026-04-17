@@ -4,6 +4,7 @@
     "runs": "诊断任务",
     "skills": "技能",
     "fixes": "修复建议",
+    "diagnose": "诊断",
     "about": "关于"
   },
   "overview": {
@@ -37,8 +38,8 @@
     "flow.step5": "5. 审批与执行",
     "flow.step5.desc": "查看 Before/After diff，批准后 Reconciler 自动应用，失败时可自动回滚",
     "tools.title": "MCP 工具集",
-    "tools.desc": "Agent Pod 内嵌 k8s-mcp-server（Go），提供 9 个只读工具：",
-    "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query"
+    "tools.desc": "Agent Pod 内嵌 k8s-mcp-server（Go），提供 14 个只读工具：",
+    "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query · kubectl_rollout_status · node_status_summary · prometheus_alerts · pvc_status · network_policy_check"
   },
   "common": {
     "cancel": "取消",
@@ -207,5 +208,22 @@
     "toast.rejected": "修复建议已拒绝",
     "verify.successHint": "补丁已成功应用。可通过以下命令验证资源当前状态：",
     "verify.failHint": "操作未成功。可通过以下命令检查资源当前状态："
+  },
+  "diagnose": {
+    "title": "快速诊断",
+    "namespace": "命名空间",
+    "namespacePlaceholder": "选择命名空间",
+    "resourceType": "资源类型",
+    "resourceName": "资源名称",
+    "resourceNamePlaceholder": "选择资源",
+    "symptoms": "你观察到的症状",
+    "symptomsHint": "可多选，平台自动选择合适的诊断策略",
+    "outputLanguage": "输出语言",
+    "submit": "开始诊断",
+    "submitting": "创建中...",
+    "error": "创建诊断失败",
+    "recent": "最近的诊断",
+    "recentEmpty": "暂无诊断记录",
+    "findings_count": "个问题"
   }
 }
