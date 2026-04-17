@@ -1,8 +1,24 @@
 # kube-agent-helper 架构设计文档
 
-> 状态：草案 v0.1
-> 日期：2026-04-10
+> 状态：草案 v0.1 → **实际实现已大幅超前，本文档为初始设计参考**
+> 日期：2026-04-10（初稿），2026-04-17（追加实现状态说明）
 > 定位：参考 [kagent](https://github.com/kagent-dev/kagent) 与 [ci-agent](https://github.com/googs1025/ci-agent) 设计的 Kubernetes 原生 AI 助手
+
+> **注意**：本文档是项目启动时的设计草案。实际实现与此文档��在以下关键差异：
+>
+> | 设计文档描述 | 实际实现 |
+> |-------------|---------|
+> | Postgres + pgvector | **SQLite** (单文件，零依赖) |
+> | Claude Agent SDK (Python) | **原生 Anthropic API + httpx SSE streaming** |
+> | DiagnosticReport CRD | **不存在**，findings 直接写入 DiagnosticRun status |
+> | Data Collector (Watch + Prometheus) | **不存在**，Agent Pod 按需拉数据 |
+> | schedule 字段 | **不存在**，仅支持手动触发 |
+> | 3 个 CRD | **4 个 CRD** (加了 DiagnosticFix) |
+> | 3 个内置 Skill | **5 个内置 Skill** (加了 reliability-analyst, config-drift-analyst) |
+> | 无 Dashboard | **Next.js Dashboard** (i18n 中/英，dark/light 主题) |
+> | 无 Fix 功�� | **DiagnosticFix CRD** (LLM 生成 patch/create，HITL 审批，auto-rollback) |
+>
+> 关于当前架构的准确描述，请参考 [README.md](../README.md)。
 
 ---
 
