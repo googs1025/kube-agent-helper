@@ -106,6 +106,13 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
 		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace")),
 	), []string{"kind", "name", "namespace"}, NewRolloutStatusHandler(d))
+
+	registerTool(s, d, mcp.NewTool("pvc_status",
+		mcp.WithDescription("List PersistentVolumeClaim status, capacity, and binding info"),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace")),
+		mcp.WithString("name", mcp.Description("Specific PVC name (omit to list all)")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector to filter PVCs")),
+	), []string{"namespace", "name", "labelSelector"}, NewPVCStatusHandler(d))
 }
 
 // RegisterAll registers all core and extension tools.
