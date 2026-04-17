@@ -162,6 +162,14 @@
     "detail.finding": "对应发现",
     "detail.backToFixes": "返回修复列表",
     "detail.diffTitle": "资源变更预览",
-    "detail.diffUnavailable": "json-patch 类型的预览暂不支持"
+    "detail.diffUnavailable": "json-patch 类型的预览暂不支持",
+    "toast.approving": "正在提交批准，等待 reconciler 应用补丁...",
+    "toast.applying": "补丁正在应用中...",
+    "toast.succeeded": "补丁已成功应用！资源已更新。",
+    "toast.failed": "补丁应用失败",
+    "toast.rolledBack": "补丁应用失败，已自动回滚至原始状态",
+    "toast.rejected": "修复建议已拒绝",
+    "verify.successHint": "补丁已成功应用。可通过以下命令验证资源当前状态：",
+    "verify.failHint": "操作未成功。可通过以下命令检查资源当前状态："
   }
 }

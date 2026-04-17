@@ -162,6 +162,14 @@
     "detail.finding": "Finding",
     "detail.backToFixes": "Back to Fixes",
     "detail.diffTitle": "Resource Change Preview",
-    "detail.diffUnavailable": "Preview unavailable for json-patch"
+    "detail.diffUnavailable": "Preview unavailable for json-patch",
+    "toast.approving": "Submitting approval, waiting for reconciler to apply patch...",
+    "toast.applying": "Patch is being applied...",
+    "toast.succeeded": "Patch applied successfully! Resource has been updated.",
+    "toast.failed": "Patch application failed",
+    "toast.rolledBack": "Patch failed, automatically rolled back to original state",
+    "toast.rejected": "Fix suggestion rejected",
+    "verify.successHint": "Patch applied successfully. Verify the resource with:",
+    "verify.failHint": "Operation did not succeed. Check the resource with:"
   }
 }
