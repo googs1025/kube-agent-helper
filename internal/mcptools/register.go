@@ -88,6 +88,12 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithString("resource", mcp.Required(), mcp.Description("Kind or field path, e.g. Pod or Pod.spec.containers")),
 	), []string{"resource"}, NewKubectlExplainHandler(d))
 
+	registerTool(s, d, mcp.NewTool("node_status_summary",
+		mcp.WithDescription("Show node conditions, capacity, allocated resources, and taints"),
+		mcp.WithString("name", mcp.Description("Specific node name (omit for all nodes, max 20)")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector to filter nodes")),
+	), []string{"name", "labelSelector"}, NewNodeStatusSummaryHandler(d))
+
 	registerTool(s, d, mcp.NewTool("kubectl_rollout_status",
 		mcp.WithDescription("Show Deployment or StatefulSet rollout status with ReplicaSet history"),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("Deployment or StatefulSet")),
