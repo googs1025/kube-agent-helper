@@ -49,8 +49,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("zh");
 
   useEffect(() => {
-    const stored = localStorage.getItem("lang");
-    if (stored === "zh" || stored === "en") setLangState(stored);
+    const apply = (v: string | null) => {
+      if (v === "zh" || v === "en") setLangState(v);
+    };
+    apply(localStorage.getItem("lang"));
+    const handler = (e: StorageEvent) => { if (e.key === "lang") apply(e.newValue); };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
   }, []);
 
   const setLang = useCallback((l: Lang) => {
