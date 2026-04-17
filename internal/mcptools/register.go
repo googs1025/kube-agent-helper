@@ -113,6 +113,12 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithString("name", mcp.Description("Specific PVC name (omit to list all)")),
 		mcp.WithString("labelSelector", mcp.Description("Label selector to filter PVCs")),
 	), []string{"namespace", "name", "labelSelector"}, NewPVCStatusHandler(d))
+
+	registerTool(s, d, mcp.NewTool("network_policy_check",
+		mcp.WithDescription("Analyze NetworkPolicies affecting a specific Pod"),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace of the target Pod")),
+		mcp.WithString("podName", mcp.Required(), mcp.Description("Name of the Pod to analyze")),
+	), []string{"namespace", "podName"}, NewNetworkPolicyCheckHandler(d))
 }
 
 // RegisterAll registers all core and extension tools.
