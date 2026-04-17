@@ -1,0 +1,42 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-dashboard
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: {{ .Values.image.dashboard }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.dashboard.port }}
+        env:
+        - name: HOSTNAME
+          value: "0.0.0.0"
+        - name: API_URL
+          value: "http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:8080"
+        resources:
+          {{- toYaml .Values.dashboard.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-dashboard
+  ports:
+  - port: 80
+    targetPort: {{ .Values.dashboard.port }}
+{{- end }}

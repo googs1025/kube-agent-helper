@@ -23,24 +23,34 @@ type Config struct {
 	Model            string
 }
 
-type Translator struct {
-	cfg    Config
-	skills []*store.Skill
+// SkillProvider is the interface Translator uses to fetch enabled skills.
+// It is intentionally defined here (not in registry) to avoid coupling.
+type SkillProvider interface {
+	ListEnabled(ctx context.Context) ([]*store.Skill, error)
 }
 
-func New(cfg Config, skills []*store.Skill) *Translator {
-	return &Translator{cfg: cfg, skills: skills}
+type Translator struct {
+	cfg      Config
+	provider SkillProvider
+}
+
+func New(cfg Config, provider SkillProvider) *Translator {
+	return &Translator{cfg: cfg, provider: provider}
 }
 
 // Compile produces all Kubernetes objects needed for one DiagnosticRun.
-func (t *Translator) Compile(_ context.Context, run *k8saiV1.DiagnosticRun) ([]client.Object, error) {
+func (t *Translator) Compile(ctx context.Context, run *k8saiV1.DiagnosticRun) ([]client.Object, error) {
 	runID := string(run.UID)
 	if runID == "" {
 		runID = run.Name
 	}
 
-	// Select skills for this run
-	selected := t.selectSkills(run.Spec.Skills)
+	// Fetch skills from the provider (hot-reload: reads store on every call)
+	allSkills, err := t.provider.ListEnabled(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list skills: %w", err)
+	}
+	selected := selectSkills(allSkills, run.Spec.Skills)
 	if len(selected) == 0 {
 		return nil, fmt.Errorf("no enabled skills found for run %s", run.Name)
 	}
@@ -60,23 +70,17 @@ func (t *Translator) Compile(_ context.Context, run *k8saiV1.DiagnosticRun) ([]c
 	return []client.Object{sa, cm, rb, job}, nil
 }
 
-func (t *Translator) selectSkills(names []string) []*store.Skill {
+func selectSkills(skills []*store.Skill, names []string) []*store.Skill {
 	if len(names) == 0 {
-		var all []*store.Skill
-		for _, s := range t.skills {
-			if s.Enabled {
-				all = append(all, s)
-			}
-		}
-		return all
+		return skills
 	}
-	byName := make(map[string]*store.Skill, len(t.skills))
-	for _, s := range t.skills {
+	byName := make(map[string]*store.Skill, len(skills))
+	for _, s := range skills {
 		byName[s.Name] = s
 	}
 	var selected []*store.Skill
 	for _, n := range names {
-		if s, ok := byName[n]; ok && s.Enabled {
+		if s, ok := byName[n]; ok {
 			selected = append(selected, s)
 		}
 	}
@@ -176,6 +180,12 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 							{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
 							{Name: "ANTHROPIC_BASE_URL", Value: t.cfg.AnthropicBaseURL},
 							{Name: "MODEL", Value: t.cfg.Model},
+							{Name: "OUTPUT_LANGUAGE", Value: func() string {
+								if run.Spec.OutputLanguage != "" {
+									return run.Spec.OutputLanguage
+								}
+								return "en"
+							}()},
 							// Phase 1 simplification: ModelConfigRef is used directly as the Secret name.
 							// Phase 2 will resolve the ModelConfig CR to read APIKeyRef.Name and APIKeyRef.Key.
 							{

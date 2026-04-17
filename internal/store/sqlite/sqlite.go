@@ -231,6 +231,155 @@ func (s *SQLiteStore) GetSkill(ctx context.Context, name string) (*store.Skill, 
 	return sk, err
 }
 
+func (s *SQLiteStore) DeleteSkill(ctx context.Context, name string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM skills WHERE name = ?`, name)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// ── Fix methods ──────────────────────────────────────────────────────────
+
+func (s *SQLiteStore) CreateFix(ctx context.Context, f *store.Fix) error {
+	if f.ID == "" {
+		f.ID = uuid.NewString()
+	}
+	f.CreatedAt = time.Now()
+	f.UpdatedAt = f.CreatedAt
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO fixes (id, run_id, finding_title, target_kind, target_namespace, target_name,
+		  strategy, approval_required, patch_type, patch_content, phase, message,
+		  finding_id, before_snapshot, created_at, updated_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		f.ID, f.RunID, f.FindingTitle, f.TargetKind, f.TargetNamespace, f.TargetName,
+		f.Strategy, f.ApprovalRequired, f.PatchType, f.PatchContent,
+		string(f.Phase), f.Message, f.FindingID, f.BeforeSnapshot, f.CreatedAt, f.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetFix(ctx context.Context, id string) (*store.Fix, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
+		        strategy, approval_required, patch_type, patch_content, phase,
+		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+		        created_at, updated_at
+		 FROM fixes WHERE id = ?`, id)
+	return scanFix(row)
+}
+
+func (s *SQLiteStore) ListFixes(ctx context.Context, opts store.ListOpts) ([]*store.Fix, error) {
+	limit := opts.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
+		        strategy, approval_required, patch_type, patch_content, phase,
+		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+		        created_at, updated_at
+		 FROM fixes ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, opts.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	fixes := make([]*store.Fix, 0)
+	for rows.Next() {
+		f, err := scanFix(rows)
+		if err != nil {
+			return nil, err
+		}
+		fixes = append(fixes, f)
+	}
+	return fixes, rows.Err()
+}
+
+func (s *SQLiteStore) ListFixesByRun(ctx context.Context, runID string) ([]*store.Fix, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
+		        strategy, approval_required, patch_type, patch_content, phase,
+		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+		        created_at, updated_at
+		 FROM fixes WHERE run_id = ? ORDER BY created_at ASC`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	fixes := make([]*store.Fix, 0)
+	for rows.Next() {
+		f, err := scanFix(rows)
+		if err != nil {
+			return nil, err
+		}
+		fixes = append(fixes, f)
+	}
+	return fixes, rows.Err()
+}
+
+func (s *SQLiteStore) UpdateFixPhase(ctx context.Context, id string, phase store.FixPhase, msg string) error {
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE fixes SET phase=?, message=?, updated_at=? WHERE id=?`,
+		string(phase), msg, time.Now(), id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateFixApproval(ctx context.Context, id string, approvedBy string) error {
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE fixes SET approved_by=?, phase=?, updated_at=? WHERE id=?`,
+		approvedBy, string(store.FixPhaseApproved), time.Now(), id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateFixSnapshot(ctx context.Context, id string, snapshot string) error {
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE fixes SET rollback_snapshot=?, updated_at=? WHERE id=?`,
+		snapshot, time.Now(), id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func scanFix(s scanner) (*store.Fix, error) {
+	f := &store.Fix{}
+	var phase string
+	err := s.Scan(&f.ID, &f.RunID, &f.FindingTitle, &f.TargetKind, &f.TargetNamespace,
+		&f.TargetName, &f.Strategy, &f.ApprovalRequired, &f.PatchType, &f.PatchContent,
+		&phase, &f.ApprovedBy, &f.RollbackSnapshot, &f.Message,
+		&f.FindingID, &f.BeforeSnapshot,
+		&f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	f.Phase = store.FixPhase(phase)
+	return f, nil
+}
+
 // scanner unifies *sql.Row and *sql.Rows
 type scanner interface {
 	Scan(dest ...any) error

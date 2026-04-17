@@ -68,6 +68,14 @@ spec:
                 required:
                 - scope
                 type: object
+              timeoutSeconds:
+                type: integer
+                minimum: 0
+              outputLanguage:
+                enum:
+                - zh
+                - en
+                type: string
             required:
             - modelConfigRef
             - target

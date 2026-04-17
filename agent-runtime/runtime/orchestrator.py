@@ -1,15 +1,14 @@
 """Builds the orchestrator prompt and runs the agentic loop."""
 import json
 import os
-import subprocess
 from typing import List
 
 import anthropic
 
+from .mcp_client import discover_tools, call_mcp_tool
 from .skill_loader import Skill
 
 
-MCP_SERVER_PATH = os.environ.get("MCP_SERVER_PATH", "/usr/local/bin/k8s-mcp-server")
 TARGET_NAMESPACES = os.environ.get("TARGET_NAMESPACES", "default")
 
 
@@ -18,7 +17,22 @@ def build_prompt(skills: List[Skill]) -> str:
         f"- **{s.name}** ({s.dimension}): {s.prompt[:200]}..."
         for s in skills
     )
+    output_lang = os.environ.get("OUTPUT_LANGUAGE", "en")
+    if output_lang == "zh":
+        lang_instruction = (
+            "Output the `title`, `description`, and `suggestion` fields in Simplified Chinese "
+            "(简体中文). Keep enum fields (dimension, severity, resource_kind, resource_namespace, "
+            "resource_name) as English values."
+        )
+    else:
+        lang_instruction = (
+            "Output the `title`, `description`, and `suggestion` fields in English. "
+            "Keep enum fields (dimension, severity, resource_kind, resource_namespace, "
+            "resource_name) as English values."
+        )
     return f"""You are a Kubernetes diagnostic orchestrator.
+
+{lang_instruction}
 
 Target namespaces: {TARGET_NAMESPACES}
 
@@ -38,7 +52,7 @@ def run_agent(skills: List[Skill]) -> List[dict]:
     """Run the agentic loop using streaming API and return a list of findings."""
     client = anthropic.Anthropic()
 
-    tools = _discover_tools()
+    tools = discover_tools()
     print(f"[info] discovered {len(tools)} MCP tools")
     if tools:
         print(f"[info] tools: {[t['name'] for t in tools]}")
@@ -88,7 +102,7 @@ def run_agent(skills: List[Skill]) -> List[dict]:
             tool_results = []
             for block in response["content"]:
                 if block["type"] == "tool_use":
-                    result = _call_mcp_tool(block["name"], block["input"])
+                    result = call_mcp_tool(block["name"], block["input"])
                     print(f"[debug] tool result for {block['name']}: {result[:200]}")
                     tool_results.append({
                         "type": "tool_result",
@@ -202,65 +216,3 @@ def _stream_message(client, tools, messages) -> dict:
         result_blocks.append(block)
 
     return {"content": result_blocks, "stop_reason": stop_reason}
-
-
-def _discover_tools() -> list:
-    """Query k8s-mcp-server for available tools via MCP initialize."""
-    try:
-        proc = subprocess.run(
-            [MCP_SERVER_PATH, "--in-cluster"],
-            input=json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize",
-                              "params":{"protocolVersion":"2024-11-05",
-                                        "clientInfo":{"name":"agent","version":"0.1"},
-                                        "capabilities":{}}}) + "\n" +
-                  json.dumps({"jsonrpc":"2.0","method":"notifications/initialized"}) + "\n" +
-                  json.dumps({"jsonrpc":"2.0","id":2,"method":"tools/list"}) + "\n",
-            capture_output=True, text=True, timeout=10,
-        )
-        lines = [l for l in proc.stdout.split("\n") if l.strip()]
-        for line in lines:
-            parsed = json.loads(line)
-            if parsed.get("id") == 2 and "result" in parsed:
-                mcp_tools = parsed["result"].get("tools", [])
-                return [_mcp_to_anthropic_tool(t) for t in mcp_tools]
-    except Exception as e:
-        print(f"[warn] tool discovery failed: {e}")
-    return []
-
-
-def _mcp_to_anthropic_tool(t: dict) -> dict:
-    return {
-        "name": t["name"],
-        "description": t.get("description", ""),
-        "input_schema": t.get("inputSchema", {"type": "object", "properties": {}}),
-    }
-
-
-def _call_mcp_tool(name: str, args: dict) -> str:
-    """Call a tool on k8s-mcp-server via MCP stdio protocol."""
-    request = json.dumps({
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {"name": name, "arguments": args},
-    })
-    try:
-        proc = subprocess.run(
-            [MCP_SERVER_PATH, "--in-cluster"],
-            input=json.dumps({"jsonrpc":"2.0","id":0,"method":"initialize",
-                              "params":{"protocolVersion":"2024-11-05",
-                                        "clientInfo":{"name":"agent","version":"0.1"},
-                                        "capabilities":{}}}) + "\n" +
-                  json.dumps({"jsonrpc":"2.0","method":"notifications/initialized"}) + "\n" +
-                  request + "\n",
-            capture_output=True, text=True, timeout=30,
-        )
-        for line in proc.stdout.split("\n"):
-            if not line.strip():
-                continue
-            parsed = json.loads(line)
-            if parsed.get("id") == 1 and "result" in parsed:
-                content = parsed["result"].get("content", [])
-                if content:
-                    return content[0].get("text", "")
-    except Exception as e:
-        return f"tool error: {e}"
-    return ""

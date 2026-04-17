@@ -19,6 +19,7 @@ import (
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/reconciler"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 	sqlitestore "github.com/kube-agent-helper/kube-agent-helper/internal/store/sqlite"
@@ -82,19 +83,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load skills for translator
-	skills, err := st.ListSkills(context.Background())
-	if err != nil {
-		slog.Error("list skills", "error", err)
-		os.Exit(1)
-	}
+	// Create skill registry (reads from store on every call — hot-reload)
+	reg := registry.New(st)
 
 	tr := translator.New(translator.Config{
 		AgentImage:       agentImage,
 		ControllerURL:    controllerURL,
 		AnthropicBaseURL: anthropicBaseURL,
 		Model:            model,
-	}, skills)
+	}, reg)
+
+	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{
+		AgentImage:       agentImage,
+		ControllerURL:    controllerURL,
+		AnthropicBaseURL: anthropicBaseURL,
+		Model:            model,
+	})
 
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
@@ -120,8 +124,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&reconciler.DiagnosticFixReconciler{
+		Client: mgr.GetClient(),
+		Store:  st,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("setup fix reconciler", "error", err)
+		os.Exit(1)
+	}
+
 	// HTTP server as manager Runnable
-	httpSrv := httpserver.New(st)
+	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
 		slog.Error("add http server", "error", err)
 		os.Exit(1)

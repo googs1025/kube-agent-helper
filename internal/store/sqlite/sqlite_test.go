@@ -92,3 +92,37 @@ func TestSkill_Upsert(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 50, got.Priority)
 }
+
+func TestDeleteSkill(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	sk := &store.Skill{
+		Name:             "to-delete",
+		Dimension:        "health",
+		Prompt:           "test prompt",
+		ToolsJSON:        `["kubectl_get"]`,
+		RequiresDataJSON: `[]`,
+		Source:           "cr",
+		Enabled:          true,
+		Priority:         100,
+	}
+	require.NoError(t, st.UpsertSkill(ctx, sk))
+
+	got, err := st.GetSkill(ctx, "to-delete")
+	require.NoError(t, err)
+	assert.Equal(t, "to-delete", got.Name)
+
+	require.NoError(t, st.DeleteSkill(ctx, "to-delete"))
+
+	_, err = st.GetSkill(ctx, "to-delete")
+	assert.ErrorIs(t, err, store.ErrNotFound)
+}
+
+func TestDeleteSkill_NotFound(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	err := st.DeleteSkill(ctx, "nonexistent")
+	assert.ErrorIs(t, err, store.ErrNotFound)
+}
