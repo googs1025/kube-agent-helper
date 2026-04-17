@@ -17,7 +17,8 @@
     "yes": "是",
     "no": "否",
     "none": "-",
-    "processing": "处理中..."
+    "processing": "处理中...",
+    "updated": "更新时间"
   },
   "phase": {
     "Pending": "待处理",

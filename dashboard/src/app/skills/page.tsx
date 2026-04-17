@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { useSkills } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { Badge } from "@/components/ui/badge";
 import { CreateSkillDialog } from "@/components/create-skill-dialog";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -11,6 +13,11 @@ import {
 export default function SkillsPage() {
   const { t } = useI18n();
   const { data: skills, error, isLoading, mutate } = useSkills();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  function toggleExpand(id: string) {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
   if (isLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
   if (error) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
 
@@ -57,19 +64,54 @@ export default function SkillsPage() {
               {skills?.map((skill) => {
                 let tools: string[] = [];
                 try { tools = JSON.parse(skill.ToolsJSON); } catch { /* ignore */ }
+                let requiresData: string[] = [];
+                try { requiresData = JSON.parse(skill.RequiresDataJSON); } catch { /* ignore */ }
+                const isOpen = expanded[skill.ID] ?? false;
                 return (
-                  <TableRow key={skill.ID}>
-                    <TableCell className="font-mono text-sm font-medium">{skill.Name}</TableCell>
-                    <TableCell><Badge variant="outline">{t(`dimension.${skill.Dimension}`)}</Badge></TableCell>
-                    <TableCell><Badge variant={skill.Source === "cr" ? "default" : "secondary"}>{t(`skills.source.${skill.Source}`)}</Badge></TableCell>
-                    <TableCell>{skill.Enabled ? <span className="text-green-600 dark:text-green-400">{t("common.yes")}</span> : <span className="text-gray-400">{t("common.no")}</span>}</TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">{skill.Priority}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {tools.map((tool) => (<Badge key={tool} variant="outline" className="text-xs">{tool}</Badge>))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  <>
+                    <TableRow key={skill.ID} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50" onClick={() => toggleExpand(skill.ID)}>
+                      <TableCell className="font-mono text-sm font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          {isOpen ? <ChevronDown className="size-3.5 text-gray-400" /> : <ChevronRight className="size-3.5 text-gray-400" />}
+                          {skill.Name}
+                        </span>
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{t(`dimension.${skill.Dimension}`)}</Badge></TableCell>
+                      <TableCell><Badge variant={skill.Source === "cr" ? "default" : "secondary"}>{t(`skills.source.${skill.Source}`)}</Badge></TableCell>
+                      <TableCell>{skill.Enabled ? <span className="text-green-600 dark:text-green-400">{t("common.yes")}</span> : <span className="text-gray-400">{t("common.no")}</span>}</TableCell>
+                      <TableCell className="text-sm text-gray-600 dark:text-gray-400">{skill.Priority}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {tools.map((tool) => (<Badge key={tool} variant="outline" className="text-xs">{tool}</Badge>))}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {isOpen && (
+                      <TableRow key={skill.ID + "-detail"}>
+                        <TableCell colSpan={6} className="bg-gray-50 dark:bg-gray-800/30 p-0">
+                          <div className="px-6 py-4 space-y-3">
+                            <div>
+                              <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Prompt</p>
+                              <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 rounded-lg bg-gray-900 dark:bg-gray-950 text-gray-100 p-4 max-h-64 overflow-y-auto">{skill.Prompt}</pre>
+                            </div>
+                            {requiresData && requiresData.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">{t("skills.form.requiresData")}</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {requiresData.map((d) => (<Badge key={d} variant="outline" className="text-xs">{d}</Badge>))}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex gap-6 text-xs text-gray-500 dark:text-gray-400">
+                              <span>ID: <code className="font-mono">{skill.ID}</code></span>
+                              <span>{t("skills.col.source")}: {t(`skills.source.${skill.Source}`)}</span>
+                              <span>{t("common.updated")}: {new Date(skill.UpdatedAt).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 );
               })}
             </TableBody>

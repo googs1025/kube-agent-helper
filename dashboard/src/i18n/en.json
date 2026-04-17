@@ -17,7 +17,8 @@
     "yes": "Yes",
     "no": "No",
     "none": "-",
-    "processing": "Processing..."
+    "processing": "Processing...",
+    "updated": "Updated"
   },
   "phase": {
     "Pending": "Pending",
