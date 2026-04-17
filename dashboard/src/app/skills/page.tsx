@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useSkills } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { Badge } from "@/components/ui/badge";
@@ -68,8 +68,8 @@ export default function SkillsPage() {
                 try { requiresData = JSON.parse(skill.RequiresDataJSON); } catch { /* ignore */ }
                 const isOpen = expanded[skill.ID] ?? false;
                 return (
-                  <>
-                    <TableRow key={skill.ID} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50" onClick={() => toggleExpand(skill.ID)}>
+                  <Fragment key={skill.ID}>
+                    <TableRow className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50" onClick={() => toggleExpand(skill.ID)}>
                       <TableCell className="font-mono text-sm font-medium">
                         <span className="inline-flex items-center gap-1.5">
                           {isOpen ? <ChevronDown className="size-3.5 text-gray-400" /> : <ChevronRight className="size-3.5 text-gray-400" />}
@@ -87,7 +87,7 @@ export default function SkillsPage() {
                       </TableCell>
                     </TableRow>
                     {isOpen && (
-                      <TableRow key={skill.ID + "-detail"}>
+                      <TableRow>
                         <TableCell colSpan={6} className="bg-gray-50 dark:bg-gray-800/30 p-0">
                           <div className="px-6 py-4 space-y-3">
                             <div>
@@ -111,7 +111,7 @@ export default function SkillsPage() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </TableBody>
