@@ -498,6 +498,16 @@ func (s *Server) handleAPIFindingAction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Validate target kind is in the Fix CRD's allowed set
+	supportedKinds := map[string]bool{
+		"Deployment": true, "StatefulSet": true, "DaemonSet": true,
+		"Service": true, "ConfigMap": true,
+	}
+	if !supportedKinds[finding.ResourceKind] {
+		http.Error(w, fmt.Sprintf("unsupported target kind %q for fix generation (supported: Deployment, StatefulSet, DaemonSet, Service, ConfigMap)", finding.ResourceKind), http.StatusBadRequest)
+		return
+	}
+
 	// 2. Idempotency: if a fix already exists for this finding, return it.
 	fixes, err := s.store.ListFixesByRun(r.Context(), finding.RunID)
 	if err == nil {
