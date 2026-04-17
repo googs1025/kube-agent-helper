@@ -94,6 +94,12 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithString("labelSelector", mcp.Description("Label selector to filter nodes")),
 	), []string{"name", "labelSelector"}, NewNodeStatusSummaryHandler(d))
 
+	registerTool(s, d, mcp.NewTool("prometheus_alerts",
+		mcp.WithDescription("List active Prometheus alerts, sorted by severity"),
+		mcp.WithString("state", mcp.Description("Filter: firing, pending, or all (default firing)")),
+		mcp.WithString("labelFilter", mcp.Description("Filter by labels, e.g. namespace=prod,severity=critical")),
+	), []string{"state", "labelFilter"}, NewPrometheusAlertsHandler(d))
+
 	registerTool(s, d, mcp.NewTool("kubectl_rollout_status",
 		mcp.WithDescription("Show Deployment or StatefulSet rollout status with ReplicaSet history"),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("Deployment or StatefulSet")),
