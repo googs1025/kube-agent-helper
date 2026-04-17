@@ -85,6 +85,10 @@ jobs:
         working-directory: dashboard
         run: npm run lint
 
+      - name: Type check
+        working-directory: dashboard
+        run: npm run typecheck
+
       - name: Build
         working-directory: dashboard
         run: npm run build
@@ -106,6 +110,30 @@ jobs:
             python3 -c "import ast; ast.parse(open('$f').read())" || exit 1
             echo "  OK: $f"
           done
+
+  skill-lint:
+    name: Skill File Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate skill frontmatter
+        run: |
+          set -e
+          ERRORS=0
+          for f in skills/*.md; do
+            name=$(sed -n 's/^name: //p' "$f")
+            dimension=$(sed -n 's/^dimension: //p' "$f")
+            tools=$(sed -n 's/^tools: //p' "$f")
+            requires_data=$(sed -n 's/^requires_data: //p' "$f")
+            if [ -z "$name" ] || [ -z "$dimension" ] || [ -z "$tools" ] || [ -z "$requires_data" ]; then
+              echo "FAIL: $f missing required frontmatter (name/dimension/tools/requires_data)"
+              ERRORS=$((ERRORS+1))
+            else
+              echo "OK:   $f (name=$name, dimension=$dimension)"
+            fi
+          done
+          if [ $ERRORS -gt 0 ]; then exit 1; fi
 
   helm-lint:
     name: Helm Lint
