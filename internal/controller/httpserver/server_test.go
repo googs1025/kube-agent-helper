@@ -424,6 +424,116 @@ func TestGetFindings_IncludesFixID(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"FixID":"fix-uid-1"`)
 }
 
+func TestGetFix_Success(t *testing.T) {
+	fs := &fakeStore{}
+	fs.fixes = append(fs.fixes, &store.Fix{
+		ID:           "fix-123",
+		RunID:        "run-1",
+		FindingID:    "finding-1",
+		FindingTitle: "Pod crash",
+		Phase:        store.FixPhasePendingApproval,
+	})
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes/fix-123", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "fix-123", resp["ID"])
+	assert.Equal(t, "finding-1", resp["FindingID"])
+}
+
+func TestGetFix_NotFound(t *testing.T) {
+	fs := &fakeStore{}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes/unknown-id", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestApproveFix_Success(t *testing.T) {
+	fs := &fakeStore{}
+	fs.fixes = append(fs.fixes, &store.Fix{
+		ID:        "fix-456",
+		RunID:     "run-1",
+		FindingID: "finding-1",
+		Phase:     store.FixPhasePendingApproval,
+	})
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	body, _ := json.Marshal(map[string]string{"approvedBy": "admin"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/fixes/fix-456/approve", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestApproveFix_MissingApprovedBy(t *testing.T) {
+	fs := &fakeStore{}
+	fs.fixes = append(fs.fixes, &store.Fix{
+		ID:        "fix-789",
+		RunID:     "run-1",
+		FindingID: "finding-1",
+		Phase:     store.FixPhasePendingApproval,
+	})
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Send valid JSON but omit approvedBy — server should reject with 400
+	body, _ := json.Marshal(map[string]string{})
+	req := httptest.NewRequest(http.MethodPatch, "/api/fixes/fix-789/approve", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestRejectFix_Success(t *testing.T) {
+	fs := &fakeStore{}
+	fs.fixes = append(fs.fixes, &store.Fix{
+		ID:        "fix-abc",
+		RunID:     "run-1",
+		FindingID: "finding-1",
+		Phase:     store.FixPhasePendingApproval,
+	})
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/fixes/fix-abc/reject", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRejectFix_NotFound(t *testing.T) {
+	// rejectErrFakeStore returns ErrNotFound from UpdateFixPhase so that the
+	// server's reject handler responds with 404 for an unknown fix ID.
+	srv := httpserver.New(&rejectErrFakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/fixes/does-not-exist/reject", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// rejectErrFakeStore is a fakeStore variant whose UpdateFixPhase returns ErrNotFound.
+type rejectErrFakeStore struct {
+	fakeStore
+}
+
+func (r *rejectErrFakeStore) UpdateFixPhase(_ context.Context, _ string, _ store.FixPhase, _ string) error {
+	return store.ErrNotFound
+}
+
 func TestK8sResources_ListNamespaces(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)

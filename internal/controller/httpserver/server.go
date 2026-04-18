@@ -399,6 +399,10 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "bad json", http.StatusBadRequest)
 				return
 			}
+			if body.ApprovedBy == "" {
+				http.Error(w, "approvedBy is required", http.StatusBadRequest)
+				return
+			}
 			// Update store
 			if err := s.store.UpdateFixApproval(r.Context(), fixID, body.ApprovedBy); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -424,6 +428,10 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		case action == "reject" && r.Method == http.MethodPatch:
 			if err := s.store.UpdateFixPhase(r.Context(), fixID, store.FixPhaseFailed, "rejected by user"); err != nil {
+				if err == store.ErrNotFound {
+					http.NotFound(w, r)
+					return
+				}
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
