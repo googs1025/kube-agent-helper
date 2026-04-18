@@ -23,7 +23,7 @@ jobs:
         run: go vet ./...
 
       - name: Unit tests
-        run: go test $(go list ./... | grep -v test/envtest) -race -count=1 -timeout=120s
+        run: go test $(go list ./... | grep -v test/envtest | grep -v test/e2e) -race -count=1 -timeout=120s
 
   envtest:
     name: Integration Tests (envtest)
@@ -45,6 +45,21 @@ jobs:
 
       - name: Run envtest
         run: go test ./test/envtest/... -v -count=1 -timeout=120s
+
+  e2e-backend:
+    name: Backend E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Backend E2E tests
+        run: go test ./test/e2e/ -tags=e2e -v -count=1 -timeout=120s
 
   build:
     name: Build Binaries
@@ -88,6 +103,10 @@ jobs:
       - name: Type check
         working-directory: dashboard
         run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: dashboard
+        run: npx vitest run --reporter=verbose
 
       - name: Build
         working-directory: dashboard
