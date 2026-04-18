@@ -22,8 +22,99 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: Unit tests
-        run: go test $(go list ./... | grep -v test/envtest | grep -v test/e2e) -race -count=1 -timeout=120s
+      - name: Unit tests with coverage
+        run: |
+          go test $(go list ./... | grep -v test/envtest | grep -v test/e2e) \
+            -race -count=1 -timeout=120s \
+            -coverprofile=coverage.out -covermode=atomic
+
+      - name: Generate coverage report
+        if: always()
+        run: |
+          echo '## Go Test Coverage' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | tail -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverage = fs.readFileSync('coverage.out', 'utf8');
+            const { execSync } = require('child_process');
+            const report = execSync('go tool cover -func=coverage.out').toString();
+            const totalLine = report.split('\n').find(l => l.includes('total:'));
+            const total = totalLine ? totalLine.match(/[\d.]+%/)?.[0] : 'unknown';
+
+            // Build per-package summary
+            const lines = report.trim().split('\n');
+            const pkgMap = new Map();
+            for (const line of lines) {
+              if (line.includes('total:')) continue;
+              const match = line.match(/^(.+?)\s+\S+\s+([\d.]+%)/);
+              if (match) {
+                const pkg = match[1].replace('github.com/kube-agent-helper/kube-agent-helper/', '');
+                if (!pkgMap.has(pkg)) pkgMap.set(pkg, []);
+                pkgMap.get(pkg).push(match[2]);
+              }
+            }
+
+            let table = '| Package | Functions | Avg Coverage |\n|---------|-----------|-------------|\n';
+            const pkgSet = new Set();
+            for (const line of lines) {
+              if (line.includes('total:')) continue;
+              const match = line.match(/^(\S+)\s/);
+              if (match) {
+                const pkg = match[1].replace('github.com/kube-agent-helper/kube-agent-helper/', '');
+                const dir = pkg.substring(0, pkg.lastIndexOf('/'));
+                if (dir && !pkgSet.has(dir)) {
+                  pkgSet.add(dir);
+                  const funcs = lines.filter(l => l.includes(match[1].substring(0, match[1].lastIndexOf('/'))));
+                  const pcts = funcs.map(f => parseFloat(f.match(/([\d.]+)%/)?.[1] || '0'));
+                  const avg = pcts.length ? (pcts.reduce((a,b) => a+b, 0) / pcts.length).toFixed(1) : '0';
+                  table += `| ${dir} | ${pcts.length} | ${avg}% |\n`;
+                }
+              }
+            }
+
+            const body = [
+              '## 📊 Go Test Coverage Report',
+              '',
+              `**Total: ${total}**`,
+              '',
+              '<details><summary>Per-function details</summary>',
+              '',
+              '```',
+              report.split('\n').slice(-21).join('\n'),
+              '```',
+              '</details>',
+            ].join('\n');
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body?.includes('Go Test Coverage Report'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
   envtest:
     name: Integration Tests (envtest)
@@ -104,9 +195,27 @@ jobs:
         working-directory: dashboard
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Unit tests with coverage
         working-directory: dashboard
-        run: npx vitest run --reporter=verbose
+        run: npx vitest run --reporter=verbose --coverage
+
+      - name: Dashboard coverage summary
+        if: always()
+        working-directory: dashboard
+        run: |
+          echo '## Dashboard Test Coverage' >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "
+              const s = require('./coverage/coverage-summary.json').total;
+              const fmt = (v) => v.pct + '%';
+              console.log('| Metric | Coverage |');
+              console.log('|--------|----------|');
+              console.log('| Statements | ' + fmt(s.statements) + ' |');
+              console.log('| Branches | ' + fmt(s.branches) + ' |');
+              console.log('| Functions | ' + fmt(s.functions) + ' |');
+              console.log('| Lines | ' + fmt(s.lines) + ' |');
+            " >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Build
         working-directory: dashboard
