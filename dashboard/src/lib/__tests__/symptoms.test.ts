@@ -5,20 +5,20 @@ describe('symptomsToSkills', () => {
   it('returns the correct skills for a single symptom', () => {
     const result = symptomsToSkills(['cpu-high'])
     expect(result).toBeDefined()
-    expect(result).toEqual(expect.arrayContaining(['pod-health-analyst', 'pod-cost-analyst']))
-    expect(result).toHaveLength(2)
+    expect(result).toEqual(expect.arrayContaining(['pod-health-analyst', 'pod-cost-analyst', 'alert-responder']))
+    expect(result).toHaveLength(3)
   })
 
   it('returns deduplicated merged skills for multiple symptoms', () => {
-    // cpu-high: [pod-health-analyst, pod-cost-analyst]
-    // pod-restart: [pod-health-analyst, reliability-analyst]
-    // combined (deduplicated): [pod-health-analyst, pod-cost-analyst, reliability-analyst]
+    // cpu-high: [pod-health-analyst, pod-cost-analyst, alert-responder]
+    // pod-restart: [pod-health-analyst, reliability-analyst, alert-responder]
+    // combined (deduplicated): [pod-health-analyst, pod-cost-analyst, alert-responder, reliability-analyst]
     const result = symptomsToSkills(['cpu-high', 'pod-restart'])
     expect(result).toBeDefined()
     expect(result).toEqual(
-      expect.arrayContaining(['pod-health-analyst', 'pod-cost-analyst', 'reliability-analyst'])
+      expect.arrayContaining(['pod-health-analyst', 'pod-cost-analyst', 'reliability-analyst', 'alert-responder'])
     )
-    expect(result).toHaveLength(3)
+    expect(result).toHaveLength(4)
   })
 
   it('returns undefined for full-check', () => {
