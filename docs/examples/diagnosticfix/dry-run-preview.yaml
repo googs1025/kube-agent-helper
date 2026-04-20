@@ -1,0 +1,26 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticFix
+metadata:
+  name: preview-limits-fix
+  namespace: kube-agent-helper
+spec:
+  diagnosticRunRef: "prod-full-audit"
+  findingTitle: "Containers without resource limits"
+  target:
+    kind: Deployment
+    namespace: production
+    name: api-server
+  strategy: dry-run
+  approvalRequired: true
+  patch:
+    type: strategic-merge
+    content: |
+      spec:
+        template:
+          spec:
+            containers:
+            - name: api
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 512Mi

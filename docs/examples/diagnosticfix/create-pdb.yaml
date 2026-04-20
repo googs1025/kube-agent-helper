@@ -1,0 +1,27 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticFix
+metadata:
+  name: create-pdb-fix
+  namespace: kube-agent-helper
+spec:
+  diagnosticRunRef: "reliability-check"
+  findingTitle: "No PodDisruptionBudget for critical Deployment"
+  target:
+    kind: PodDisruptionBudget
+    namespace: production
+    name: payment-service-pdb
+  strategy: create
+  approvalRequired: true
+  patch:
+    type: strategic-merge
+    content: |
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: payment-service-pdb
+        namespace: production
+      spec:
+        minAvailable: 2
+        selector:
+          matchLabels:
+            app: payment-service

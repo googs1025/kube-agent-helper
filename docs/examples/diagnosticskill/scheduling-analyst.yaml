@@ -1,0 +1,39 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticSkill
+metadata:
+  name: scheduling-analyst
+  namespace: kube-agent-helper
+spec:
+  description: "检测 Pod 因资源不足无法调度的问题"
+  dimension: reliability
+  enabled: true
+  priority: 30
+  tools:
+    - kubectl_get
+    - kubectl_describe
+    - events_list
+    - node_list
+  requiresData:
+    - pods
+    - nodes
+  prompt: |
+    你是 Kubernetes 调度问题专家。
+
+    ## 步骤
+    1. 用 kubectl_get（kind=Pod）找出所有 Pending 状态的 Pod
+    2. 对每个 Pending Pod：
+       - 用 kubectl_describe 查看 Events 中的调度失败原因
+       - 用 events_list 获取相关事件
+    3. 用 node_list 查看各节点可用资源
+    4. 判断失败原因：Insufficient cpu/memory、Taints 不匹配、NodeSelector 无满足节点
+    5. 输出 finding JSON（dimension: reliability）
+
+    ## Finding 输出格式（每行一个 JSON）
+    {"dimension":"reliability","severity":"<high|medium>",
+     "title":"<简短标题>","description":"<详情>",
+     "resource_kind":"Pod","resource_namespace":"<ns>","resource_name":"<name>",
+     "suggestion":"<修复建议>"}
+
+    ## 严重程度
+    - high: 核心服务 Pod 超过 5 分钟无法调度
+    - medium: 非关键 Pod Pending 或偶发调度失败

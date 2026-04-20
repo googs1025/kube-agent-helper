@@ -1,0 +1,24 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticFix
+metadata:
+  name: fix-replica-count
+  namespace: kube-agent-helper
+spec:
+  diagnosticRunRef: "reliability-check"
+  findingTitle: "Single replica Deployment with no PDB"
+  target:
+    kind: Deployment
+    namespace: production
+    name: payment-service
+  strategy: auto
+  approvalRequired: true
+  patch:
+    type: strategic-merge
+    content: |
+      spec:
+        replicas: 3
+  rollback:
+    enabled: true
+    snapshotBefore: true
+    autoRollbackOnFailure: true
+    healthCheckTimeout: 120

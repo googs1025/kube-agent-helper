@@ -1,0 +1,14 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: prod-full-audit
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: namespace
+    namespaces:
+      - production
+      - staging
+  modelConfigRef: "prod-model"
+  timeoutSeconds: 600
+  outputLanguage: zh

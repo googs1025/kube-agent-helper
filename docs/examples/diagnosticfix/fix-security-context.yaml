@@ -1,0 +1,28 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticFix
+metadata:
+  name: fix-security-context
+  namespace: kube-agent-helper
+spec:
+  diagnosticRunRef: "security-audit-q2"
+  findingTitle: "Container running as root"
+  target:
+    kind: Deployment
+    namespace: production
+    name: web-frontend
+  strategy: auto
+  approvalRequired: true
+  patch:
+    type: json-patch
+    content: |
+      [
+        {"op": "add", "path": "/spec/template/spec/securityContext",
+         "value": {"runAsNonRoot": true, "runAsUser": 1000}},
+        {"op": "add", "path": "/spec/template/spec/containers/0/securityContext",
+         "value": {"readOnlyRootFilesystem": true, "allowPrivilegeEscalation": false}}
+      ]
+  rollback:
+    enabled: true
+    snapshotBefore: true
+    autoRollbackOnFailure: true
+    healthCheckTimeout: 300

@@ -1,0 +1,14 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: alert-response
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: namespace
+    namespaces: [monitoring, production]
+  skills:
+    - alert-responder
+    - node-health-analyst
+  modelConfigRef: "anthropic-credentials"
+  timeoutSeconds: 300

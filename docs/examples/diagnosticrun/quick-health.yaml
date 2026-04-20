@@ -1,0 +1,12 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: quick-health
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: namespace
+    namespaces: [default]
+  skills: [pod-health-analyst]
+  modelConfigRef: "anthropic-credentials"
+  timeoutSeconds: 120

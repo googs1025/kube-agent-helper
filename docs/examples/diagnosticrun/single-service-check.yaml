@@ -1,0 +1,17 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: payment-service-check
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: namespace
+    namespaces: [production]
+    labelSelector:
+      app: payment-service
+  skills:
+    - pod-health-analyst
+    - reliability-analyst
+    - network-troubleshooter
+  modelConfigRef: "anthropic-credentials"
+  timeoutSeconds: 180

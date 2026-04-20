@@ -1,0 +1,12 @@
+apiVersion: k8sai.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: prod-model
+  namespace: kube-agent-helper
+spec:
+  provider: anthropic
+  model: claude-opus-4-6
+  apiKeyRef:
+    name: anthropic-credentials
+    key: apiKey
+  maxTurns: 40
