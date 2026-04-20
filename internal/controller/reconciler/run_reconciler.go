@@ -42,6 +42,11 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	// Scheduled template run — managed by ScheduledRunReconciler, not here.
+	if run.Spec.Schedule != "" {
+		return ctrl.Result{}, nil
+	}
+
 	// Phase: Pending → Running
 	if run.Status.Phase == "" || run.Status.Phase == string(store.PhasePending) {
 		logger.Info("translating run", "name", run.Name)
