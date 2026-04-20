@@ -132,6 +132,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&reconciler.ScheduledRunReconciler{
+		Client: mgr.GetClient(),
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("setup scheduled run reconciler", "error", err)
+		os.Exit(1)
+	}
+
 	// HTTP server as manager Runnable
 	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
