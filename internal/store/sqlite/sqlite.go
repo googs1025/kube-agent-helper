@@ -401,3 +401,115 @@ func scanRun(s scanner) (*store.DiagnosticRun, error) {
 	}
 	return r, nil
 }
+
+func (s *SQLiteStore) UpsertEvent(ctx context.Context, e *store.Event) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO events (uid, namespace, kind, name, reason, message, type, count, first_time, last_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(uid) DO UPDATE SET
+			count     = excluded.count,
+			last_time = excluded.last_time,
+			message   = excluded.message`,
+		e.UID, e.Namespace, e.Kind, e.Name, e.Reason, e.Message,
+		e.Type, e.Count, e.FirstTime.Unix(), e.LastTime.Unix(),
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListEvents(ctx context.Context, opts store.ListEventsOpts) ([]*store.Event, error) {
+	query := `SELECT id, uid, namespace, kind, name, reason, message, type, count, first_time, last_time, created_at
+	          FROM events WHERE 1=1`
+	args := []interface{}{}
+
+	if opts.Namespace != "" {
+		query += " AND namespace = ?"
+		args = append(args, opts.Namespace)
+	}
+	if opts.Name != "" {
+		query += " AND name = ?"
+		args = append(args, opts.Name)
+	}
+	if opts.Type != "" {
+		query += " AND type = ?"
+		args = append(args, opts.Type)
+	}
+	if opts.SinceMinutes > 0 {
+		cutoff := time.Now().Add(-time.Duration(opts.SinceMinutes) * time.Minute).Unix()
+		query += " AND last_time >= ?"
+		args = append(args, cutoff)
+	}
+	query += " ORDER BY last_time DESC"
+	limit := opts.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query += fmt.Sprintf(" LIMIT %d", limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []*store.Event
+	for rows.Next() {
+		var ev store.Event
+		var firstTS, lastTS int64
+		var createdAt string
+		if err := rows.Scan(&ev.ID, &ev.UID, &ev.Namespace, &ev.Kind, &ev.Name,
+			&ev.Reason, &ev.Message, &ev.Type, &ev.Count, &firstTS, &lastTS, &createdAt); err != nil {
+			return nil, err
+		}
+		ev.FirstTime = time.Unix(firstTS, 0)
+		ev.LastTime = time.Unix(lastTS, 0)
+		events = append(events, &ev)
+	}
+	return events, rows.Err()
+}
+
+func (s *SQLiteStore) InsertMetricSnapshot(ctx context.Context, snap *store.MetricSnapshot) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO metric_snapshots (query, labels_json, value, ts) VALUES (?, ?, ?, ?)`,
+		snap.Query, snap.LabelsJSON, snap.Value, snap.Ts.Unix(),
+	)
+	return err
+}
+
+func (s *SQLiteStore) QueryMetricHistory(ctx context.Context, query string, sinceMinutes int) ([]*store.MetricSnapshot, error) {
+	cutoff := time.Now().Add(-time.Duration(sinceMinutes) * time.Minute).Unix()
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, query, labels_json, value, ts, created_at
+		 FROM metric_snapshots WHERE query = ? AND ts >= ?
+		 ORDER BY ts DESC LIMIT 500`,
+		query, cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var snaps []*store.MetricSnapshot
+	for rows.Next() {
+		var snap store.MetricSnapshot
+		var ts int64
+		var createdAt string
+		if err := rows.Scan(&snap.ID, &snap.Query, &snap.LabelsJSON, &snap.Value, &ts, &createdAt); err != nil {
+			return nil, err
+		}
+		snap.Ts = time.Unix(ts, 0)
+		snaps = append(snaps, &snap)
+	}
+	return snaps, rows.Err()
+}
+
+func (s *SQLiteStore) PurgeOldEvents(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM events WHERE last_time < ?`, before.Unix())
+	return err
+}
+
+func (s *SQLiteStore) PurgeOldMetrics(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM metric_snapshots WHERE ts < ?`, before.Unix())
+	return err
+}
