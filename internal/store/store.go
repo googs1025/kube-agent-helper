@@ -88,6 +88,41 @@ type Fix struct {
 	UpdatedAt        time.Time
 }
 
+// Event represents a stored Kubernetes event (Warning type, 7-day retention).
+type Event struct {
+	ID        int64
+	UID       string
+	Namespace string
+	Kind      string
+	Name      string
+	Reason    string
+	Message   string
+	Type      string
+	Count     int32
+	FirstTime time.Time
+	LastTime  time.Time
+	CreatedAt time.Time
+}
+
+// ListEventsOpts filters for ListEvents.
+type ListEventsOpts struct {
+	Namespace    string
+	Name         string
+	Type         string // "" = all, "Warning", "Normal"
+	SinceMinutes int    // 0 = all time
+	Limit        int
+}
+
+// MetricSnapshot represents a single scraped Prometheus metric data point.
+type MetricSnapshot struct {
+	ID         int64
+	Query      string
+	LabelsJSON string
+	Value      float64
+	Ts         time.Time
+	CreatedAt  time.Time
+}
+
 type ListOpts struct {
 	Limit  int
 	Offset int
@@ -119,6 +154,18 @@ type Store interface {
 	UpdateFixPhase(ctx context.Context, id string, phase FixPhase, msg string) error
 	UpdateFixApproval(ctx context.Context, id string, approvedBy string) error
 	UpdateFixSnapshot(ctx context.Context, id string, snapshot string) error
+
+	// Events (7-day retention)
+	UpsertEvent(ctx context.Context, e *Event) error
+	ListEvents(ctx context.Context, opts ListEventsOpts) ([]*Event, error)
+
+	// Metric snapshots
+	InsertMetricSnapshot(ctx context.Context, s *MetricSnapshot) error
+	QueryMetricHistory(ctx context.Context, query string, sinceMinutes int) ([]*MetricSnapshot, error)
+
+	// TTL cleanup
+	PurgeOldEvents(ctx context.Context, before time.Time) error
+	PurgeOldMetrics(ctx context.Context, before time.Time) error
 
 	Close() error
 }
