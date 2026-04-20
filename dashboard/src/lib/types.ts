@@ -7,6 +7,12 @@ export interface DiagnosticRun {
   StartedAt: string | null;
   CompletedAt: string | null;
   CreatedAt: string;
+  // Scheduled run fields (only present when spec.schedule is set)
+  Schedule?: string;
+  HistoryLimit?: number;
+  LastRunAt?: string | null;
+  NextRunAt?: string | null;
+  ActiveRuns?: string[];
 }
 
 export interface Finding {
@@ -49,6 +55,8 @@ export interface CreateRunRequest {
   modelConfigRef: string;
   timeoutSeconds?: number;
   outputLanguage?: "zh" | "en";
+  schedule?: string;
+  historyLimit?: number;
 }
 
 export interface CreateSkillRequest {

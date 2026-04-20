@@ -136,7 +136,12 @@
     "form.outputLanguage.en": "English",
     "form.submit": "Create Run",
     "form.submitting": "Creating...",
-    "form.error": "Failed to create"
+    "form.error": "Failed to create",
+    "detail.schedule": "Schedule",
+    "detail.nextRunAt": "Next Run",
+    "detail.lastRunAt": "Last Run",
+    "detail.activeRuns": "Child Runs",
+    "detail.scheduledBadge": "Scheduled"
   },
   "skills": {
     "title": "Skills",
@@ -224,6 +229,9 @@
     "error": "Failed to create diagnosis",
     "recent": "Recent Diagnoses",
     "recentEmpty": "No diagnoses yet",
-    "findings_count": "findings"
+    "findings_count": "findings",
+    "schedule": "Schedule (optional)",
+    "schedulePlaceholder": "Cron expression, e.g. 0 * * * * (hourly)",
+    "scheduleHint": "Leave empty for one-time run; fill to repeat on schedule"
   }
 }

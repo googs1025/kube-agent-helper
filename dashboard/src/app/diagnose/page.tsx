@@ -19,6 +19,7 @@ export default function DiagnosePage() {
   const [resourceName, setResourceName] = useState("");
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [outputLang, setOutputLang] = useState<"zh" | "en">("zh");
+  const [schedule, setSchedule] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -80,6 +81,7 @@ export default function DiagnosePage() {
         skills: symptomsToSkills(symptoms),
         modelConfigRef: "anthropic-credentials",
         outputLanguage: outputLang,
+        ...(schedule ? { schedule } : {}),
       });
 
       router.push(`/diagnose/${encodeURIComponent(runId)}`);
@@ -184,6 +186,18 @@ export default function DiagnosePage() {
               English
             </label>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">{t("diagnose.schedule")}</label>
+          <input
+            type="text"
+            value={schedule}
+            onChange={(e) => setSchedule(e.target.value)}
+            placeholder={t("diagnose.schedulePlaceholder")}
+            className="w-full rounded border px-3 py-2 text-sm dark:bg-gray-800 dark:border-gray-700 font-mono"
+          />
+          <p className="text-xs text-gray-500 mt-1">{t("diagnose.scheduleHint")}</p>
         </div>
 
         {error && <p className="text-sm text-red-600">{t("diagnose.error")}: {error}</p>}

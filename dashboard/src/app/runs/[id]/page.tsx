@@ -3,6 +3,7 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRun, useFindings, generateFix } from "@/lib/api";
+import type { DiagnosticRun } from "@/lib/types";
 import { useI18n } from "@/i18n/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { SeverityBadge } from "@/components/severity-badge";
@@ -10,9 +11,46 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return "-";
   return new Date(iso).toLocaleString();
+}
+
+function ScheduledRunInfo({ run }: { run: DiagnosticRun }) {
+  const { t } = useI18n();
+  if (!run.Schedule) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm dark:border-blue-800 dark:bg-blue-950">
+      <div className="flex items-center gap-2 font-medium text-blue-700 dark:text-blue-300 mb-2">
+        <span>🔁</span>
+        <span>{t("runs.detail.scheduledBadge")}</span>
+        <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded">{run.Schedule}</code>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-blue-600 dark:text-blue-400">
+        <div><span className="font-medium">{t("runs.detail.lastRunAt")}:</span> {formatTime(run.LastRunAt)}</div>
+        <div><span className="font-medium">{t("runs.detail.nextRunAt")}:</span> {formatTime(run.NextRunAt)}</div>
+      </div>
+      {run.ActiveRuns && run.ActiveRuns.length > 0 && (
+        <div className="mt-2">
+          <span className="font-medium">{t("runs.detail.activeRuns")}:</span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {run.ActiveRuns.slice(-5).map((name) => (
+              <Link
+                key={name}
+                href={`/diagnose/${encodeURIComponent(name)}`}
+                className="font-mono text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded hover:underline"
+              >
+                {name}
+              </Link>
+            ))}
+            {run.ActiveRuns.length > 5 && (
+              <span className="text-xs text-blue-500">+{run.ActiveRuns.length - 5} more</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -76,6 +114,7 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
             {run.Message}
           </div>
         )}
+        <ScheduledRunInfo run={run} />
       </div>
       <Separator className="mb-6" />
       <h2 className="mb-4 text-xl font-semibold">{t("runs.findings.title")}</h2>

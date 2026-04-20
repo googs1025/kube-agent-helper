@@ -136,7 +136,12 @@
     "form.outputLanguage.en": "English",
     "form.submit": "创建任务",
     "form.submitting": "创建中...",
-    "form.error": "创建失败"
+    "form.error": "创建失败",
+    "detail.schedule": "调度计划",
+    "detail.nextRunAt": "下次执行",
+    "detail.lastRunAt": "上次执行",
+    "detail.activeRuns": "历史子任务",
+    "detail.scheduledBadge": "周期任务"
   },
   "skills": {
     "title": "技能",
@@ -224,6 +229,9 @@
     "error": "创建诊断失败",
     "recent": "最近的诊断",
     "recentEmpty": "暂无诊断记录",
-    "findings_count": "个问题"
+    "findings_count": "个问题",
+    "schedule": "定时执行（可选）",
+    "schedulePlaceholder": "Cron 表达式，如 0 * * * *（每小时）",
+    "scheduleHint": "留空 = 一次性诊断；填写后自动按计划重复执行"
   }
 }
