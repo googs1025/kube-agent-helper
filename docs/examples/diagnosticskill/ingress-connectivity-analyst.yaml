@@ -1,0 +1,38 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticSkill
+metadata:
+  name: ingress-connectivity-analyst
+  namespace: kube-agent-helper
+spec:
+  description: "检测 Ingress 和 Service 端点连通性"
+  dimension: reliability
+  enabled: true
+  priority: 100
+  tools:
+    - kubectl_get
+    - kubectl_describe
+    - network_policy_list
+    - events_list
+  prompt: |
+    你是 Kubernetes 网络专家。
+
+    ## 步骤
+    1. 用 kubectl_get（kind=Ingress）列出所有 Ingress
+    2. 对每个 Ingress：
+       - 用 kubectl_describe 查看后端 Service 配置
+       - 用 kubectl_get（kind=Endpoints）检查 Service 是否有就绪端点
+       - 如端点为空，查找 Pod 和 selector 是否匹配
+    3. 用 network_policy_list 检查是否有 NetworkPolicy 阻断流量
+    4. 输出 finding JSON（dimension: reliability）
+
+    ## Finding 输出格式（每行一个 JSON）
+    {"dimension":"reliability","severity":"<critical|high|medium|low>",
+     "title":"<简短标题>","description":"<详情>",
+     "resource_kind":"Ingress","resource_namespace":"<ns>","resource_name":"<name>",
+     "suggestion":"<修复建议>"}
+
+    ## 严重程度
+    - critical: Service 端点为空（流量无法到达任何 Pod）
+    - high: Ingress 指向不存在的 Service
+    - medium: NetworkPolicy 可能阻断部分流量
+    - low: Ingress 缺少 TLS 配置

@@ -1,0 +1,12 @@
+apiVersion: k8sai.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: dev-model
+  namespace: kube-agent-helper
+spec:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  apiKeyRef:
+    name: anthropic-credentials
+    key: apiKey
+  maxTurns: 10

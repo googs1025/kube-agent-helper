@@ -1,0 +1,40 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticSkill
+metadata:
+  name: pvc-mount-analyst
+  namespace: kube-agent-helper
+spec:
+  description: "检测 PVC 挂载失败和存储异常"
+  dimension: reliability
+  enabled: true
+  priority: 100
+  tools:
+    - kubectl_get
+    - kubectl_describe
+    - pvc_list
+    - events_list
+  requiresData:
+    - pods
+  prompt: |
+    你是 Kubernetes 存储专家。
+
+    ## 步骤
+    1. 用 pvc_list 列出所有 PVC，重点关注状态非 Bound 的
+    2. 对异常 PVC 用 kubectl_describe 查看详情
+    3. 用 events_list 获取相关存储事件
+    4. 检查以下问题：
+       - PVC Pending（StorageClass 不存在或 PV 不足）
+       - PVC Lost（底层存储丢失）
+       - Pod 挂载失败（VolumeMountError）
+    5. 输出 finding JSON（dimension: reliability）
+
+    ## Finding 输出格式（每行一个 JSON）
+    {"dimension":"reliability","severity":"<critical|high|medium>",
+     "title":"<简短标题>","description":"<详情>",
+     "resource_kind":"PersistentVolumeClaim","resource_namespace":"<ns>","resource_name":"<name>",
+     "suggestion":"<修复建议>"}
+
+    ## 严重程度
+    - critical: 有状态服务的 PVC Lost 或无法挂载
+    - high: PVC Pending 超过 10 分钟
+    - medium: 存储容量使用率超过 80%

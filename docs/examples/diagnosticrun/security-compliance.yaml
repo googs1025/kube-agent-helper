@@ -1,0 +1,14 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: security-compliance
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: cluster
+  skills:
+    - pod-security-analyst
+    - config-drift-analyst
+  modelConfigRef: "prod-model"
+  outputLanguage: en
+  timeoutSeconds: 900
