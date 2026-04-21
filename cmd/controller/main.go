@@ -35,8 +35,9 @@ var (
 	skillsDir        string
 	anthropicBaseURL string
 	model            string
-	prometheusURL    string
-	metricsQueries   string
+	prometheusURL      string
+	agentPrometheusURL string
+	metricsQueries     string
 )
 
 func main() {
@@ -48,6 +49,7 @@ func main() {
 	flag.StringVar(&anthropicBaseURL, "anthropic-base-url", "", "Anthropic API base URL (empty = uses ANTHROPIC_BASE_URL env var)")
 	flag.StringVar(&model, "model", "", "LLM model name (empty = agent default)")
 	flag.StringVar(&prometheusURL, "prometheus-url", "", "Prometheus API base URL for metric scraping (optional)")
+	flag.StringVar(&agentPrometheusURL, "agent-prometheus-url", "", "Prometheus URL injected into agent pods (defaults to --prometheus-url)")
 	flag.StringVar(&metricsQueries, "metrics-queries", "", "Comma-separated PromQL queries to scrape (optional)")
 	flag.Parse()
 
@@ -87,7 +89,7 @@ func main() {
 	// Manager
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:         scheme,
-		Metrics: metricsserver.Options{BindAddress: ":9090"},
+		Metrics: metricsserver.Options{BindAddress: ":19090"},
 	})
 	if err != nil {
 		slog.Error("new manager", "error", err)
@@ -103,11 +105,16 @@ func main() {
 	// Create skill registry (reads from store on every call — hot-reload)
 	reg := registry.New(st)
 
+	effectiveAgentPrometheusURL := agentPrometheusURL
+	if effectiveAgentPrometheusURL == "" {
+		effectiveAgentPrometheusURL = prometheusURL
+	}
 	tr := translator.NewWithClient(translator.Config{
 		AgentImage:       agentImage,
 		ControllerURL:    controllerURL,
 		AnthropicBaseURL: anthropicBaseURL,
 		Model:            model,
+		PrometheusURL:    effectiveAgentPrometheusURL,
 	}, reg, mgr.GetClient())
 
 	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{
