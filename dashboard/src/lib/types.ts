@@ -1,8 +1,9 @@
 export interface DiagnosticRun {
   ID: string;
+  Name?: string;
   TargetJSON: string;
   SkillsJSON: string;
-  Status: "Pending" | "Running" | "Succeeded" | "Failed";
+  Status: "Pending" | "Running" | "Succeeded" | "Failed" | "Scheduled";
   Message: string;
   StartedAt: string | null;
   CompletedAt: string | null;
@@ -73,6 +74,7 @@ export interface CreateSkillRequest {
 
 export interface Fix {
   ID: string;
+  Name?: string;
   RunID: string;
   FindingID: string;
   FindingTitle: string;
@@ -95,4 +97,19 @@ export interface Fix {
 export interface K8sResourceItem {
   name: string;
   namespace?: string;
+}
+
+export interface KubeEvent {
+  ID: number;
+  UID: string;
+  Namespace: string;
+  Kind: string;
+  Name: string;
+  Reason: string;
+  Message: string;
+  Type: string;
+  Count: number;
+  FirstTime: string;
+  LastTime: string;
+  CreatedAt: string;
 }

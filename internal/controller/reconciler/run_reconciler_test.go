@@ -77,7 +77,19 @@ func (m *memStore) ListFixesByRun(_ context.Context, _ string) ([]*store.Fix, er
 func (m *memStore) UpdateFixPhase(_ context.Context, _ string, _ store.FixPhase, _ string) error { return nil }
 func (m *memStore) UpdateFixApproval(_ context.Context, _ string, _ string) error          { return nil }
 func (m *memStore) UpdateFixSnapshot(_ context.Context, _ string, _ string) error          { return nil }
-func (m *memStore) Close() error                                                           { return nil }
+func (m *memStore) UpsertEvent(_ context.Context, _ *store.Event) error { return nil }
+func (m *memStore) ListEvents(_ context.Context, _ store.ListEventsOpts) ([]*store.Event, error) {
+	return nil, nil
+}
+func (m *memStore) InsertMetricSnapshot(_ context.Context, _ *store.MetricSnapshot) error {
+	return nil
+}
+func (m *memStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*store.MetricSnapshot, error) {
+	return nil, nil
+}
+func (m *memStore) PurgeOldEvents(_ context.Context, _ time.Time) error  { return nil }
+func (m *memStore) PurgeOldMetrics(_ context.Context, _ time.Time) error { return nil }
+func (m *memStore) Close() error                                         { return nil }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -505,4 +517,46 @@ func TestRunReconciler_TerminalNoOp(t *testing.T) {
 
 	result := reconcileOnce(t, r)
 	assert.Zero(t, result.RequeueAfter)
+}
+
+// TestRunReconciler_RunningNoTimeoutWhenZero ensures that timeoutSeconds=0
+// is treated as "no timeout" (the > 0 guard fix). A run that started 2h ago
+// with timeout=0 should NOT be failed.
+func TestRunReconciler_RunningNoTimeoutWhenZero(t *testing.T) {
+	zero := int32(0)
+	run := testRun()
+	run.Spec.TimeoutSeconds = &zero
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	// StartedAt was 2 hours ago — would trigger timeout if 0 were respected
+	past := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	run.Status.StartedAt = &past
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "agent-test-run", Namespace: "default",
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter, "timeoutSeconds=0 should not trigger timeout")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase, "should remain Running with timeout=0")
 }

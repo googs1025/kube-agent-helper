@@ -42,7 +42,7 @@ func TestRegisterExtension_ToolCount(t *testing.T) {
 	RegisterExtension(s, d)
 
 	tools := s.ListTools()
-	assert.Len(t, tools, 10, "RegisterExtension should register exactly 10 extension tools")
+	assert.Len(t, tools, 12, "RegisterExtension should register exactly 12 extension tools")
 }
 
 func TestRegisterAll_TotalCount(t *testing.T) {
@@ -52,7 +52,7 @@ func TestRegisterAll_TotalCount(t *testing.T) {
 	RegisterAll(s, d)
 
 	tools := s.ListTools()
-	assert.Len(t, tools, 14, "RegisterAll should register all 14 tools (4 core + 10 extension)")
+	assert.Len(t, tools, 16, "RegisterAll should register all 16 tools (4 core + 12 extension)")
 }
 
 func TestRegisterAll_NoDuplicateNames(t *testing.T) {
@@ -64,7 +64,7 @@ func TestRegisterAll_NoDuplicateNames(t *testing.T) {
 	tools := s.ListTools()
 	// ListTools returns a map keyed by name, so duplicates would collapse.
 	// We verify the count still equals 14, confirming every name is unique.
-	require.Len(t, tools, 14, "each tool name must be unique — duplicates would reduce count")
+	require.Len(t, tools, 16, "each tool name must be unique — duplicates would reduce count")
 
 	// Also explicitly collect names and verify uniqueness as documentation.
 	seen := make(map[string]struct{}, len(tools))

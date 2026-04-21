@@ -5,6 +5,7 @@
     "skills": "技能",
     "fixes": "修复建议",
     "diagnose": "诊断",
+    "events": "事件",
     "about": "关于"
   },
   "overview": {
@@ -42,6 +43,9 @@
     "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query · kubectl_rollout_status · node_status_summary · prometheus_alerts · pvc_status · network_policy_check"
   },
   "common": {
+    "crdYaml": "CRD YAML",
+    "copy": "复制",
+    "copied": "已复制",
     "cancel": "取消",
     "create": "创建",
     "approve": "批准",
@@ -61,6 +65,7 @@
     "Running": "执行中",
     "Succeeded": "成功",
     "Failed": "失败",
+    "Scheduled": "定时",
     "PendingApproval": "待审批",
     "Approved": "已批准",
     "Applying": "应用中",
@@ -141,7 +146,16 @@
     "detail.nextRunAt": "下次执行",
     "detail.lastRunAt": "上次执行",
     "detail.activeRuns": "历史子任务",
-    "detail.scheduledBadge": "周期任务"
+    "detail.scheduledBadge": "周期任务",
+    "detail.crdNotFound": "CRD YAML 不可用（原始 DiagnosticRun CR 已被删除或无法访问）",
+    "form.schedule": "调度计划",
+    "form.scheduleHint": "留空=一次性任务",
+    "form.schedulePreset.none": "一次性",
+    "form.schedulePreset.hourly": "每小时",
+    "form.schedulePreset.daily": "每天 08:00",
+    "form.schedulePreset.weekly": "每周一",
+    "form.historyLimit": "历史保留数",
+    "form.historyLimitHint": "最多保留的已完成子任务数，默认 10"
   },
   "skills": {
     "title": "技能",
@@ -212,7 +226,27 @@
     "toast.rolledBack": "补丁应用失败，已自动回滚至原始状态",
     "toast.rejected": "修复建议已拒绝",
     "verify.successHint": "补丁已成功应用。可通过以下命令验证资源当前状态：",
-    "verify.failHint": "操作未成功。可通过以下命令检查资源当前状态："
+    "verify.failHint": "操作未成功。可通过以下命令检查资源当前状态：",
+    "detail.crdYaml": "DiagnosticFix CRD YAML"
+  },
+  "events": {
+    "title": "事件",
+    "col.time": "时间",
+    "col.namespace": "命名空间",
+    "col.resource": "资源",
+    "col.reason": "原因",
+    "col.message": "消息",
+    "col.count": "次数",
+    "filter.namespace": "命名空间",
+    "filter.name": "资源名称",
+    "filter.since": "时间范围",
+    "filter.since.15m": "15 分钟",
+    "filter.since.30m": "30 分钟",
+    "filter.since.1h": "1 小时",
+    "filter.since.6h": "6 小时",
+    "filter.since.1d": "1 天",
+    "empty": "暂无事件",
+    "loading": "加载事件..."
   },
   "diagnose": {
     "title": "快速诊断",
@@ -230,8 +264,24 @@
     "recent": "最近的诊断",
     "recentEmpty": "暂无诊断记录",
     "findings_count": "个问题",
+    "created": "诊断任务已创建",
+    "createdYAML": "生成的 CRD YAML",
+    "goToRun": "查看任务详情",
+    "createAnother": "再创建一个",
     "schedule": "定时执行（可选）",
     "schedulePlaceholder": "Cron 表达式，如 0 * * * *（每小时）",
-    "scheduleHint": "留空 = 一次性诊断；填写后自动按计划重复执行"
+    "scheduleHint": "留空 = 一次性诊断；填写后自动按计划重复执行",
+    "schedulePreset.none": "一次性",
+    "schedulePreset.hourly": "每小时",
+    "schedulePreset.daily": "每天 08:00",
+    "schedulePreset.weekly": "每周一 08:00",
+    "schedulePreset.custom": "自定义",
+    "cronHelp.title": "Cron 表达式格式",
+    "cronHelp.minute": "分钟",
+    "cronHelp.hour": "小时",
+    "cronHelp.day": "日期",
+    "cronHelp.month": "月份",
+    "cronHelp.weekday": "星期",
+    "cronHelp.hint": "常用：* 表示任意，*/2 表示每隔 2，1-5 表示范围，1,3 表示枚举"
   }
 }

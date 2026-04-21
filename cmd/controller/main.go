@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -21,6 +22,7 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/reconciler"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/collector"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 	sqlitestore "github.com/kube-agent-helper/kube-agent-helper/internal/store/sqlite"
 )
@@ -33,6 +35,8 @@ var (
 	skillsDir        string
 	anthropicBaseURL string
 	model            string
+	prometheusURL    string
+	metricsQueries   string
 )
 
 func main() {
@@ -41,9 +45,16 @@ func main() {
 	flag.StringVar(&agentImage, "agent-image", "ghcr.io/kube-agent-helper/agent-runtime:latest", "Agent Pod image")
 	flag.StringVar(&controllerURL, "controller-url", "http://controller.kube-agent-helper.svc:8080", "Controller URL for Agent callbacks")
 	flag.StringVar(&skillsDir, "skills-dir", "/skills", "Directory containing built-in SKILL.md files")
-	flag.StringVar(&anthropicBaseURL, "anthropic-base-url", "", "Anthropic API base URL (empty = default)")
+	flag.StringVar(&anthropicBaseURL, "anthropic-base-url", "", "Anthropic API base URL (empty = uses ANTHROPIC_BASE_URL env var)")
 	flag.StringVar(&model, "model", "", "LLM model name (empty = agent default)")
+	flag.StringVar(&prometheusURL, "prometheus-url", "", "Prometheus API base URL for metric scraping (optional)")
+	flag.StringVar(&metricsQueries, "metrics-queries", "", "Comma-separated PromQL queries to scrape (optional)")
 	flag.Parse()
+
+	// Fall back to environment variable if flag not set
+	if anthropicBaseURL == "" {
+		anthropicBaseURL = os.Getenv("ANTHROPIC_BASE_URL")
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -83,15 +94,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		slog.Error("create kube client", "error", err)
+		os.Exit(1)
+	}
+
 	// Create skill registry (reads from store on every call — hot-reload)
 	reg := registry.New(st)
 
-	tr := translator.New(translator.Config{
+	tr := translator.NewWithClient(translator.Config{
 		AgentImage:       agentImage,
 		ControllerURL:    controllerURL,
 		AnthropicBaseURL: anthropicBaseURL,
 		Model:            model,
-	}, reg)
+	}, reg, mgr.GetClient())
 
 	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{
 		AgentImage:       agentImage,
@@ -143,6 +160,27 @@ func main() {
 	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
 		slog.Error("add http server", "error", err)
+		os.Exit(1)
+	}
+
+	var queries []string
+	if metricsQueries != "" {
+		for _, q := range strings.Split(metricsQueries, ",") {
+			q = strings.TrimSpace(q)
+			if q != "" {
+				queries = append(queries, q)
+			}
+		}
+	}
+	col := &collector.Collector{
+		Config: collector.DefaultConfig(),
+		Store:  st,
+		Client: kubeClient,
+	}
+	col.Config.PrometheusURL = prometheusURL
+	col.Config.MetricsQueries = queries
+	if err := mgr.Add(col); err != nil {
+		slog.Error("add collector to manager", "error", err)
 		os.Exit(1)
 	}
 

@@ -19,6 +19,7 @@ const (
 
 type DiagnosticRun struct {
 	ID          string
+	Name        string // K8s CR name, populated at API layer (not persisted in SQLite)
 	TargetJSON  string
 	SkillsJSON  string
 	Status      Phase
@@ -69,6 +70,7 @@ const (
 
 type Fix struct {
 	ID               string
+	Name             string // K8s CR name, populated at API layer (not persisted in SQLite)
 	RunID            string
 	FindingTitle     string
 	TargetKind       string

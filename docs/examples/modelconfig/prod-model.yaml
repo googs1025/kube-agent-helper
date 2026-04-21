@@ -10,3 +10,4 @@ spec:
     name: anthropic-credentials
     key: apiKey
   maxTurns: 40
+  # baseURL: https://your-proxy.example.com/v1  # optional: override Anthropic API endpoint

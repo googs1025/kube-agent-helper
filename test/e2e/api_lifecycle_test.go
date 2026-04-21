@@ -10,7 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -535,4 +538,210 @@ func TestAPILifecycle(t *testing.T) {
 	if finding2ID != "" {
 		t.Logf("second finding captured: %s", finding2ID)
 	}
+}
+
+// ── Additional API lifecycle tests ────────────────────────────────────────────
+
+// doRequestRaw performs an HTTP request and returns the raw response body as a
+// string, without attempting JSON parsing. Useful for plain-text responses (e.g. YAML).
+func doRequestRaw(t *testing.T, ts *httptest.Server, method, path string, body interface{}) (int, string) {
+	t.Helper()
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(mustJSON(body))
+	}
+	req, err := http.NewRequest(method, ts.URL+path, reqBody)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
+}
+
+// TestAPIRejectFix verifies that PATCH /api/fixes/:id/reject transitions the
+// fix phase to Failed and stores the "rejected by user" message.
+func TestAPIRejectFix(t *testing.T) {
+	realStore := newSQLiteStore(t)
+	ctx := t.Context()
+	const fixUID = "fix-reject-e2e-1"
+
+	require.NoError(t, realStore.CreateFix(ctx, &store.Fix{
+		ID:               fixUID,
+		RunID:            "run-1",
+		FindingID:        "f-1",
+		FindingTitle:     "Replica mismatch",
+		TargetKind:       "Deployment",
+		TargetNamespace:  "default",
+		TargetName:       "web",
+		Phase:            store.FixPhasePendingApproval,
+		ApprovalRequired: true,
+	}))
+
+	fakeK8s := fake.NewClientBuilder().WithScheme(newAPITestScheme()).Build()
+	srv := httpserver.New(realStore, fakeK8s, nil)
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	// Reject the fix
+	code, _ := doRequest(t, ts, http.MethodPatch, "/api/fixes/"+fixUID+"/reject", nil)
+	require.Equal(t, http.StatusOK, code)
+
+	// Phase must be Failed; message must reflect rejection
+	code, body := doRequest(t, ts, http.MethodGet, "/api/fixes/"+fixUID, nil)
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, string(store.FixPhaseFailed), body["Phase"])
+	assert.Equal(t, "rejected by user", body["Message"])
+}
+
+// TestAPIScheduledTemplateMerge verifies that a K8s DiagnosticRun CR with
+// spec.schedule set (and no matching SQLite entry) is merged into GET /api/runs
+// with Status=Scheduled and the correct Name.
+func TestAPIScheduledTemplateMerge(t *testing.T) {
+	// No SQLite entries — the template exists only in K8s
+	realStore := newSQLiteStore(t)
+
+	scheduledCR := &v1alpha1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "weekly-audit-e2e",
+			Namespace: "default",
+			UID:       "sched-merge-uid-e2e",
+		},
+		Spec: v1alpha1.DiagnosticRunSpec{
+			Schedule:       "0 8 * * 1",
+			ModelConfigRef: "creds",
+			Target:         v1alpha1.TargetSpec{Scope: "cluster"},
+		},
+	}
+	fakeK8s := fake.NewClientBuilder().WithScheme(newAPITestScheme()).WithObjects(scheduledCR).Build()
+	srv := httpserver.New(realStore, fakeK8s, nil)
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	code, items := doRequestSlice(t, ts, http.MethodGet, "/api/runs", nil)
+	require.Equal(t, http.StatusOK, code)
+
+	var found map[string]interface{}
+	for _, item := range items {
+		if r, ok := item.(map[string]interface{}); ok && r["Name"] == "weekly-audit-e2e" {
+			found = r
+			break
+		}
+	}
+	require.NotNil(t, found, "scheduled template 'weekly-audit-e2e' should appear in /api/runs")
+	assert.Equal(t, "Scheduled", found["Status"])
+}
+
+// TestAPIRunCRDSyntheticFallback verifies that GET /api/runs/:id/crd returns a
+// synthetic YAML document (with a "synthesized from store" comment) when the
+// original K8s CR has been deleted but the SQLite record still exists.
+func TestAPIRunCRDSyntheticFallback(t *testing.T) {
+	realStore := newSQLiteStore(t)
+	ctx := t.Context()
+	const runUID = "crd-fallback-e2e-1"
+
+	require.NoError(t, realStore.CreateRun(ctx, &store.DiagnosticRun{
+		ID:         runUID,
+		TargetJSON: `{"scope":"namespace","namespaces":["production"]}`,
+		SkillsJSON: `["health-analyst"]`,
+		Status:     store.PhaseSucceeded,
+	}))
+
+	// Fake K8s client has no DiagnosticRun for this UID
+	fakeK8s := fake.NewClientBuilder().WithScheme(newAPITestScheme()).Build()
+	srv := httpserver.New(realStore, fakeK8s, nil)
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	code, body := doRequestRaw(t, ts, http.MethodGet, "/api/runs/"+runUID+"/crd", nil)
+	require.Equal(t, http.StatusOK, code)
+	assert.Contains(t, body, "synthesized from store", "should note the CR was synthesized")
+	assert.Contains(t, body, "apiVersion: k8sai.io/v1alpha1")
+	assert.Contains(t, body, "kind: DiagnosticRun")
+	assert.Contains(t, body, runUID)
+	assert.Contains(t, body, "Succeeded")
+
+	// A truly missing run (no K8s CR, no SQLite) must return 404
+	code, _ = doRequestRaw(t, ts, http.MethodGet, "/api/runs/does-not-exist/crd", nil)
+	assert.Equal(t, http.StatusNotFound, code)
+}
+
+// TestAPIEventLifecycle verifies end-to-end event storage and retrieval:
+// events inserted via the store appear in GET /api/events and can be filtered
+// by namespace.
+func TestAPIEventLifecycle(t *testing.T) {
+	realStore := newSQLiteStore(t)
+	ctx := t.Context()
+
+	now := time.Now()
+	require.NoError(t, realStore.UpsertEvent(ctx, &store.Event{
+		UID:       "ev-e2e-1",
+		Namespace: "default",
+		Kind:      "Pod",
+		Name:      "api-pod",
+		Reason:    "OOMKilled",
+		Message:   "container ran out of memory",
+		Type:      "Warning",
+		Count:     1,
+		FirstTime: now.Add(-5 * time.Minute),
+		LastTime:  now,
+	}))
+	require.NoError(t, realStore.UpsertEvent(ctx, &store.Event{
+		UID:       "ev-e2e-2",
+		Namespace: "production",
+		Kind:      "Deployment",
+		Name:      "web",
+		Reason:    "ScalingReplicaSet",
+		Message:   "Scaled up replica set web-abc to 3",
+		Type:      "Normal",
+		Count:     1,
+		FirstTime: now.Add(-2 * time.Minute),
+		LastTime:  now,
+	}))
+
+	fakeK8s := fake.NewClientBuilder().WithScheme(newAPITestScheme()).Build()
+	srv := httpserver.New(realStore, fakeK8s, nil)
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	t.Run("GET /api/events returns all events", func(t *testing.T) {
+		code, items := doRequestSlice(t, ts, http.MethodGet, "/api/events", nil)
+		require.Equal(t, http.StatusOK, code)
+		require.Len(t, items, 2)
+
+		uids := make([]string, 0, 2)
+		for _, item := range items {
+			if ev, ok := item.(map[string]interface{}); ok {
+				if uid, ok := ev["UID"].(string); ok {
+					uids = append(uids, uid)
+				}
+			}
+		}
+		assert.Contains(t, uids, "ev-e2e-1")
+		assert.Contains(t, uids, "ev-e2e-2")
+	})
+
+	t.Run("GET /api/events?namespace=default filters by namespace", func(t *testing.T) {
+		code, items := doRequestSlice(t, ts, http.MethodGet, "/api/events?namespace=default", nil)
+		require.Equal(t, http.StatusOK, code)
+		require.Len(t, items, 1)
+
+		ev, ok := items[0].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "ev-e2e-1", ev["UID"])
+		assert.Equal(t, "default", ev["Namespace"])
+		assert.Equal(t, "OOMKilled", ev["Reason"])
+	})
+
+	t.Run("GET /api/events with invalid since returns 400", func(t *testing.T) {
+		code, _ := doRequestRaw(t, ts, http.MethodGet, "/api/events?since=badvalue", nil)
+		assert.Equal(t, http.StatusBadRequest, code)
+	})
 }

@@ -66,8 +66,12 @@ export default function FixesPage() {
               {fixes?.map((fix) => (
                 <TableRow key={fix.ID}>
                   <TableCell>
-                    <Link href={`/fixes/${fix.ID}`} className="font-mono text-sm text-blue-600 hover:underline dark:text-blue-400">
-                      {fix.ID.slice(0, 8)}...
+                    <Link href={`/fixes/${fix.ID}`} className="text-blue-600 hover:underline dark:text-blue-400">
+                      {fix.Name ? (
+                        <span className="font-medium">{fix.Name}</span>
+                      ) : (
+                        <span className="font-mono text-sm">{fix.ID.slice(0, 8)}...</span>
+                      )}
                     </Link>
                   </TableCell>
                   <TableCell>

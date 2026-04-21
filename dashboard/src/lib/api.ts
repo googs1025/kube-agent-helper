@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix } from "./types";
+import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix, KubeEvent } from "./types";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -19,7 +19,7 @@ export function useSkills() {
   return useSWR<Skill[]>("/api/skills", fetcher, { refreshInterval: 10000 });
 }
 
-export async function createRun(body: CreateRunRequest): Promise<string> {
+export async function createRun(body: CreateRunRequest): Promise<{ id: string; yaml: string }> {
   const res = await fetch("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -30,8 +30,49 @@ export async function createRun(body: CreateRunRequest): Promise<string> {
     throw new Error(text || `HTTP ${res.status}`);
   }
   const obj = await res.json();
-  // Backend returns K8s object; uid is stored as ID in the run store
-  return (obj?.metadata?.uid as string) ?? "";
+  const id = (obj?.metadata?.uid as string) ?? "";
+  const yaml = toYAML(obj);
+  return { id, yaml };
+}
+
+function toYAML(obj: Record<string, unknown>): string {
+  // Remove managed fields for readability
+  const clean = JSON.parse(JSON.stringify(obj));
+  if (clean?.metadata) {
+    delete clean.metadata.managedFields;
+    delete clean.metadata.resourceVersion;
+    delete clean.metadata.generation;
+  }
+  return jsonToYaml(clean, 0);
+}
+
+function jsonToYaml(val: unknown, indent: number): string {
+  const pad = "  ".repeat(indent);
+  if (val === null || val === undefined) return "null";
+  if (typeof val === "boolean") return val ? "true" : "false";
+  if (typeof val === "number") return String(val);
+  if (typeof val === "string") {
+    if (val.includes("\n")) return `|\n${val.split("\n").map(l => pad + "  " + l).join("\n")}`;
+    if (/[:{}\[\],#&*?|<>=!%@`]/.test(val) || val === "") return JSON.stringify(val);
+    return val;
+  }
+  if (Array.isArray(val)) {
+    if (val.length === 0) return "[]";
+    return val.map(v => `\n${pad}- ${jsonToYaml(v, indent + 1).trimStart()}`).join("");
+  }
+  if (typeof val === "object") {
+    const entries = Object.entries(val as Record<string, unknown>).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return "{}";
+    return entries.map(([k, v]) => {
+      const rendered = jsonToYaml(v, indent + 1);
+      if (typeof v === "object" && v !== null && !Array.isArray(v) && Object.keys(v).length > 0)
+        return `\n${pad}${k}:${rendered}`;
+      if (Array.isArray(v) && v.length > 0)
+        return `\n${pad}${k}:${rendered}`;
+      return `\n${pad}${k}: ${rendered}`;
+    }).join("");
+  }
+  return String(val);
 }
 
 export async function createSkill(body: CreateSkillRequest): Promise<void> {
@@ -88,6 +129,16 @@ export async function generateFix(findingID: string): Promise<{ fixID?: string; 
     throw new Error(text || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+export function useEvents(opts?: { namespace?: string; name?: string; since?: number; limit?: number }) {
+  const params = new URLSearchParams();
+  if (opts?.namespace) params.set("namespace", opts.namespace);
+  if (opts?.name) params.set("name", opts.name);
+  if (opts?.since) params.set("since", String(opts.since));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const query = params.toString();
+  return useSWR<KubeEvent[]>(`/api/events${query ? `?${query}` : ""}`, fetcher, { refreshInterval: 15000 });
 }
 
 export function useK8sNamespaces() {

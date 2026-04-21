@@ -1,12 +1,14 @@
 "use client";
 
 import { use, useState } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { useRun, useFindings, generateFix } from "@/lib/api";
 import type { DiagnosticRun } from "@/lib/types";
 import { useI18n } from "@/i18n/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { SeverityBadge } from "@/components/severity-badge";
+import { CRDYamlBlock } from "@/components/crd-yaml-block";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -58,6 +60,10 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
   const { id } = use(params);
   const { data: run, error: runErr, isLoading: runLoading } = useRun(id);
   const { data: findings, error: findErr, isLoading: findLoading } = useFindings(id);
+  const { data: crdYAML, isLoading: crdLoading } = useSWR<string | null>(
+    `/api/runs/${id}/crd`,
+    (url: string) => fetch(url).then(r => r.ok ? r.text() : null)
+  );
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
 
   async function handleGenerate(findingID: string) {
@@ -94,7 +100,7 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
       <Link href="/" className="text-sm text-blue-600 hover:underline dark:text-blue-400">&larr; {t("runs.detail.backToRuns")}</Link>
       <div className="mt-4 mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold font-mono">{run.ID.slice(0, 8)}</h1>
+          <h1 className="text-2xl font-bold font-mono">{run.Name || run.ID.slice(0, 8)}</h1>
           <PhaseBadge phase={run.Status} />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-600 sm:grid-cols-4 dark:text-gray-400">
@@ -115,6 +121,15 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
           </div>
         )}
         <ScheduledRunInfo run={run} />
+        {!crdLoading && (
+          <div className="mt-4">
+            {crdYAML ? (
+              <CRDYamlBlock yaml={crdYAML} title="DiagnosticRun CRD YAML" />
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-gray-500 italic">{t("runs.detail.crdNotFound")}</p>
+            )}
+          </div>
+        )}
       </div>
       <Separator className="mb-6" />
       <h2 className="mb-4 text-xl font-semibold">{t("runs.findings.title")}</h2>

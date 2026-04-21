@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,10 +27,12 @@ import (
 )
 
 type fakeStore struct {
-	runs     []*store.DiagnosticRun
-	findings []*store.Finding
-	skills   []*store.Skill
-	fixes    []*store.Fix
+	runs            []*store.DiagnosticRun
+	findings        []*store.Finding
+	skills          []*store.Skill
+	fixes           []*store.Fix
+	events          []*store.Event
+	lastListEvtsOpt store.ListEventsOpts
 }
 
 func (f *fakeStore) CreateFinding(_ context.Context, finding *store.Finding) error {
@@ -103,7 +106,20 @@ func (f *fakeStore) UpdateFixPhase(_ context.Context, _ string, _ store.FixPhase
 }
 func (f *fakeStore) UpdateFixApproval(_ context.Context, _ string, _ string) error { return nil }
 func (f *fakeStore) UpdateFixSnapshot(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeStore) Close() error                                                  { return nil }
+func (f *fakeStore) UpsertEvent(_ context.Context, _ *store.Event) error { return nil }
+func (f *fakeStore) ListEvents(_ context.Context, opts store.ListEventsOpts) ([]*store.Event, error) {
+	f.lastListEvtsOpt = opts
+	return f.events, nil
+}
+func (f *fakeStore) InsertMetricSnapshot(_ context.Context, _ *store.MetricSnapshot) error {
+	return nil
+}
+func (f *fakeStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*store.MetricSnapshot, error) {
+	return nil, nil
+}
+func (f *fakeStore) PurgeOldEvents(_ context.Context, _ time.Time) error  { return nil }
+func (f *fakeStore) PurgeOldMetrics(_ context.Context, _ time.Time) error { return nil }
+func (f *fakeStore) Close() error                                         { return nil }
 
 func TestPostFindings(t *testing.T) {
 	fs := &fakeStore{}
@@ -614,4 +630,227 @@ func TestK8sResources_GetSingleDeployment(t *testing.T) {
 	selector := spec["selector"].(map[string]interface{})
 	matchLabels := selector["matchLabels"].(map[string]interface{})
 	assert.Equal(t, "web", matchLabels["app"])
+}
+
+// TestGetRuns_EnrichesWithK8sNames verifies that enrichWithK8sNames populates
+// the Name field on SQLite runs by matching their IDs (UIDs) to K8s CR names.
+func TestGetRuns_EnrichesWithK8sNames(t *testing.T) {
+	const uid = "run-uid-enrich-1"
+	fs := &fakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: uid, Status: store.PhaseSucceeded},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
+	cr := &v1alpha1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-run", Namespace: "default", UID: uid},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).Build()
+	srv := httpserver.New(fs, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var runs []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&runs))
+	require.Len(t, runs, 1)
+	assert.Equal(t, "my-run", runs[0]["Name"])
+}
+
+// TestGetRuns_MergeScheduledTemplates verifies that K8s DiagnosticRun CRs with
+// spec.schedule set are merged into the list response with Status=Scheduled.
+func TestGetRuns_MergeScheduledTemplates(t *testing.T) {
+	// No SQLite runs — the scheduled template exists only in K8s
+	fs := &fakeStore{}
+
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
+	cr := &v1alpha1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "weekly-audit", Namespace: "default", UID: "sched-uid-1"},
+		Spec: v1alpha1.DiagnosticRunSpec{
+			Schedule:       "0 8 * * 1",
+			ModelConfigRef: "creds",
+		},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).Build()
+	srv := httpserver.New(fs, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var runs []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&runs))
+	require.Len(t, runs, 1, "scheduled template should appear in list")
+	assert.Equal(t, "weekly-audit", runs[0]["Name"])
+	assert.Equal(t, "Scheduled", runs[0]["Status"])
+}
+
+// TestGetRuns_MergeScheduledTemplates_NoDuplicate verifies that a scheduled
+// template already present in SQLite (by UID) is NOT duplicated.
+func TestGetRuns_MergeScheduledTemplates_NoDuplicate(t *testing.T) {
+	const uid = "sched-uid-dup"
+	fs := &fakeStore{
+		runs: []*store.DiagnosticRun{
+			{ID: uid, Status: store.Phase("Scheduled")},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
+	cr := &v1alpha1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "hourly-audit", Namespace: "default", UID: uid},
+		Spec: v1alpha1.DiagnosticRunSpec{
+			Schedule:       "0 * * * *",
+			ModelConfigRef: "creds",
+		},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).Build()
+	srv := httpserver.New(fs, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var runs []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&runs))
+	assert.Len(t, runs, 1, "should not duplicate runs already in SQLite")
+}
+
+// TestGetFixes_EnrichesWithK8sNames verifies that enrichFixesWithK8sNames
+// populates the Name field on fixes by matching their IDs (UIDs) to DiagnosticFix CR names.
+func TestGetFixes_EnrichesWithK8sNames(t *testing.T) {
+	const uid = "fix-uid-enrich-1"
+	fs := &fakeStore{
+		fixes: []*store.Fix{
+			{ID: uid, RunID: "run-1", FindingID: "f-1", Phase: store.FixPhasePendingApproval},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
+	cr := &v1alpha1.DiagnosticFix{
+		ObjectMeta: metav1.ObjectMeta{Name: "fix-f-1", Namespace: "default", UID: uid},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).Build()
+	srv := httpserver.New(fs, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var fixes []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&fixes))
+	require.Len(t, fixes, 1)
+	assert.Equal(t, "fix-f-1", fixes[0]["Name"])
+}
+
+// TestGetRunCRD_SyntheticFallback verifies that when the K8s CR is gone but
+// the SQLite record exists, the /api/runs/{id}/crd endpoint returns a synthetic
+// YAML with the "(synthesized from store)" comment.
+func TestGetRunCRD_SyntheticFallback(t *testing.T) {
+	const uid = "run-uid-crd-fallback"
+	fs := &fakeStore{
+		runs: []*store.DiagnosticRun{
+			{ID: uid, TargetJSON: `{"scope":"namespace"}`, SkillsJSON: `["health"]`, Status: store.PhaseSucceeded},
+		},
+	}
+	// K8s client has no DiagnosticRun for this UID
+	fc := newFakeK8sClient()
+	srv := httpserver.New(fs, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/"+uid+"/crd", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "synthesized from store")
+	assert.Contains(t, body, "apiVersion: k8sai.io/v1alpha1")
+	assert.Contains(t, body, "kind: DiagnosticRun")
+	assert.Contains(t, body, uid)
+}
+
+// TestGetRunCRD_NotFound verifies that /api/runs/{id}/crd returns 404 when
+// neither the K8s CR nor the SQLite record exists.
+func TestGetRunCRD_NotFound(t *testing.T) {
+	fs := &fakeStore{}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/does-not-exist/crd", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandleAPIEvents(t *testing.T) {
+	t.Run("GET with no filters returns empty array when store returns nil", func(t *testing.T) {
+		fs := &fakeStore{}
+		srv := httpserver.New(fs, nil, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var resp []interface{}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		assert.Len(t, resp, 0)
+	})
+
+	t.Run("GET with namespace and since passes correct opts to store", func(t *testing.T) {
+		fs := &fakeStore{
+			events: []*store.Event{
+				{UID: "ev-1", Namespace: "default", Kind: "Pod", Name: "api-pod",
+					Reason: "OOMKilled", Message: "pod ran out of memory", Type: "Warning"},
+			},
+		}
+		srv := httpserver.New(fs, nil, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/events?namespace=default&since=60", nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "default", fs.lastListEvtsOpt.Namespace)
+		assert.Equal(t, 60, fs.lastListEvtsOpt.SinceMinutes)
+
+		var resp []map[string]interface{}
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+		require.Len(t, resp, 1)
+		assert.Equal(t, "ev-1", resp[0]["UID"])
+	})
+
+	t.Run("non-GET method returns 405", func(t *testing.T) {
+		fs := &fakeStore{}
+		srv := httpserver.New(fs, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/events", nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	})
+
+	t.Run("invalid since value returns 400", func(t *testing.T) {
+		fs := &fakeStore{}
+		srv := httpserver.New(fs, nil, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/events?since=notanumber", nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
 }

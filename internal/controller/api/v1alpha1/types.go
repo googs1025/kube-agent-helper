@@ -131,6 +131,9 @@ type ModelConfigSpec struct {
 	// +kubebuilder:default="claude-sonnet-4-6"
 	Model     string       `json:"model"`
 	APIKeyRef SecretKeyRef `json:"apiKeyRef"`
+	// BaseURL overrides the Anthropic API endpoint (e.g. for custom proxies).
+	// +optional
+	BaseURL string `json:"baseURL,omitempty"`
 	// +kubebuilder:default=20
 	MaxTurns *int `json:"maxTurns,omitempty"`
 }

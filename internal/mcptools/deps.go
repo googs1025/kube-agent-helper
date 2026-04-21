@@ -13,6 +13,7 @@ import (
 
 	"github.com/kube-agent-helper/kube-agent-helper/internal/k8sclient"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/sanitize"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/trimmer"
 )
 
@@ -33,6 +34,7 @@ type Deps struct {
 	SanitizeOpts sanitize.Options
 	Projectors   *trimmer.Projectors
 	Cluster      string
+	Store        store.Store // nil if store not configured
 }
 
 // NewDeps constructs a Deps from a k8sclient.Clients produced in main.go.

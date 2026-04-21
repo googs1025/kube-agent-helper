@@ -103,8 +103,12 @@ export default function RunsPage() {
                 return (
                   <TableRow key={run.ID}>
                     <TableCell>
-                      <Link href={`/runs/${run.ID}`} className="font-mono text-sm text-blue-600 hover:underline dark:text-blue-400">
-                        {run.ID.slice(0, 8)}...
+                      <Link href={`/runs/${run.ID}`} className="text-blue-600 hover:underline dark:text-blue-400">
+                        {run.Name ? (
+                          <span className="font-medium">{run.Name}</span>
+                        ) : (
+                          <span className="font-mono text-sm">{run.ID.slice(0, 8)}...</span>
+                        )}
                       </Link>
                     </TableCell>
                     <TableCell><PhaseBadge phase={run.Status} /></TableCell>

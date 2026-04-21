@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	sigsyaml "sigs.k8s.io/yaml"
 
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
@@ -37,6 +40,7 @@ func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *S
 	srv.mux.HandleFunc("/api/fixes", srv.handleAPIFixes)
 	srv.mux.HandleFunc("/api/fixes/", srv.handleAPIFixDetail)
 	srv.mux.HandleFunc("/api/findings/", srv.handleAPIFindingAction)
+	srv.mux.HandleFunc("/api/events", srv.handleAPIEvents)
 	srv.mux.HandleFunc("/api/k8s/resources", srv.handleAPIK8sResources)
 	return srv
 }
@@ -207,12 +211,97 @@ func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 		if runs == nil {
 			runs = make([]*store.DiagnosticRun, 0)
 		}
+		// Enrich SQLite runs with K8s CR name, then merge scheduled templates
+		runs = s.enrichWithK8sNames(r.Context(), runs)
+		runs = s.mergeScheduledTemplates(r.Context(), runs)
 		writeJSON(w, runs)
 	case http.MethodPost:
 		s.handleAPIRunsPost(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// enrichFixesWithK8sNames sets the Name field on fixes by matching UIDs to DiagnosticFix CR names.
+func (s *Server) enrichFixesWithK8sNames(ctx context.Context, fixes []*store.Fix) {
+	if s.k8sClient == nil || len(fixes) == 0 {
+		return
+	}
+	var list v1alpha1.DiagnosticFixList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		return
+	}
+	uidToName := make(map[string]string, len(list.Items))
+	for _, cr := range list.Items {
+		uidToName[string(cr.UID)] = cr.Name
+	}
+	for _, f := range fixes {
+		if name, ok := uidToName[f.ID]; ok {
+			f.Name = name
+		}
+	}
+}
+
+// enrichWithK8sNames sets the Name field on SQLite runs by matching UIDs to K8s CR names.
+func (s *Server) enrichWithK8sNames(ctx context.Context, runs []*store.DiagnosticRun) []*store.DiagnosticRun {
+	if s.k8sClient == nil || len(runs) == 0 {
+		return runs
+	}
+	var list v1alpha1.DiagnosticRunList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		return runs
+	}
+	uidToName := make(map[string]string, len(list.Items))
+	for _, cr := range list.Items {
+		uidToName[string(cr.UID)] = cr.Name
+	}
+	for _, r := range runs {
+		if name, ok := uidToName[r.ID]; ok {
+			r.Name = name
+		}
+	}
+	return runs
+}
+
+// mergeScheduledTemplates appends K8s scheduled-template runs (spec.schedule != "")
+// that are not already present in the SQLite list (matched by UID).
+func (s *Server) mergeScheduledTemplates(ctx context.Context, existing []*store.DiagnosticRun) []*store.DiagnosticRun {
+	if s.k8sClient == nil {
+		return existing
+	}
+	// Build set of known UIDs
+	seen := make(map[string]struct{}, len(existing))
+	for _, r := range existing {
+		seen[r.ID] = struct{}{}
+	}
+	var list v1alpha1.DiagnosticRunList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		return existing
+	}
+	for i := range list.Items {
+		cr := &list.Items[i]
+		if cr.Spec.Schedule == "" {
+			continue // only interested in scheduled templates
+		}
+		uid := string(cr.UID)
+		if _, ok := seen[uid]; ok {
+			continue // already in SQLite list
+		}
+		targetJSON, _ := json.Marshal(cr.Spec.Target)
+		skillsJSON, _ := json.Marshal(cr.Spec.Skills)
+		phase := store.Phase("Scheduled")
+		r := &store.DiagnosticRun{
+			ID:         uid,
+			Name:       cr.Name,
+			TargetJSON: string(targetJSON),
+			SkillsJSON: string(skillsJSON),
+			Status:     phase,
+			Message:    cr.Status.Message,
+			CreatedAt:  cr.CreationTimestamp.Time,
+		}
+		existing = append(existing, r)
+	}
+	return existing
 }
 
 // GET /api/runs/{id}  and  GET /api/runs/{id}/findings
@@ -230,6 +319,11 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 	runID := parts[2]
 	if runID == "" {
 		http.Error(w, "missing run ID", http.StatusBadRequest)
+		return
+	}
+
+	if len(parts) == 4 && parts[3] == "crd" {
+		s.handleAPIRunCRD(w, r, runID)
 		return
 	}
 
@@ -264,9 +358,13 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run, err := s.store.GetRun(r.Context(), runID)
-	if err != nil {
+	if err != nil && err != store.ErrNotFound {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if run == nil {
+		// Fallback: look up the K8s CR by UID (handles scheduled templates not in SQLite)
+		run = s.runFromK8s(r.Context(), runID)
 	}
 	if run == nil {
 		http.NotFound(w, r)
@@ -274,6 +372,83 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, run)
 }
+
+// GET /api/runs/{id}/crd — returns the raw DiagnosticRun K8s CR as YAML, looked up by UID
+func (s *Server) handleAPIRunCRD(w http.ResponseWriter, r *http.Request, uid string) {
+	list := &v1alpha1.DiagnosticRunList{}
+	if err := s.k8sClient.List(r.Context(), list, &client.ListOptions{}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var found *v1alpha1.DiagnosticRun
+	for i := range list.Items {
+		if string(list.Items[i].UID) == uid {
+			found = &list.Items[i]
+			break
+		}
+	}
+	if found == nil {
+		// Fallback: synthesize YAML from the SQLite store record (CR was deleted)
+		run, _ := s.store.GetRun(r.Context(), uid)
+		if run == nil {
+			http.NotFound(w, r)
+			return
+		}
+		synthetic := s.syntheticRunYAML(run)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(synthetic))
+		return
+	}
+	// Strip managed fields for readability
+	found.ManagedFields = nil
+	found.ResourceVersion = ""
+	found.Generation = 0
+	// Ensure TypeMeta is set
+	found.APIVersion = "k8sai.io/v1alpha1"
+	found.Kind = "DiagnosticRun"
+
+	yamlBytes, err := sigsyaml.Marshal(found)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write(yamlBytes)
+}
+
+// syntheticRunYAML builds a human-readable YAML representation of a run from SQLite data.
+// Used when the original K8s CR has been deleted.
+func (s *Server) syntheticRunYAML(run *store.DiagnosticRun) string {
+	var sb strings.Builder
+	sb.WriteString("# DiagnosticRun (synthesized from store — original CR was deleted)\n")
+	sb.WriteString("apiVersion: k8sai.io/v1alpha1\n")
+	sb.WriteString("kind: DiagnosticRun\n")
+	sb.WriteString("metadata:\n")
+	sb.WriteString(fmt.Sprintf("  uid: %s\n", run.ID))
+	sb.WriteString(fmt.Sprintf("  creationTimestamp: %s\n", run.CreatedAt.Format(time.RFC3339)))
+	sb.WriteString("spec:\n")
+	if run.TargetJSON != "" {
+		sb.WriteString(fmt.Sprintf("  target: %s\n", run.TargetJSON))
+	}
+	if run.SkillsJSON != "" {
+		sb.WriteString(fmt.Sprintf("  skills: %s\n", run.SkillsJSON))
+	}
+	sb.WriteString("status:\n")
+	sb.WriteString(fmt.Sprintf("  phase: %s\n", run.Status))
+	if run.Message != "" {
+		sb.WriteString(fmt.Sprintf("  message: %q\n", run.Message))
+	}
+	if run.StartedAt != nil {
+		sb.WriteString(fmt.Sprintf("  startedAt: %s\n", run.StartedAt.Format(time.RFC3339)))
+	}
+	if run.CompletedAt != nil {
+		sb.WriteString(fmt.Sprintf("  completedAt: %s\n", run.CompletedAt.Format(time.RFC3339)))
+	}
+	return sb.String()
+}
+
+// used to suppress unused import warning
+var _ = types.UID("")
 
 // GET|POST /api/skills
 func (s *Server) handleAPISkills(w http.ResponseWriter, r *http.Request) {
@@ -362,6 +537,7 @@ func (s *Server) handleAPIFixes(w http.ResponseWriter, r *http.Request) {
 	if fixes == nil {
 		fixes = make([]*store.Fix, 0)
 	}
+	s.enrichFixesWithK8sNames(r.Context(), fixes)
 	writeJSON(w, fixes)
 }
 
@@ -384,6 +560,7 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.enrichFixesWithK8sNames(r.Context(), []*store.Fix{fix})
 		writeJSON(w, fix)
 		return
 	}
@@ -465,6 +642,8 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 		ModelConfigRef string   `json:"modelConfigRef"`
 		TimeoutSeconds *int32   `json:"timeoutSeconds"`
 		OutputLanguage string   `json:"outputLanguage"`
+		Schedule       string   `json:"schedule"`
+		HistoryLimit   *int32   `json:"historyLimit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -496,6 +675,8 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 			ModelConfigRef: req.ModelConfigRef,
 			TimeoutSeconds: req.TimeoutSeconds,
 			OutputLanguage: req.OutputLanguage,
+			Schedule:       req.Schedule,
+			HistoryLimit:   req.HistoryLimit,
 		},
 	}
 
@@ -597,6 +778,43 @@ func (s *Server) findFindingByID(ctx context.Context, id string) (*store.Finding
 	return nil, nil
 }
 
+// runFromK8s synthesizes a store.DiagnosticRun from a K8s CR looked up by UID.
+// Used as fallback for scheduled-template runs that never enter the SQLite store.
+func (s *Server) runFromK8s(ctx context.Context, uid string) *store.DiagnosticRun {
+	var cr v1alpha1.DiagnosticRun
+	if err := s.findRunByUID(ctx, uid, &cr); err != nil {
+		return nil
+	}
+	phase := store.Phase(cr.Status.Phase)
+	if phase == "" {
+		if cr.Spec.Schedule != "" {
+			phase = store.Phase("Scheduled")
+		} else {
+			phase = store.PhasePending
+		}
+	}
+	targetJSON, _ := json.Marshal(cr.Spec.Target)
+	skillsJSON, _ := json.Marshal(cr.Spec.Skills)
+	r := &store.DiagnosticRun{
+		ID:         uid,
+		Name:       cr.Name,
+		TargetJSON: string(targetJSON),
+		SkillsJSON: string(skillsJSON),
+		Status:     phase,
+		Message:    cr.Status.Message,
+		CreatedAt:  cr.CreationTimestamp.Time,
+	}
+	if cr.Status.StartedAt != nil {
+		t := cr.Status.StartedAt.Time
+		r.StartedAt = &t
+	}
+	if cr.Status.CompletedAt != nil {
+		t := cr.Status.CompletedAt.Time
+		r.CompletedAt = &t
+	}
+	return r
+}
+
 func (s *Server) findRunByUID(ctx context.Context, uid string, out *v1alpha1.DiagnosticRun) error {
 	var list v1alpha1.DiagnosticRunList
 	if err := s.k8sClient.List(ctx, &list); err != nil {
@@ -632,6 +850,53 @@ func (s *Server) findFixCRByStoreID(ctx context.Context, storeID string) (*v1alp
 		}
 	}
 	return nil, fmt.Errorf("no DiagnosticFix CR for store ID %s", storeID)
+}
+
+// GET /api/events?namespace=X&name=Y&since=60&limit=100
+func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	namespace := q.Get("namespace")
+	name := q.Get("name")
+
+	since := 60
+	if v := q.Get("since"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			http.Error(w, "since must be an integer (minutes)", http.StatusBadRequest)
+			return
+		}
+		since = n
+	}
+
+	limit := 100
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			http.Error(w, "limit must be an integer", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+
+	opts := store.ListEventsOpts{
+		Namespace:    namespace,
+		Name:         name,
+		SinceMinutes: since,
+		Limit:        limit,
+	}
+	events, err := s.store.ListEvents(r.Context(), opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if events == nil {
+		events = make([]*store.Event, 0)
+	}
+	writeJSON(w, events)
 }
 
 // GET /api/k8s/resources?kind=X&namespace=Y&name=Z

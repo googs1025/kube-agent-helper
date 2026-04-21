@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ResourceDiff } from "@/components/resource-diff";
+import { CRDYamlBlock } from "@/components/crd-yaml-block";
 import { computeAfter, decodeBefore } from "@/lib/utils";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
@@ -105,7 +106,7 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
       <Link href="/fixes" className="text-sm text-blue-600 hover:underline dark:text-blue-400">&larr; {t("fixes.detail.backToFixes")}</Link>
       <div className="mt-4 mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold font-mono">{fix.ID.slice(0, 8)}</h1>
+          <h1 className="text-2xl font-bold font-mono">{fix.Name || fix.ID.slice(0, 8)}</h1>
           <Badge className={phaseColors[fix.Phase] || ""}>{t(`phase.${fix.Phase}`)}</Badge>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-600 sm:grid-cols-4 dark:text-gray-400">
@@ -113,7 +114,7 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
           <div><span className="font-medium">{t("fixes.detail.strategy")}:</span> {fix.Strategy}</div>
           <div><span className="font-medium">{t("fixes.detail.approval")}:</span> {fix.ApprovalRequired ? t("fixes.detail.approvalRequired") : t("fixes.detail.approvalAuto")}</div>
           <div><span className="font-medium">{t("fixes.detail.run")}:</span>
-            <Link href={`/runs/${fix.RunID}`} className="ml-1 text-blue-600 hover:underline dark:text-blue-400">{fix.RunID.slice(0, 8)}</Link>
+            <Link href={`/runs/${fix.RunID}`} className="ml-1 text-blue-600 hover:underline dark:text-blue-400">{fix.RunID.slice(0, 8)}…</Link>
           </div>
         </div>
         {fix.Message && (
@@ -191,6 +192,32 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
           </pre>
         </CardContent>
       </Card>
+
+      <CRDYamlBlock
+        title={t("fixes.detail.crdYaml")}
+        yaml={[
+          `apiVersion: k8sai.io/v1alpha1`,
+          `kind: DiagnosticFix`,
+          `metadata:`,
+          `  name: ${fix.ID}`,
+          `  namespace: kube-agent-helper`,
+          `spec:`,
+          `  diagnosticRunRef: ${fix.RunID}`,
+          `  findingTitle: ${JSON.stringify(fix.FindingTitle)}`,
+          `  targetKind: ${fix.TargetKind}`,
+          `  targetNamespace: ${fix.TargetNamespace}`,
+          `  targetName: ${fix.TargetName}`,
+          `  strategy: ${fix.Strategy}`,
+          `  approvalRequired: ${fix.ApprovalRequired}`,
+          `  patchType: ${fix.PatchType}`,
+          `  patchContent: |`,
+          ...fix.PatchContent.split("\n").map(l => `    ${l}`),
+          `status:`,
+          `  phase: ${fix.Phase}`,
+          fix.ApprovedBy ? `  approvedBy: ${fix.ApprovedBy}` : null,
+          fix.Message ? `  message: ${JSON.stringify(fix.Message)}` : null,
+        ].filter(Boolean).join("\n")}
+      />
     </div>
   );
 }

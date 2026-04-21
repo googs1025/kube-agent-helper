@@ -12,3 +12,6 @@ spec:
   modelConfigRef: "prod-model"
   timeoutSeconds: 600
   outputLanguage: zh
+  # Run every day at 08:00 (optional; omit for a one-time run)
+  schedule: "0 8 * * *"
+  historyLimit: 7

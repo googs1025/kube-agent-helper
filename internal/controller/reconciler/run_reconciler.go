@@ -104,8 +104,8 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 
-		// Optional timeout
-		if run.Spec.TimeoutSeconds != nil && run.Status.StartedAt != nil {
+		// Optional timeout (skip if timeoutSeconds is 0 or negative — treat as "no timeout")
+		if run.Spec.TimeoutSeconds != nil && *run.Spec.TimeoutSeconds > 0 && run.Status.StartedAt != nil {
 			deadline := run.Status.StartedAt.Time.Add(time.Duration(*run.Spec.TimeoutSeconds) * time.Second)
 			if time.Now().After(deadline) {
 				return r.failRun(ctx, &run, fmt.Sprintf("run timed out after %ds", *run.Spec.TimeoutSeconds))

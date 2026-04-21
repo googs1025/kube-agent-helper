@@ -1,0 +1,15 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: weekly-cluster-audit
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: cluster
+  modelConfigRef: "prod-model"
+  timeoutSeconds: 900
+  outputLanguage: zh
+  # Runs every Monday at 08:00; acts as a template, child runs are created automatically
+  schedule: "0 8 * * 1"
+  # Keep the last 4 completed child runs (approx 1 month of history)
+  historyLimit: 4
