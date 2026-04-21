@@ -17,10 +17,11 @@ import (
 )
 
 type Config struct {
-	AgentImage     string
-	ControllerURL  string
+	AgentImage       string
+	ControllerURL    string
 	AnthropicBaseURL string
 	Model            string
+	PrometheusURL    string
 }
 
 // SkillProvider is the interface Translator uses to fetch enabled skills.
@@ -186,6 +187,7 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 							{Name: "TARGET_NAMESPACES", Value: strings.Join(run.Spec.Target.Namespaces, ",")},
 							{Name: "CONTROLLER_URL", Value: t.cfg.ControllerURL},
 							{Name: "MCP_SERVER_PATH", Value: "/usr/local/bin/k8s-mcp-server"},
+							{Name: "PROMETHEUS_URL", Value: t.cfg.PrometheusURL},
 							{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
 							{Name: "ANTHROPIC_BASE_URL", Value: baseURL},
 							{Name: "MODEL", Value: modelName},

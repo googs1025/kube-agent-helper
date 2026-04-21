@@ -8,13 +8,21 @@ import os
 import subprocess
 
 MCP_SERVER_PATH = os.environ.get("MCP_SERVER_PATH", "/usr/local/bin/k8s-mcp-server")
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "")
+
+def _mcp_cmd() -> list:
+    """Build the base MCP server command, optionally with --prometheus-url."""
+    cmd = [MCP_SERVER_PATH, "--in-cluster"]
+    if PROMETHEUS_URL:
+        cmd += ["--prometheus-url", PROMETHEUS_URL]
+    return cmd
 
 
 def discover_tools() -> list:
     """Query k8s-mcp-server for available tools via MCP initialize."""
     try:
         proc = subprocess.run(
-            [MCP_SERVER_PATH, "--in-cluster"],
+            _mcp_cmd(),
             input=json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize",
                               "params":{"protocolVersion":"2024-11-05",
                                         "clientInfo":{"name":"agent","version":"0.1"},
@@ -53,7 +61,7 @@ def call_mcp_tool(name: str, args: dict) -> str:
     })
     try:
         proc = subprocess.run(
-            [MCP_SERVER_PATH, "--in-cluster"],
+            _mcp_cmd(),
             input=json.dumps({"jsonrpc":"2.0","id":0,"method":"initialize",
                               "params":{"protocolVersion":"2024-11-05",
                                         "clientInfo":{"name":"agent","version":"0.1"},
