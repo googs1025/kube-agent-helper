@@ -1,18 +1,58 @@
 "use client";
 
 import { use, useState } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { useRun, useFindings, generateFix } from "@/lib/api";
+import type { DiagnosticRun } from "@/lib/types";
 import { useI18n } from "@/i18n/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { SeverityBadge } from "@/components/severity-badge";
+import { CRDYamlBlock } from "@/components/crd-yaml-block";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return "-";
   return new Date(iso).toLocaleString();
+}
+
+function ScheduledRunInfo({ run }: { run: DiagnosticRun }) {
+  const { t } = useI18n();
+  if (!run.Schedule) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm dark:border-blue-800 dark:bg-blue-950">
+      <div className="flex items-center gap-2 font-medium text-blue-700 dark:text-blue-300 mb-2">
+        <span>🔁</span>
+        <span>{t("runs.detail.scheduledBadge")}</span>
+        <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded">{run.Schedule}</code>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-blue-600 dark:text-blue-400">
+        <div><span className="font-medium">{t("runs.detail.lastRunAt")}:</span> {formatTime(run.LastRunAt)}</div>
+        <div><span className="font-medium">{t("runs.detail.nextRunAt")}:</span> {formatTime(run.NextRunAt)}</div>
+      </div>
+      {run.ActiveRuns && run.ActiveRuns.length > 0 && (
+        <div className="mt-2">
+          <span className="font-medium">{t("runs.detail.activeRuns")}:</span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {run.ActiveRuns.slice(-5).map((name) => (
+              <Link
+                key={name}
+                href={`/diagnose/${encodeURIComponent(name)}`}
+                className="font-mono text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded hover:underline"
+              >
+                {name}
+              </Link>
+            ))}
+            {run.ActiveRuns.length > 5 && (
+              <span className="text-xs text-blue-500">+{run.ActiveRuns.length - 5} more</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +60,10 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
   const { id } = use(params);
   const { data: run, error: runErr, isLoading: runLoading } = useRun(id);
   const { data: findings, error: findErr, isLoading: findLoading } = useFindings(id);
+  const { data: crdYAML, isLoading: crdLoading } = useSWR<string | null>(
+    `/api/runs/${id}/crd`,
+    (url: string) => fetch(url).then(r => r.ok ? r.text() : null)
+  );
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
 
   async function handleGenerate(findingID: string) {
@@ -56,7 +100,7 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
       <Link href="/" className="text-sm text-blue-600 hover:underline dark:text-blue-400">&larr; {t("runs.detail.backToRuns")}</Link>
       <div className="mt-4 mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold font-mono">{run.ID.slice(0, 8)}</h1>
+          <h1 className="text-2xl font-bold font-mono">{run.Name || run.ID.slice(0, 8)}</h1>
           <PhaseBadge phase={run.Status} />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-600 sm:grid-cols-4 dark:text-gray-400">
@@ -74,6 +118,16 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
                 : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
           }`}>
             {run.Message}
+          </div>
+        )}
+        <ScheduledRunInfo run={run} />
+        {!crdLoading && (
+          <div className="mt-4">
+            {crdYAML ? (
+              <CRDYamlBlock yaml={crdYAML} title="DiagnosticRun CRD YAML" />
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-gray-500 italic">{t("runs.detail.crdNotFound")}</p>
+            )}
           </div>
         )}
       </div>

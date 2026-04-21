@@ -85,8 +85,9 @@ describe("DiagnosePage", () => {
   it("submit button disabled without selection", () => {
     renderPage();
     // Button is disabled when namespace is empty or no symptoms selected
-    const button = screen.getByRole("button");
-    expect((button as HTMLButtonElement).disabled).toBe(true);
+    const buttons = screen.getAllByRole("button");
+    const submitButton = buttons.find((b) => (b as HTMLButtonElement).type === "submit") ?? buttons[0];
+    expect((submitButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("full-check clears other symptoms", () => {

@@ -41,6 +41,7 @@ type DiagnosticSkillList struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="NextRun",type=date,JSONPath=`.status.nextRunAt`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type DiagnosticRun struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -58,6 +59,14 @@ type DiagnosticRunSpec struct {
 	// +optional
 	// +kubebuilder:validation:Enum=zh;en
 	OutputLanguage string `json:"outputLanguage,omitempty"`
+	// Schedule is a cron expression for periodic runs, e.g. "0 * * * *".
+	// When set, this DiagnosticRun acts as a template; child runs are created automatically.
+	// +optional
+	Schedule string `json:"schedule,omitempty"`
+	// HistoryLimit is the maximum number of completed child runs to retain.
+	// +optional
+	// +kubebuilder:default=10
+	HistoryLimit *int32 `json:"historyLimit,omitempty"`
 }
 
 type TargetSpec struct {
@@ -76,6 +85,15 @@ type DiagnosticRunStatus struct {
 	Message       string            `json:"message,omitempty"`
 	FindingCounts map[string]int    `json:"findingCounts,omitempty"`
 	Findings      []FindingSummary  `json:"findings,omitempty"`
+	// LastRunAt is the time the last child run was created (only set when schedule is used).
+	// +optional
+	LastRunAt *metav1.Time `json:"lastRunAt,omitempty"`
+	// NextRunAt is the scheduled time for the next child run.
+	// +optional
+	NextRunAt *metav1.Time `json:"nextRunAt,omitempty"`
+	// ActiveRuns lists the names of child DiagnosticRuns created by this scheduled run.
+	// +optional
+	ActiveRuns []string `json:"activeRuns,omitempty"`
 }
 
 // FindingSummary is a compact representation of a finding stored in CR status.
@@ -113,6 +131,9 @@ type ModelConfigSpec struct {
 	// +kubebuilder:default="claude-sonnet-4-6"
 	Model     string       `json:"model"`
 	APIKeyRef SecretKeyRef `json:"apiKeyRef"`
+	// BaseURL overrides the Anthropic API endpoint (e.g. for custom proxies).
+	// +optional
+	BaseURL string `json:"baseURL,omitempty"`
 	// +kubebuilder:default=20
 	MaxTurns *int `json:"maxTurns,omitempty"`
 }

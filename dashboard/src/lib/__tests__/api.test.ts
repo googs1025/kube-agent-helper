@@ -12,12 +12,12 @@ describe('createRun', () => {
       json: async () => ({ metadata: { uid: 'abc-123' } }),
     }))
 
-    const uid = await createRun({
+    const result = await createRun({
       namespace: 'default',
       target: { scope: 'namespace', namespaces: ['default'] },
       modelConfigRef: 'gpt-4',
     })
-    expect(uid).toBe('abc-123')
+    expect(result.id).toBe('abc-123')
 
     const mockFetch = vi.mocked(fetch)
     expect(mockFetch).toHaveBeenCalledOnce()

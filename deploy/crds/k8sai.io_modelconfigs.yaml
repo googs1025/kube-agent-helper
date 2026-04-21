@@ -37,6 +37,9 @@ spec:
             type: object
           spec:
             properties:
+              baseURL:
+                description: Override Anthropic API endpoint (e.g. for custom proxies)
+                type: string
               apiKeyRef:
                 properties:
                   key:

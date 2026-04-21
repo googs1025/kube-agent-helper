@@ -19,8 +19,12 @@ export default function DiagnosePage() {
   const [resourceName, setResourceName] = useState("");
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [outputLang, setOutputLang] = useState<"zh" | "en">("zh");
+  const [schedule, setSchedule] = useState("");
+  const [customSchedule, setCustomSchedule] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [createdYAML, setCreatedYAML] = useState<string | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
 
   const { data: namespaces } = useK8sNamespaces();
   const { data: resources } = useK8sResources(resourceType, namespace);
@@ -69,7 +73,7 @@ export default function DiagnosePage() {
         ? `diagnose-${resourceName}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`
         : `diagnose-${namespace}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`;
 
-      const runId = await createRun({
+      const { id: runId, yaml } = await createRun({
         name: runName,
         namespace: "kube-agent-helper",
         target: {
@@ -80,9 +84,11 @@ export default function DiagnosePage() {
         skills: symptomsToSkills(symptoms),
         modelConfigRef: "anthropic-credentials",
         outputLanguage: outputLang,
+        ...(schedule ? { schedule } : {}),
       });
 
-      router.push(`/diagnose/${encodeURIComponent(runId)}`);
+      setCreatedYAML(yaml);
+      setCreatedId(runId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -93,6 +99,36 @@ export default function DiagnosePage() {
   const recentDiagnoses = (runs || [])
     .filter((r) => r.ID && (r.TargetJSON || "").includes("namespace"))
     .slice(0, 5);
+
+  if (createdYAML && createdId) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-800 dark:bg-green-950">
+          <p className="text-sm font-medium text-green-700 dark:text-green-300">
+            {t("diagnose.created")} — <code className="font-mono text-xs">{createdId.slice(0, 8)}</code>
+          </p>
+        </div>
+        <div>
+          <p className="text-sm font-medium mb-2 text-gray-600 dark:text-gray-400">{t("diagnose.createdYAML")}</p>
+          <pre className="rounded-lg border bg-gray-50 dark:bg-gray-900 dark:border-gray-700 p-4 text-xs font-mono overflow-x-auto whitespace-pre leading-relaxed">{createdYAML}</pre>
+        </div>
+        <div className="flex gap-3">
+          <Link
+            href={`/runs/${encodeURIComponent(createdId)}`}
+            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            {t("diagnose.goToRun")} →
+          </Link>
+          <button
+            onClick={() => { setCreatedYAML(null); setCreatedId(null); }}
+            className="rounded border px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            {t("diagnose.createAnother")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -186,6 +222,57 @@ export default function DiagnosePage() {
           </div>
         </div>
 
+        <div>
+          <label className="block text-sm font-medium mb-1">{t("diagnose.schedule")}</label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {[
+              { label: t("diagnose.schedulePreset.none"), value: "" },
+              { label: t("diagnose.schedulePreset.hourly"), value: "0 * * * *" },
+              { label: t("diagnose.schedulePreset.daily"), value: "0 8 * * *" },
+              { label: t("diagnose.schedulePreset.weekly"), value: "0 8 * * 1" },
+            ].map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => { setSchedule(p.value); setCustomSchedule(false); }}
+                className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                  !customSchedule && schedule === p.value
+                    ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:border-blue-400 dark:text-blue-300"
+                    : "border-gray-200 dark:border-gray-700 hover:border-gray-400"
+                }`}
+              >
+                {p.label}{p.value && <span className="ml-1.5 font-mono text-xs text-gray-400">{p.value}</span>}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setCustomSchedule(true); setSchedule(""); }}
+              className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                customSchedule
+                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:border-blue-400 dark:text-blue-300"
+                  : "border-gray-200 dark:border-gray-700 hover:border-gray-400"
+              }`}
+            >
+              {t("diagnose.schedulePreset.custom")}
+            </button>
+          </div>
+          {customSchedule && (
+            <input
+              type="text"
+              value={schedule}
+              onChange={(e) => setSchedule(e.target.value)}
+              placeholder="*/30 * * * *"
+              autoFocus
+              className="w-full rounded border px-3 py-2 text-sm dark:bg-gray-800 dark:border-gray-700 font-mono mb-2"
+            />
+          )}
+          <div className="rounded border border-gray-100 bg-gray-50 dark:bg-gray-800/50 dark:border-gray-700 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+            <p className="font-medium mb-1">{t("diagnose.cronHelp.title")}</p>
+            <code className="block font-mono tracking-wider mb-1">┌─ {t("diagnose.cronHelp.minute")}  (0–59)<br />│ ┌─ {t("diagnose.cronHelp.hour")}    (0–23)<br />│ │ ┌─ {t("diagnose.cronHelp.day")}    (1–31)<br />│ │ │ ┌─ {t("diagnose.cronHelp.month")}  (1–12)<br />│ │ │ │ ┌─ {t("diagnose.cronHelp.weekday")} (0–7)<br />* * * * *</code>
+            <p className="mt-1">{t("diagnose.cronHelp.hint")}</p>
+          </div>
+        </div>
+
         {error && <p className="text-sm text-red-600">{t("diagnose.error")}: {error}</p>}
         <button
           onClick={handleSubmit}
@@ -205,7 +292,7 @@ export default function DiagnosePage() {
             {recentDiagnoses.map((run) => (
               <Link
                 key={run.ID}
-                href={`/diagnose/${encodeURIComponent(run.ID)}`}
+                href={`/runs/${encodeURIComponent(run.ID)}`}
                 className="flex items-center justify-between rounded border px-4 py-3 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50"
               >
                 <div className="flex items-center gap-3">

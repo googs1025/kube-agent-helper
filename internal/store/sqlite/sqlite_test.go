@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -297,4 +298,145 @@ func TestUpdateFixSnapshot(t *testing.T) {
 	got, err := s.GetFix(ctx, fix.ID)
 	require.NoError(t, err)
 	assert.Equal(t, snapshot, got.RollbackSnapshot)
+}
+
+func newTestEvent(uid, namespace, name, reason string, lastTime time.Time) *store.Event {
+	return &store.Event{
+		UID:       uid,
+		Namespace: namespace,
+		Kind:      "Pod",
+		Name:      name,
+		Reason:    reason,
+		Message:   "test message for " + reason,
+		Type:      "Warning",
+		Count:     1,
+		FirstTime: lastTime.Add(-5 * time.Minute),
+		LastTime:  lastTime,
+	}
+}
+
+func TestUpsertAndListEvents(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	e1 := newTestEvent("uid-1", "default", "pod-a", "OOMKilled", now)
+	e2 := newTestEvent("uid-2", "default", "pod-b", "CrashLoopBackOff", now)
+	e3 := newTestEvent("uid-3", "kube-system", "pod-c", "BackOff", now)
+
+	require.NoError(t, s.UpsertEvent(ctx, e1))
+	require.NoError(t, s.UpsertEvent(ctx, e2))
+	require.NoError(t, s.UpsertEvent(ctx, e3))
+
+	// no filter → all 3
+	all, err := s.ListEvents(ctx, store.ListEventsOpts{})
+	require.NoError(t, err)
+	assert.Len(t, all, 3)
+
+	// namespace filter → only 2 in "default"
+	byNS, err := s.ListEvents(ctx, store.ListEventsOpts{Namespace: "default"})
+	require.NoError(t, err)
+	assert.Len(t, byNS, 2)
+
+	// upsert same UID → should update, not duplicate
+	e1Updated := newTestEvent("uid-1", "default", "pod-a", "OOMKilled", now.Add(1*time.Minute))
+	e1Updated.Count = 5
+	require.NoError(t, s.UpsertEvent(ctx, e1Updated))
+
+	allAfterUpsert, err := s.ListEvents(ctx, store.ListEventsOpts{})
+	require.NoError(t, err)
+	assert.Len(t, allAfterUpsert, 3, "upsert should not create a duplicate row")
+
+	// verify updated count
+	defaultEvents, err := s.ListEvents(ctx, store.ListEventsOpts{Namespace: "default", Name: "pod-a"})
+	require.NoError(t, err)
+	require.Len(t, defaultEvents, 1)
+	assert.EqualValues(t, 5, defaultEvents[0].Count)
+}
+
+func TestListEvents_SinceMinutes(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	old := newTestEvent("uid-old", "default", "pod-old", "OOMKilled", now.Add(-2*time.Hour))
+	recent := newTestEvent("uid-recent", "default", "pod-new", "BackOff", now.Add(-5*time.Minute))
+
+	require.NoError(t, s.UpsertEvent(ctx, old))
+	require.NoError(t, s.UpsertEvent(ctx, recent))
+
+	// SinceMinutes=60 → only the recent event (5 min ago) should appear
+	events, err := s.ListEvents(ctx, store.ListEventsOpts{SinceMinutes: 60})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "uid-recent", events[0].UID)
+}
+
+func TestInsertAndQueryMetricHistory(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	snap1 := &store.MetricSnapshot{Query: "cpu_usage", LabelsJSON: `{"pod":"a"}`, Value: 0.8, Ts: now.Add(-30 * time.Minute)}
+	snap2 := &store.MetricSnapshot{Query: "cpu_usage", LabelsJSON: `{"pod":"b"}`, Value: 0.5, Ts: now.Add(-90 * time.Minute)}
+	snap3 := &store.MetricSnapshot{Query: "mem_usage", LabelsJSON: `{"pod":"a"}`, Value: 512.0, Ts: now.Add(-10 * time.Minute)}
+
+	require.NoError(t, s.InsertMetricSnapshot(ctx, snap1))
+	require.NoError(t, s.InsertMetricSnapshot(ctx, snap2))
+	require.NoError(t, s.InsertMetricSnapshot(ctx, snap3))
+
+	// query for cpu_usage within last 120 minutes → both cpu_usage snaps
+	cpuSnaps, err := s.QueryMetricHistory(ctx, "cpu_usage", 120)
+	require.NoError(t, err)
+	assert.Len(t, cpuSnaps, 2)
+	for _, snap := range cpuSnaps {
+		assert.Equal(t, "cpu_usage", snap.Query)
+	}
+
+	// query for mem_usage within last 120 minutes → only snap3
+	memSnaps, err := s.QueryMetricHistory(ctx, "mem_usage", 120)
+	require.NoError(t, err)
+	require.Len(t, memSnaps, 1)
+	assert.Equal(t, 512.0, memSnaps[0].Value)
+}
+
+func TestPurgeOldEvents(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	old := newTestEvent("uid-old", "default", "pod-old", "OOMKilled", now.Add(-2*time.Hour))
+	recent := newTestEvent("uid-recent", "default", "pod-new", "BackOff", now.Add(-5*time.Minute))
+
+	require.NoError(t, s.UpsertEvent(ctx, old))
+	require.NoError(t, s.UpsertEvent(ctx, recent))
+
+	// purge everything older than 1 hour ago
+	require.NoError(t, s.PurgeOldEvents(ctx, now.Add(-1*time.Hour)))
+
+	remaining, err := s.ListEvents(ctx, store.ListEventsOpts{})
+	require.NoError(t, err)
+	require.Len(t, remaining, 1)
+	assert.Equal(t, "uid-recent", remaining[0].UID)
+}
+
+func TestPurgeOldMetrics(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	oldSnap := &store.MetricSnapshot{Query: "cpu_usage", LabelsJSON: `{}`, Value: 0.9, Ts: now.Add(-2 * time.Hour)}
+	recentSnap := &store.MetricSnapshot{Query: "cpu_usage", LabelsJSON: `{}`, Value: 0.3, Ts: now.Add(-5 * time.Minute)}
+
+	require.NoError(t, s.InsertMetricSnapshot(ctx, oldSnap))
+	require.NoError(t, s.InsertMetricSnapshot(ctx, recentSnap))
+
+	// purge everything older than 1 hour ago
+	require.NoError(t, s.PurgeOldMetrics(ctx, now.Add(-1*time.Hour)))
+
+	// use a wide window to get all remaining rows
+	remaining, err := s.QueryMetricHistory(ctx, "cpu_usage", 120)
+	require.NoError(t, err)
+	require.Len(t, remaining, 1)
+	assert.InDelta(t, 0.3, remaining[0].Value, 0.001)
 }

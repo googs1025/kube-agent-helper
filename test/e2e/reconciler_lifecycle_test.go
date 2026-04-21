@@ -4,6 +4,7 @@ package e2e_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -429,5 +430,343 @@ func TestReconcilerLifecycle(t *testing.T) {
 		assert.Contains(t, titles, "Pod CrashLooping")
 		assert.Contains(t, titles, "Privileged container detected")
 		assert.Contains(t, titles, "High restart count")
+	})
+}
+
+// ── ScheduledRunReconciler lifecycle ─────────────────────────────────────────
+
+func reconcileScheduledOnce(t *testing.T, r *reconciler.ScheduledRunReconciler, name, namespace string) ctrl.Result {
+	t.Helper()
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
+	})
+	require.NoError(t, err)
+	return result
+}
+
+func TestScheduledRunReconcilerLifecycle(t *testing.T) {
+	t.Run("InitializesNextRunAt", func(t *testing.T) {
+		// A fresh scheduled CR (no NextRunAt) should have NextRunAt set after the
+		// first reconcile and requeue until that time.
+		ctx := context.Background()
+		parent := &k8saiV1.DiagnosticRun{
+			ObjectMeta: metav1.ObjectMeta{Name: "sched-init", Namespace: "default", UID: "sched-uid-init"},
+			Spec: k8saiV1.DiagnosticRunSpec{
+				Schedule:       "0 * * * *", // hourly
+				ModelConfigRef: "creds",
+				Target:         k8saiV1.TargetSpec{Scope: "namespace"},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(reconcilerTestScheme()).
+			WithObjects(parent).
+			WithStatusSubresource(parent).
+			Build()
+		r := &reconciler.ScheduledRunReconciler{Client: fakeClient}
+
+		result := reconcileScheduledOnce(t, r, parent.Name, parent.Namespace)
+		assert.NotZero(t, result.RequeueAfter, "should requeue until the next scheduled time")
+
+		var updated k8saiV1.DiagnosticRun
+		require.NoError(t, fakeClient.Get(ctx,
+			types.NamespacedName{Name: parent.Name, Namespace: parent.Namespace}, &updated))
+		require.NotNil(t, updated.Status.NextRunAt, "NextRunAt should be set after first reconcile")
+		assert.True(t, updated.Status.NextRunAt.Time.After(time.Now()),
+			"NextRunAt should be in the future")
+	})
+
+	t.Run("CreatesChildRunWhenDue", func(t *testing.T) {
+		// When NextRunAt is in the past the reconciler must create a child run,
+		// advance NextRunAt, set LastRunAt, and add the child to ActiveRuns.
+		ctx := context.Background()
+		past := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		parent := &k8saiV1.DiagnosticRun{
+			ObjectMeta: metav1.ObjectMeta{Name: "sched-fire", Namespace: "default", UID: "sched-uid-fire"},
+			Spec: k8saiV1.DiagnosticRunSpec{
+				Schedule:       "* * * * *", // every minute
+				ModelConfigRef: "creds",
+				Target:         k8saiV1.TargetSpec{Scope: "namespace"},
+			},
+			Status: k8saiV1.DiagnosticRunStatus{NextRunAt: &past},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(reconcilerTestScheme()).
+			WithObjects(parent).
+			WithStatusSubresource(parent).
+			Build()
+		r := &reconciler.ScheduledRunReconciler{Client: fakeClient}
+
+		result := reconcileScheduledOnce(t, r, parent.Name, parent.Namespace)
+		assert.NotZero(t, result.RequeueAfter, "should requeue for the next scheduled slot")
+
+		var updated k8saiV1.DiagnosticRun
+		require.NoError(t, fakeClient.Get(ctx,
+			types.NamespacedName{Name: parent.Name, Namespace: parent.Namespace}, &updated))
+		require.Len(t, updated.Status.ActiveRuns, 1, "one child run should be registered")
+		assert.NotNil(t, updated.Status.LastRunAt, "LastRunAt should be set")
+		require.NotNil(t, updated.Status.NextRunAt)
+		assert.True(t, updated.Status.NextRunAt.Time.After(past.Time),
+			"NextRunAt should advance beyond the trigger time")
+
+		// Verify the child run exists in K8s with the scheduler label
+		var children k8saiV1.DiagnosticRunList
+		require.NoError(t, fakeClient.List(ctx, &children))
+		var childRuns []k8saiV1.DiagnosticRun
+		for _, cr := range children.Items {
+			if cr.Labels["kube-agent-helper.io/scheduled-by"] == parent.Name {
+				childRuns = append(childRuns, cr)
+			}
+		}
+		require.Len(t, childRuns, 1, "exactly one child run should exist in K8s")
+		assert.Equal(t, "creds", childRuns[0].Spec.ModelConfigRef,
+			"child run should inherit parent modelConfigRef")
+	})
+
+	t.Run("HistoryLimitEnforced", func(t *testing.T) {
+		// When the number of child runs exceeds HistoryLimit the reconciler must
+		// delete old children so that the count stays within the limit.
+		// We prime the parent with 2 existing children and historyLimit=1,
+		// then trigger a third reconcile cycle and verify eviction occurred.
+		ctx := context.Background()
+		historyLimit := int32(1)
+
+		// Compute the first child's trigger time (1 minute in the past)
+		trigger1 := time.Now().Add(-2 * time.Minute)
+		child1Name := fmt.Sprintf("sched-hist2-%d", trigger1.Unix())
+		trigger1Meta := metav1.NewTime(trigger1)
+
+		child1 := &k8saiV1.DiagnosticRun{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      child1Name,
+				Namespace: "default",
+				Labels:    map[string]string{"kube-agent-helper.io/scheduled-by": "sched-hist2"},
+				// Older creation timestamp so it sorts first (oldest)
+				CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+			},
+		}
+
+		// Second trigger: 1 minute ago → reconcile will create child2 and then
+		// enforce limit=1, evicting child1 (the oldest).
+		trigger2 := time.Now().Add(-1 * time.Minute)
+		trigger2Meta := metav1.NewTime(trigger2)
+
+		parent := &k8saiV1.DiagnosticRun{
+			ObjectMeta: metav1.ObjectMeta{Name: "sched-hist2", Namespace: "default", UID: "sched-uid-hist2"},
+			Spec: k8saiV1.DiagnosticRunSpec{
+				Schedule:       "* * * * *",
+				ModelConfigRef: "creds",
+				Target:         k8saiV1.TargetSpec{Scope: "namespace"},
+				HistoryLimit:   &historyLimit,
+			},
+			Status: k8saiV1.DiagnosticRunStatus{
+				LastRunAt:  &trigger1Meta,
+				NextRunAt:  &trigger2Meta,
+				ActiveRuns: []string{child1Name},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(reconcilerTestScheme()).
+			WithObjects(parent, child1).
+			WithStatusSubresource(parent).
+			Build()
+		r := &reconciler.ScheduledRunReconciler{Client: fakeClient}
+
+		reconcileScheduledOnce(t, r, parent.Name, parent.Namespace)
+
+		// After eviction: total labeled children must be ≤ historyLimit
+		var children k8saiV1.DiagnosticRunList
+		require.NoError(t, fakeClient.List(ctx, &children))
+		var childRuns []k8saiV1.DiagnosticRun
+		for _, cr := range children.Items {
+			if cr.Labels["kube-agent-helper.io/scheduled-by"] == parent.Name {
+				childRuns = append(childRuns, cr)
+			}
+		}
+		assert.LessOrEqual(t, len(childRuns), int(historyLimit),
+			"eviction should keep children count within historyLimit")
+
+		// Parent status must show the cycle advanced
+		var updated k8saiV1.DiagnosticRun
+		require.NoError(t, fakeClient.Get(ctx,
+			types.NamespacedName{Name: parent.Name, Namespace: parent.Namespace}, &updated))
+		assert.NotNil(t, updated.Status.LastRunAt)
+		require.NotNil(t, updated.Status.NextRunAt)
+		assert.True(t, updated.Status.NextRunAt.Time.After(trigger2),
+			"NextRunAt should advance beyond the second trigger time")
+	})
+}
+
+// ── DiagnosticRun reconciler — timeout=0 regression ──────────────────────────
+
+func TestRunReconcilerLifecycle_TimeoutZero(t *testing.T) {
+	// A run with timeoutSeconds=0 must NOT be timed out even if StartedAt is
+	// far in the past. The reconciler must treat 0 as "no timeout".
+	ctx := context.Background()
+	sqlStore := newTempSQLiteStore(t)
+	seedPodHealthSkill(t, ctx, sqlStore)
+
+	runUID := "uid-timeout-zero-e2e"
+	zero := int32(0)
+	run := makeDiagnosticRun("timeout-zero-run", runUID)
+	run.Spec.TimeoutSeconds = &zero
+	run.Status.Phase = "Running"
+	run.Status.ReportID = runUID
+	// 2 hours ago — would immediately fail if zero were treated as 0-second timeout
+	past := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	run.Status.StartedAt = &past
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "agent-timeout-zero-run", Namespace: "default"},
+		Status:     batchv1.JobStatus{Active: 1},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(reconcilerTestScheme()).
+		WithObjects(run, job).
+		WithStatusSubresource(run).
+		Build()
+
+	require.NoError(t, sqlStore.CreateRun(ctx, &store.DiagnosticRun{
+		ID: runUID, Status: store.PhaseRunning,
+	}))
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client:     fakeClient,
+		Store:      sqlStore,
+		Translator: newReconcilerTranslator(sqlStore),
+	}
+
+	result := reconcileRunOnce(t, r, run.Name, run.Namespace)
+	assert.NotZero(t, result.RequeueAfter, "timeoutSeconds=0 should not trigger timeout")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(ctx,
+		types.NamespacedName{Name: run.Name, Namespace: run.Namespace}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase,
+		"run should remain Running when timeoutSeconds=0")
+}
+
+// ── DiagnosticFix reconciler lifecycle ───────────────────────────────────────
+
+func reconcileFixOnce(t *testing.T, r *reconciler.DiagnosticFixReconciler, name, namespace string) ctrl.Result {
+	t.Helper()
+	result, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
+	})
+	require.NoError(t, err)
+	return result
+}
+
+func TestFixReconcilerLifecycle(t *testing.T) {
+	t.Run("ApproveAndApply_Create", func(t *testing.T) {
+		// Starting from phase=Approved with strategy=create the reconciler must
+		// create the target resource in K8s, update the CR to Succeeded, and
+		// reflect the new phase in SQLite.
+		ctx := context.Background()
+		sqlStore := newTempSQLiteStore(t)
+
+		fixUID := "fix-e2e-uid-apply-1"
+		npJSON := `{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy",` +
+			`"metadata":{"name":"deny-all","namespace":"default"},` +
+			`"spec":{"podSelector":{}}}`
+
+		fix := &k8saiV1.DiagnosticFix{
+			ObjectMeta: metav1.ObjectMeta{Name: "fix-e2e-1", Namespace: "default", UID: types.UID(fixUID)},
+			Spec: k8saiV1.DiagnosticFixSpec{
+				DiagnosticRunRef: "run-1",
+				FindingTitle:     "Missing NetworkPolicy",
+				Target:           k8saiV1.FixTarget{Kind: "NetworkPolicy", Namespace: "default", Name: "deny-all"},
+				Strategy:         "create",
+				ApprovalRequired: true,
+				Patch:            k8saiV1.FixPatch{Type: "strategic-merge", Content: npJSON},
+			},
+		}
+		fix.Status.Phase = "Approved"
+
+		require.NoError(t, sqlStore.CreateFix(ctx, &store.Fix{
+			ID:           fixUID,
+			RunID:        "run-1",
+			FindingID:    "f-1",
+			FindingTitle: "Missing NetworkPolicy",
+			Phase:        store.FixPhaseApproved,
+		}))
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(reconcilerTestScheme()).
+			WithObjects(fix).
+			WithStatusSubresource(fix).
+			Build()
+
+		r := &reconciler.DiagnosticFixReconciler{Client: fakeClient, Store: sqlStore}
+
+		result := reconcileFixOnce(t, r, fix.Name, fix.Namespace)
+		assert.Zero(t, result.RequeueAfter, "completed fix should not requeue")
+
+		// CR should reflect Succeeded
+		var updated k8saiV1.DiagnosticFix
+		require.NoError(t, fakeClient.Get(ctx,
+			types.NamespacedName{Name: fix.Name, Namespace: fix.Namespace}, &updated))
+		assert.Equal(t, "Succeeded", updated.Status.Phase)
+		assert.Contains(t, updated.Status.Message, "created")
+		assert.NotNil(t, updated.Status.CompletedAt)
+		assert.NotNil(t, updated.Status.AppliedAt)
+
+		// The NetworkPolicy must exist in K8s
+		var np networkingv1.NetworkPolicy
+		require.NoError(t, fakeClient.Get(ctx,
+			types.NamespacedName{Name: "deny-all", Namespace: "default"}, &np),
+			"NetworkPolicy should have been created by the fix reconciler")
+
+		// SQLite must reflect Succeeded
+		storedFix, err := sqlStore.GetFix(ctx, fixUID)
+		require.NoError(t, err)
+		assert.Equal(t, store.FixPhaseSucceeded, storedFix.Phase)
+	})
+
+	t.Run("DryRun_GoesToDryRunComplete", func(t *testing.T) {
+		// A fix with strategy=dry-run must transition to DryRunComplete on the
+		// first reconcile without applying any patch.
+		ctx := context.Background()
+		sqlStore := newTempSQLiteStore(t)
+
+		fixUID := "fix-e2e-uid-dryrun-1"
+		fix := &k8saiV1.DiagnosticFix{
+			ObjectMeta: metav1.ObjectMeta{Name: "fix-e2e-dry", Namespace: "default", UID: types.UID(fixUID)},
+			Spec: k8saiV1.DiagnosticFixSpec{
+				DiagnosticRunRef: "run-1",
+				FindingTitle:     "Replica mismatch",
+				Target:           k8saiV1.FixTarget{Kind: "Deployment", Namespace: "default", Name: "web"},
+				Strategy:         "dry-run",
+				ApprovalRequired: true,
+				Patch:            k8saiV1.FixPatch{Type: "strategic-merge", Content: `{"spec":{"replicas":3}}`},
+			},
+		}
+
+		require.NoError(t, sqlStore.CreateFix(ctx, &store.Fix{
+			ID:    fixUID,
+			RunID: "run-1",
+			Phase: store.FixPhasePendingApproval,
+		}))
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(reconcilerTestScheme()).
+			WithObjects(fix).
+			WithStatusSubresource(fix).
+			Build()
+
+		r := &reconciler.DiagnosticFixReconciler{Client: fakeClient, Store: sqlStore}
+
+		// First reconcile: "" → DryRunComplete (requeued so reconciler can process next state)
+		reconcileFixOnce(t, r, fix.Name, fix.Namespace)
+
+		var updated k8saiV1.DiagnosticFix
+		require.NoError(t, fakeClient.Get(ctx,
+			types.NamespacedName{Name: fix.Name, Namespace: fix.Namespace}, &updated))
+		assert.Equal(t, "DryRunComplete", updated.Status.Phase)
+		assert.Contains(t, updated.Status.Message, "Dry-run")
+
+		// Second reconcile on DryRunComplete must be a no-op (terminal state)
+		result := reconcileFixOnce(t, r, fix.Name, fix.Namespace)
+		assert.Zero(t, result.RequeueAfter, "DryRunComplete is terminal — should not requeue")
 	})
 }

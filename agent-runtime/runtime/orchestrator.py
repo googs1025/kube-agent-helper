@@ -133,7 +133,7 @@ def _stream_message(client, tools, messages) -> dict:
         "accept": "text/event-stream",
     }
 
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    base_url = os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com"
     base_url = base_url.rstrip("/")
     # If base_url already ends with /v1/messages (some proxies), use as-is
     if base_url.endswith("/v1/messages"):

@@ -119,6 +119,20 @@ func RegisterExtension(s *server.MCPServer, d *Deps) {
 		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace of the target Pod")),
 		mcp.WithString("podName", mcp.Required(), mcp.Description("Name of the Pod to analyze")),
 	), []string{"namespace", "podName"}, NewNetworkPolicyCheckHandler(d))
+
+	registerTool(s, d, mcp.NewTool("events_history",
+		mcp.WithDescription("List recent Kubernetes Warning events from the local store"),
+		mcp.WithString("namespace", mcp.Description("Namespace to filter (omit for all namespaces)")),
+		mcp.WithString("name", mcp.Description("Involved object name to filter")),
+		mcp.WithNumber("since_minutes", mcp.Description("Return events from the last N minutes (default all time)")),
+		mcp.WithNumber("limit", mcp.Description("Max events to return (default 100)")),
+	), []string{"namespace", "name", "since_minutes", "limit"}, NewEventsHistoryHandler(d))
+
+	registerTool(s, d, mcp.NewTool("metric_history",
+		mcp.WithDescription("Query stored Prometheus metric snapshots"),
+		mcp.WithString("query", mcp.Required(), mcp.Description("PromQL metric name or expression used when scraping")),
+		mcp.WithNumber("since_minutes", mcp.Description("Return snapshots from the last N minutes (default 60)")),
+	), []string{"query", "since_minutes"}, NewMetricHistoryHandler(d))
 }
 
 // RegisterAll registers all core and extension tools.

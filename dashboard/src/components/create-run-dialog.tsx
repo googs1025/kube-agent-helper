@@ -28,6 +28,8 @@ export function CreateRunDialog({ onCreated }: Props) {
   const [modelConfigRef, setModelConfigRef] = useState("anthropic-credentials");
   const [timeoutSeconds, setTimeoutSeconds] = useState<string>("");
   const [outputLanguage, setOutputLanguage] = useState<"zh" | "en">(lang);
+  const [schedule, setSchedule] = useState("");
+  const [historyLimit, setHistoryLimit] = useState<string>("");
 
   // Keep outputLanguage in sync with UI language until the user opens the dialog
   useEffect(() => {
@@ -56,15 +58,17 @@ export function CreateRunDialog({ onCreated }: Props) {
       },
       skills: skills.length > 0 ? skills : undefined,
       modelConfigRef,
-      timeoutSeconds: timeoutSeconds ? Number(timeoutSeconds) : undefined,
+      timeoutSeconds: Number(timeoutSeconds) > 0 ? Number(timeoutSeconds) : undefined,
       outputLanguage,
+      schedule: schedule || undefined,
+      historyLimit: historyLimit ? Number(historyLimit) : undefined,
     };
     setLoading(true);
     try {
       await createRun(body);
       setOpen(false);
       onCreated();
-      setName(""); setNamespaces([]); setLabelSelector([]); setSkills([]); setTimeoutSeconds("");
+      setName(""); setNamespaces([]); setLabelSelector([]); setSkills([]); setTimeoutSeconds(""); setSchedule(""); setHistoryLimit("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("runs.form.error"));
     } finally {
@@ -144,7 +148,7 @@ export function CreateRunDialog({ onCreated }: Props) {
               <label className={labelClass}>
                 {t("runs.form.timeout")} <span className={hintClass}>（{t("runs.form.timeoutHint")}）</span>
               </label>
-              <input type="number" min={0} value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)}
+              <input type="number" min={1} value={timeoutSeconds} onChange={(e) => setTimeoutSeconds(e.target.value)}
                 placeholder="600" className={inputClass} />
             </div>
 
@@ -160,6 +164,38 @@ export function CreateRunDialog({ onCreated }: Props) {
               </div>
               <p className="text-xs text-gray-400 dark:text-gray-500">{t("runs.form.outputLanguageHint")}</p>
             </div>
+
+            <div className="space-y-1.5">
+              <label className={labelClass}>
+                {t("runs.form.schedule")} <span className={hintClass}>（{t("runs.form.scheduleHint")}）</span>
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {[
+                  { label: t("runs.form.schedulePreset.none"), value: "" },
+                  { label: t("runs.form.schedulePreset.hourly"), value: "0 * * * *" },
+                  { label: t("runs.form.schedulePreset.daily"), value: "0 8 * * *" },
+                  { label: t("runs.form.schedulePreset.weekly"), value: "0 8 * * 1" },
+                ].map((p) => (
+                  <button key={p.value} type="button" onClick={() => setSchedule(p.value)}
+                    className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${schedule === p.value ? "bg-blue-600 text-white" : "border border-gray-200 text-gray-600 hover:border-blue-300 dark:border-gray-700 dark:text-gray-400"}`}>
+                    {p.label}{p.value && <span className="ml-1 font-mono opacity-60">{p.value}</span>}
+                  </button>
+                ))}
+              </div>
+              <input value={schedule} onChange={(e) => setSchedule(e.target.value)}
+                placeholder="*/30 * * * *  （留空=一次性）"
+                className={`${inputClass} font-mono`} />
+            </div>
+
+            {schedule && (
+              <div className="space-y-1.5">
+                <label className={labelClass}>
+                  {t("runs.form.historyLimit")} <span className={hintClass}>（{t("runs.form.historyLimitHint")}）</span>
+                </label>
+                <input type="number" min={1} value={historyLimit} onChange={(e) => setHistoryLimit(e.target.value)}
+                  placeholder="10" className={inputClass} />
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <DialogClose render={<Button type="button" variant="outline" disabled={loading}>{t("common.cancel")}</Button>} />

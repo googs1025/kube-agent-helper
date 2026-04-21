@@ -5,6 +5,7 @@
     "skills": "Skills",
     "fixes": "Fixes",
     "diagnose": "Diagnose",
+    "events": "Events",
     "about": "About"
   },
   "overview": {
@@ -42,6 +43,9 @@
     "tools.list": "kubectl_get · kubectl_describe · kubectl_logs · kubectl_explain · events_list · top_pods · top_nodes · list_api_resources · prometheus_query · kubectl_rollout_status · node_status_summary · prometheus_alerts · pvc_status · network_policy_check"
   },
   "common": {
+    "crdYaml": "CRD YAML",
+    "copy": "Copy",
+    "copied": "Copied!",
     "cancel": "Cancel",
     "create": "Create",
     "approve": "Approve",
@@ -61,6 +65,7 @@
     "Running": "Running",
     "Succeeded": "Succeeded",
     "Failed": "Failed",
+    "Scheduled": "Scheduled",
     "PendingApproval": "Pending Approval",
     "Approved": "Approved",
     "Applying": "Applying",
@@ -136,7 +141,21 @@
     "form.outputLanguage.en": "English",
     "form.submit": "Create Run",
     "form.submitting": "Creating...",
-    "form.error": "Failed to create"
+    "form.error": "Failed to create",
+    "detail.schedule": "Schedule",
+    "detail.nextRunAt": "Next Run",
+    "detail.lastRunAt": "Last Run",
+    "detail.activeRuns": "Child Runs",
+    "detail.scheduledBadge": "Scheduled",
+    "detail.crdNotFound": "CRD YAML not available (the original DiagnosticRun CR has been deleted or is not accessible)",
+    "form.schedule": "Schedule",
+    "form.scheduleHint": "empty = one-time run",
+    "form.schedulePreset.none": "One-time",
+    "form.schedulePreset.hourly": "Hourly",
+    "form.schedulePreset.daily": "Daily 08:00",
+    "form.schedulePreset.weekly": "Weekly Mon",
+    "form.historyLimit": "History Limit",
+    "form.historyLimitHint": "max completed child runs to retain, default 10"
   },
   "skills": {
     "title": "Skills",
@@ -207,7 +226,27 @@
     "toast.rolledBack": "Patch failed, automatically rolled back to original state",
     "toast.rejected": "Fix suggestion rejected",
     "verify.successHint": "Patch applied successfully. Verify the resource with:",
-    "verify.failHint": "Operation did not succeed. Check the resource with:"
+    "verify.failHint": "Operation did not succeed. Check the resource with:",
+    "detail.crdYaml": "DiagnosticFix CRD YAML"
+  },
+  "events": {
+    "title": "Events",
+    "col.time": "Time",
+    "col.namespace": "Namespace",
+    "col.resource": "Resource",
+    "col.reason": "Reason",
+    "col.message": "Message",
+    "col.count": "Count",
+    "filter.namespace": "Namespace",
+    "filter.name": "Name",
+    "filter.since": "Since",
+    "filter.since.15m": "15 min",
+    "filter.since.30m": "30 min",
+    "filter.since.1h": "1 hour",
+    "filter.since.6h": "6 hours",
+    "filter.since.1d": "1 day",
+    "empty": "No events found",
+    "loading": "Loading events..."
   },
   "diagnose": {
     "title": "Quick Diagnose",
@@ -224,6 +263,25 @@
     "error": "Failed to create diagnosis",
     "recent": "Recent Diagnoses",
     "recentEmpty": "No diagnoses yet",
-    "findings_count": "findings"
+    "findings_count": "findings",
+    "created": "DiagnosticRun created",
+    "createdYAML": "Generated CRD YAML",
+    "goToRun": "View run detail",
+    "createAnother": "Create another",
+    "schedule": "Schedule (optional)",
+    "schedulePlaceholder": "Cron expression, e.g. 0 * * * * (hourly)",
+    "scheduleHint": "Leave empty for one-time run; fill to repeat on schedule",
+    "schedulePreset.none": "One-time",
+    "schedulePreset.hourly": "Every hour",
+    "schedulePreset.daily": "Daily 08:00",
+    "schedulePreset.weekly": "Weekly Mon 08:00",
+    "schedulePreset.custom": "Custom",
+    "cronHelp.title": "Cron expression format",
+    "cronHelp.minute": "minute",
+    "cronHelp.hour": "hour",
+    "cronHelp.day": "day",
+    "cronHelp.month": "month",
+    "cronHelp.weekday": "weekday",
+    "cronHelp.hint": "Tips: * = any, */2 = every 2, 1-5 = range, 1,3 = list"
   }
 }

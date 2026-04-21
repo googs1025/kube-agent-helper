@@ -44,7 +44,14 @@ spec:
             type: object
           spec:
             properties:
+              historyLimit:
+                description: Max number of child runs to retain for scheduled runs
+                format: int32
+                type: integer
               modelConfigRef:
+                type: string
+              schedule:
+                description: Cron expression for scheduled runs (e.g. "0 * * * *")
                 type: string
               skills:
                 items:
@@ -126,6 +133,19 @@ spec:
               startedAt:
                 format: date-time
                 type: string
+              nextRunAt:
+                description: Next scheduled run time (for scheduled DiagnosticRuns)
+                format: date-time
+                type: string
+              lastRunAt:
+                description: Last triggered run time (for scheduled DiagnosticRuns)
+                format: date-time
+                type: string
+              activeRuns:
+                description: Names of child DiagnosticRuns created by this scheduled run
+                items:
+                  type: string
+                type: array
             type: object
         type: object
     served: true
