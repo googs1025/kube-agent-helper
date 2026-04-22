@@ -30,44 +30,7 @@
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  User                                                                       │
-│  kubectl apply  │  Dashboard (Next.js :3000)  │  REST API (:8080)           │
-└────────┬─────────────────┬──────────────────────────┬───────────────────────┘
-         │ CR              │ /api/*                    │
-         ▼                 ▼                           │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Controller (Go)                                                            │
-│                                                                             │
-│  ┌─────────────────┐  ┌───────────────┐  ┌──────────────────────────────┐  │
-│  │ Run Reconciler   │  │ Fix Reconciler │  │ HTTP Server                  │  │
-│  │ Skill Reconciler │  │               │  │  /api/runs  /api/skills       │  │
-│  │ ModelConfig Ctrl  │  │ apply patch   │  │  /api/fixes /api/findings     │  │
-│  │ ScheduledRun Ctrl│  │ auto-rollback │  │  /api/events /api/runs/:id/crd│  │
-│  │ Pod status capture│  │               │  │  /api/k8s/resources           │  │
-│  └────────┬──────────┘  └───────────────┘  └──────────────────────────────┘  │
-│           │ Translator                                                      │
-│           ▼                                                                 │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ SQLite (diagnostic_runs, findings, skills, fixes, events, metrics)   │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ EventCollector (background: K8s Warning events + Prometheus metrics)  │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-└────────────┬────────────────────────────────────┬───────────────────────────┘
-             │ creates Job                        │ creates Job
-             ▼                                    ▼
-┌──────────────────────┐        ┌──────────────────────────────┐
-│  Diagnostic Agent Pod │        │  Fix Generator Pod            │
-│  python -m runtime.main│       │  python -m runtime.fix_main   │
-│  Multi-turn LLM loop   │       │  Single LLM call → patch JSON │
-│  ┌──────────────────┐ │       └──────────────────────────────┘
-│  │ k8s-mcp-server   │ │
-│  │ (16 MCP tools)   │ │
-│  └──────────────────┘ │
-└────────────────────────┘
-```
+![Architecture](docs/architecture.svg)
 
 ## Quick Start
 
