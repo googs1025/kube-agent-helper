@@ -1,6 +1,9 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: diagnosticfixes.k8sai.io
 spec:
   group: k8sai.io
@@ -8,100 +11,144 @@ spec:
     kind: DiagnosticFix
     listKind: DiagnosticFixList
     plural: diagnosticfixes
-    singular: diagnosticfix
     shortNames:
-      - dfix
+    - dfix
+    singular: diagnosticfix
   scope: Namespaced
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Phase
-          type: string
-          jsonPath: .status.phase
-        - name: Target
-          type: string
-          jsonPath: .spec.target.name
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required: [diagnosticRunRef, findingTitle, target, patch]
-              properties:
-                diagnosticRunRef:
-                  type: string
-                findingTitle:
-                  type: string
-                target:
-                  type: object
-                  required: [kind, namespace, name]
-                  properties:
-                    kind:
-                      type: string
-                    namespace:
-                      type: string
-                    name:
-                      type: string
-                strategy:
-                  type: string
-                  enum: [auto, dry-run, create]
-                  default: auto
-                approvalRequired:
-                  type: boolean
-                  default: true
-                patch:
-                  type: object
-                  required: [content]
-                  properties:
-                    type:
-                      type: string
-                      enum: [strategic-merge, json-patch]
-                      default: strategic-merge
-                    content:
-                      type: string
-                rollback:
-                  type: object
-                  properties:
-                    enabled:
-                      type: boolean
-                      default: true
-                    snapshotBefore:
-                      type: boolean
-                      default: true
-                    autoRollbackOnFailure:
-                      type: boolean
-                      default: true
-                    healthCheckTimeout:
-                      type: integer
-                      default: 300
-                findingID:
-                  type: string
-            status:
-              type: object
-              properties:
-                phase:
-                  type: string
-                  enum: [PendingApproval, Approved, Applying, Succeeded, Failed, RolledBack, DryRunComplete]
-                approvedBy:
-                  type: string
-                approvedAt:
-                  type: string
-                  format: date-time
-                appliedAt:
-                  type: string
-                  format: date-time
-                completedAt:
-                  type: string
-                  format: date-time
-                rollbackSnapshot:
-                  type: string
-                message:
-                  type: string
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.target.name
+      name: Target
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              approvalRequired:
+                default: true
+                type: boolean
+              diagnosticRunRef:
+                type: string
+              findingID:
+                type: string
+              findingTitle:
+                type: string
+              patch:
+                properties:
+                  content:
+                    type: string
+                  type:
+                    default: strategic-merge
+                    enum:
+                    - strategic-merge
+                    - json-patch
+                    type: string
+                required:
+                - content
+                - type
+                type: object
+              rollback:
+                properties:
+                  autoRollbackOnFailure:
+                    default: true
+                    type: boolean
+                  enabled:
+                    default: true
+                    type: boolean
+                  healthCheckTimeout:
+                    default: 300
+                    type: integer
+                  snapshotBefore:
+                    default: true
+                    type: boolean
+                required:
+                - autoRollbackOnFailure
+                - enabled
+                - snapshotBefore
+                type: object
+              strategy:
+                default: auto
+                enum:
+                - auto
+                - dry-run
+                - create
+                type: string
+              target:
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - kind
+                - name
+                - namespace
+                type: object
+            required:
+            - approvalRequired
+            - diagnosticRunRef
+            - findingTitle
+            - patch
+            - strategy
+            - target
+            type: object
+          status:
+            properties:
+              appliedAt:
+                format: date-time
+                type: string
+              approvedAt:
+                format: date-time
+                type: string
+              approvedBy:
+                type: string
+              completedAt:
+                format: date-time
+                type: string
+              message:
+                type: string
+              phase:
+                enum:
+                - PendingApproval
+                - Approved
+                - Applying
+                - Succeeded
+                - Failed
+                - RolledBack
+                - DryRunComplete
+                type: string
+              rollbackSnapshot:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

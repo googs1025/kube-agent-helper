@@ -18,6 +18,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.nextRunAt
+      name: NextRun
+      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -45,13 +48,22 @@ spec:
           spec:
             properties:
               historyLimit:
-                description: Max number of child runs to retain for scheduled runs
+                default: 10
+                description: HistoryLimit is the maximum number of completed child
+                  runs to retain.
                 format: int32
                 type: integer
               modelConfigRef:
                 type: string
+              outputLanguage:
+                enum:
+                - zh
+                - en
+                type: string
               schedule:
-                description: Cron expression for scheduled runs (e.g. "0 * * * *")
+                description: |-
+                  Schedule is a cron expression for periodic runs, e.g. "0 * * * *".
+                  When set, this DiagnosticRun acts as a template; child runs are created automatically.
                 type: string
               skills:
                 items:
@@ -76,19 +88,20 @@ spec:
                 - scope
                 type: object
               timeoutSeconds:
+                format: int32
                 type: integer
-                minimum: 0
-              outputLanguage:
-                enum:
-                - zh
-                - en
-                type: string
             required:
             - modelConfigRef
             - target
             type: object
           status:
             properties:
+              activeRuns:
+                description: ActiveRuns lists the names of child DiagnosticRuns created
+                  by this scheduled run.
+                items:
+                  type: string
+                type: array
               completedAt:
                 format: date-time
                 type: string
@@ -98,6 +111,8 @@ spec:
                 type: object
               findings:
                 items:
+                  description: FindingSummary is a compact representation of a finding
+                    stored in CR status.
                   properties:
                     dimension:
                       type: string
@@ -119,7 +134,16 @@ spec:
                   - title
                   type: object
                 type: array
+              lastRunAt:
+                description: LastRunAt is the time the last child run was created
+                  (only set when schedule is used).
+                format: date-time
+                type: string
               message:
+                type: string
+              nextRunAt:
+                description: NextRunAt is the scheduled time for the next child run.
+                format: date-time
                 type: string
               phase:
                 enum:
@@ -133,19 +157,6 @@ spec:
               startedAt:
                 format: date-time
                 type: string
-              nextRunAt:
-                description: Next scheduled run time (for scheduled DiagnosticRuns)
-                format: date-time
-                type: string
-              lastRunAt:
-                description: Last triggered run time (for scheduled DiagnosticRuns)
-                format: date-time
-                type: string
-              activeRuns:
-                description: Names of child DiagnosticRuns created by this scheduled run
-                items:
-                  type: string
-                type: array
             type: object
         type: object
     served: true
