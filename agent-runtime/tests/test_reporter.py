@@ -24,24 +24,35 @@ class TestPostFindings:
             timeout=10,
         )
 
-    def test_continues_on_failure(self, monkeypatch):
+    def test_retries_on_failure(self, monkeypatch):
         monkeypatch.setattr("runtime.reporter.CONTROLLER_URL", "http://ctrl:8080")
-        findings = [{"title": "f1"}, {"title": "f2"}, {"title": "f3"}]
+        monkeypatch.setattr("runtime.reporter.BACKOFF_BASE", 0.01)  # fast retry
+        findings = [{"title": "f1"}, {"title": "f2"}]
 
         call_count = {"n": 0}
         def failing_post(*args, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 2:
+                # First attempt for f2 fails
                 raise ConnectionError("network error")
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
             return resp
 
         with patch("runtime.reporter.requests.post", side_effect=failing_post):
-            # Should not raise even though second call fails
             post_findings("run-1", findings)
 
-        assert call_count["n"] == 3  # all 3 attempted
+        # f1: 1 call, f2: 1 fail + 1 retry = 3 total
+        assert call_count["n"] == 3
+
+    def test_gives_up_after_max_retries(self, monkeypatch):
+        monkeypatch.setattr("runtime.reporter.CONTROLLER_URL", "http://ctrl:8080")
+        monkeypatch.setattr("runtime.reporter.BACKOFF_BASE", 0.01)
+        monkeypatch.setattr("runtime.reporter.MAX_RETRIES", 1)
+
+        with patch("runtime.reporter.requests.post", side_effect=ConnectionError("down")):
+            post_findings("run-1", [{"title": "f1"}])
+            # Should not raise — just logs error
 
     def test_empty_findings(self, monkeypatch):
         monkeypatch.setattr("runtime.reporter.CONTROLLER_URL", "http://ctrl:8080")

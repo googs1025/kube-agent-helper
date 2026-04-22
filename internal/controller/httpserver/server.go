@@ -203,7 +203,8 @@ func (s *Server) handleInternalFixCallback(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		runs, err := s.store.ListRuns(r.Context(), store.ListOpts{Limit: 50})
+		opts := parsePagination(r)
+		runs, err := s.store.ListRuns(r.Context(), opts)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -529,7 +530,7 @@ func (s *Server) handleAPIFixes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	fixes, err := s.store.ListFixes(r.Context(), store.ListOpts{Limit: 50})
+	fixes, err := s.store.ListFixes(r.Context(), parsePagination(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1002,6 +1003,27 @@ func randSuffix(n int) string {
 		b[i] = chars[rand.Intn(len(chars))]
 	}
 	return string(b)
+}
+
+// parsePagination reads ?limit= and ?offset= from the request query string.
+func parsePagination(r *http.Request) store.ListOpts {
+	q := r.URL.Query()
+	limit := 50
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 500 {
+				n = 500
+			}
+			limit = n
+		}
+	}
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	return store.ListOpts{Limit: limit, Offset: offset}
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
