@@ -267,6 +267,50 @@ jobs:
           done
           if [ $ERRORS -gt 0 ]; then exit 1; fi
 
+  crd-check:
+    name: CRD Consistency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install controller-gen
+        run: go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+
+      - name: Regenerate CRDs from types.go
+        run: controller-gen crd paths="./internal/controller/api/..." output:crd:dir=deploy/crds
+
+      - name: Check deploy/crds is up to date
+        run: |
+          if ! git diff --exit-code deploy/crds/; then
+            echo "::error::deploy/crds/ is out of date with types.go. Run: controller-gen crd paths=./internal/controller/api/... output:crd:dir=deploy/crds"
+            exit 1
+          fi
+
+      - name: Check Helm CRDs match deploy/crds
+        run: |
+          if ! diff deploy/crds/ deploy/helm/templates/crds/; then
+            echo "::error::deploy/helm/templates/crds/ differs from deploy/crds/. Run: cp deploy/crds/*.yaml deploy/helm/templates/crds/"
+            exit 1
+          fi
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build controller image
+        run: docker build -f Dockerfile -t controller:ci .
+
+      - name: Build agent-runtime image
+        run: docker build -f agent-runtime/Dockerfile -t agent-runtime:ci .
+
   helm-lint:
     name: Helm Lint
     runs-on: ubuntu-latest

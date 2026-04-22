@@ -153,7 +153,7 @@ type ModelConfigList struct {
 // ── DiagnosticFix ────────────────────────────────────────────────────────
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:resource:scope=Namespaced,shortName=dfix
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.target.name`

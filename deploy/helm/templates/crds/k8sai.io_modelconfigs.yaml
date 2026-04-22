@@ -47,6 +47,10 @@ spec:
                 - key
                 - name
                 type: object
+              baseURL:
+                description: BaseURL overrides the Anthropic API endpoint (e.g. for
+                  custom proxies).
+                type: string
               maxTurns:
                 default: 20
                 type: integer
