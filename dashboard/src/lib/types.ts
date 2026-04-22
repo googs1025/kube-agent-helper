@@ -99,6 +99,18 @@ export interface K8sResourceItem {
   namespace?: string;
 }
 
+export interface ModelConfig {
+  name: string;
+  namespace: string;
+  provider: string;
+  model: string;
+  baseURL?: string;
+  maxTurns?: number;
+  secretRef: string;
+  secretKey: string;
+  apiKey: string; // always "****"
+}
+
 export interface KubeEvent {
   ID: number;
   UID: string;

@@ -23,6 +23,7 @@ function Nav() {
           <Link href="/skills" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.skills")}</Link>
           <Link href="/fixes" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.fixes")}</Link>
           <Link href="/events" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.events")}</Link>
+          <Link href="/modelconfigs" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.modelconfigs")}</Link>
           <Link href="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.about")}</Link>
         </div>
         <div className="flex items-center gap-1">

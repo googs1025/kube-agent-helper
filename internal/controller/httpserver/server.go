@@ -41,6 +41,7 @@ func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *S
 	srv.mux.HandleFunc("/api/fixes/", srv.handleAPIFixDetail)
 	srv.mux.HandleFunc("/api/findings/", srv.handleAPIFindingAction)
 	srv.mux.HandleFunc("/api/events", srv.handleAPIEvents)
+	srv.mux.HandleFunc("/api/modelconfigs", srv.handleAPIModelConfigs)
 	srv.mux.HandleFunc("/api/k8s/resources", srv.handleAPIK8sResources)
 	return srv
 }
@@ -901,6 +902,107 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/k8s/resources?kind=X&namespace=Y&name=Z
+// GET|POST /api/modelconfigs
+func (s *Server) handleAPIModelConfigs(w http.ResponseWriter, r *http.Request) {
+	if s.k8sClient == nil {
+		http.Error(w, "k8s client not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		var list v1alpha1.ModelConfigList
+		if err := s.k8sClient.List(r.Context(), &list); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		type modelConfigView struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+			Provider  string `json:"provider"`
+			Model     string `json:"model"`
+			BaseURL   string `json:"baseURL,omitempty"`
+			MaxTurns  *int   `json:"maxTurns,omitempty"`
+			SecretRef string `json:"secretRef"`
+			SecretKey string `json:"secretKey"`
+			APIKey    string `json:"apiKey"` // always masked
+		}
+		views := make([]modelConfigView, 0, len(list.Items))
+		for _, mc := range list.Items {
+			views = append(views, modelConfigView{
+				Name:      mc.Name,
+				Namespace: mc.Namespace,
+				Provider:  mc.Spec.Provider,
+				Model:     mc.Spec.Model,
+				BaseURL:   mc.Spec.BaseURL,
+				MaxTurns:  mc.Spec.MaxTurns,
+				SecretRef: mc.Spec.APIKeyRef.Name,
+				SecretKey: mc.Spec.APIKeyRef.Key,
+				APIKey:    "****",
+			})
+		}
+		writeJSON(w, views)
+	case http.MethodPost:
+		var req struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+			Provider  string `json:"provider"`
+			Model     string `json:"model"`
+			BaseURL   string `json:"baseURL"`
+			MaxTurns  *int   `json:"maxTurns"`
+			SecretRef string `json:"secretRef"`
+			SecretKey string `json:"secretKey"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" || req.Namespace == "" {
+			http.Error(w, "name and namespace are required", http.StatusBadRequest)
+			return
+		}
+		if req.SecretRef == "" {
+			req.SecretRef = req.Name
+		}
+		if req.SecretKey == "" {
+			req.SecretKey = "apiKey"
+		}
+		if req.Provider == "" {
+			req.Provider = "anthropic"
+		}
+		if req.Model == "" {
+			req.Model = "claude-sonnet-4-6"
+		}
+		mc := &v1alpha1.ModelConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.Name,
+				Namespace: req.Namespace,
+			},
+			Spec: v1alpha1.ModelConfigSpec{
+				Provider: req.Provider,
+				Model:    req.Model,
+				BaseURL:  req.BaseURL,
+				MaxTurns: req.MaxTurns,
+				APIKeyRef: v1alpha1.SecretKeyRef{
+					Name: req.SecretRef,
+					Key:  req.SecretKey,
+				},
+			},
+		}
+		if err := s.k8sClient.Create(r.Context(), mc); err != nil {
+			if errors.IsAlreadyExists(err) {
+				http.Error(w, "modelconfig already exists", http.StatusConflict)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, map[string]string{"name": mc.Name, "namespace": mc.Namespace})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (s *Server) handleAPIK8sResources(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

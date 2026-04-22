@@ -6,6 +6,7 @@
     "fixes": "修复建议",
     "diagnose": "诊断",
     "events": "事件",
+    "modelconfigs": "模型配置",
     "about": "关于"
   },
   "overview": {
@@ -228,6 +229,30 @@
     "verify.successHint": "补丁已成功应用。可通过以下命令验证资源当前状态：",
     "verify.failHint": "操作未成功。可通过以下命令检查资源当前状态：",
     "detail.crdYaml": "DiagnosticFix CRD YAML"
+  },
+  "modelconfigs": {
+    "title": "模型配置",
+    "empty": "暂无模型配置",
+    "loading": "加载中...",
+    "col.name": "名称",
+    "col.namespace": "命名空间",
+    "col.provider": "提供商",
+    "col.model": "模型",
+    "col.baseURL": "代理地址",
+    "col.maxTurns": "最大轮数",
+    "col.secret": "密钥引用",
+    "col.apiKey": "API Key",
+    "create.title": "创建模型配置",
+    "create.name": "名称",
+    "create.namespace": "命名空间",
+    "create.provider": "提供商",
+    "create.model": "模型",
+    "create.baseURL": "代理地址 (可选)",
+    "create.maxTurns": "最大轮数",
+    "create.secretRef": "Secret 名称",
+    "create.secretKey": "Secret Key",
+    "create.submit": "创建",
+    "create.cancel": "取消"
   },
   "events": {
     "title": "事件",

@@ -6,6 +6,7 @@
     "fixes": "Fixes",
     "diagnose": "Diagnose",
     "events": "Events",
+    "modelconfigs": "Models",
     "about": "About"
   },
   "overview": {
@@ -228,6 +229,30 @@
     "verify.successHint": "Patch applied successfully. Verify the resource with:",
     "verify.failHint": "Operation did not succeed. Check the resource with:",
     "detail.crdYaml": "DiagnosticFix CRD YAML"
+  },
+  "modelconfigs": {
+    "title": "Model Configs",
+    "empty": "No model configs found",
+    "loading": "Loading...",
+    "col.name": "Name",
+    "col.namespace": "Namespace",
+    "col.provider": "Provider",
+    "col.model": "Model",
+    "col.baseURL": "Base URL",
+    "col.maxTurns": "Max Turns",
+    "col.secret": "Secret Ref",
+    "col.apiKey": "API Key",
+    "create.title": "Create Model Config",
+    "create.name": "Name",
+    "create.namespace": "Namespace",
+    "create.provider": "Provider",
+    "create.model": "Model",
+    "create.baseURL": "Base URL (optional)",
+    "create.maxTurns": "Max Turns",
+    "create.secretRef": "Secret Name",
+    "create.secretKey": "Secret Key",
+    "create.submit": "Create",
+    "create.cancel": "Cancel"
   },
   "events": {
     "title": "Events",
