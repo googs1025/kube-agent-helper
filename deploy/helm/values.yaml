@@ -39,3 +39,15 @@ anthropic:
   secretKey: "apiKey"
   baseURL: ""
   model: ""
+
+prometheus:
+  url: ""              # Prometheus URL for background metric scraping (e.g. http://prometheus:9090)
+  agentURL: ""         # Prometheus URL injected into agent pods (defaults to url if empty)
+  metricsQueries: ""   # Comma-separated PromQL queries to scrape
+
+ingress:
+  enabled: false
+  className: ""
+  host: "kube-agent-helper.local"
+  annotations: {}
+  tls: []

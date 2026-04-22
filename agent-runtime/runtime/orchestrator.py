@@ -5,6 +5,7 @@ from typing import List
 
 import anthropic
 
+from . import logger
 from .mcp_client import discover_tools, call_mcp_tool
 from .skill_loader import Skill
 
@@ -53,9 +54,9 @@ def run_agent(skills: List[Skill]) -> List[dict]:
     client = anthropic.Anthropic()
 
     tools = discover_tools()
-    print(f"[info] discovered {len(tools)} MCP tools")
+    logger.info("discovered MCP tools", count=len(tools))
     if tools:
-        print(f"[info] tools: {[t['name'] for t in tools]}")
+        logger.info("tools", names=[t['name'] for t in tools])
 
     prompt = build_prompt(skills)
     messages = [{"role": "user", "content": prompt}]
@@ -64,18 +65,18 @@ def run_agent(skills: List[Skill]) -> List[dict]:
     max_turns = int(os.environ.get("MAX_TURNS", "10"))
 
     for turn in range(max_turns):
-        print(f"[info] turn {turn+1}/{max_turns}")
+        logger.info("turn", turn=turn + 1, max_turns=max_turns)
 
         # Use streaming to work with proxies that only support stream mode
         response = _stream_message(client, tools, messages)
-        print(f"[info] stop_reason={response['stop_reason']}, blocks={len(response['content'])}")
+        logger.info("response", stop_reason=response['stop_reason'], blocks=len(response['content']))
 
         # Build assistant message content for conversation history
         assistant_content = []
         for block in response["content"]:
             if block["type"] == "text" and block.get("text"):
                 assistant_content.append({"type": "text", "text": block["text"]})
-                print(f"[debug] text ({len(block['text'])} chars): {block['text'][:200]}")
+                logger.debug("text block", chars=len(block['text']), preview=block['text'][:200])
                 # Extract findings from text
                 for line in block["text"].split("\n"):
                     line = line.strip()
@@ -87,10 +88,10 @@ def run_agent(skills: List[Skill]) -> List[dict]:
                             pass
             elif block["type"] == "tool_use":
                 assistant_content.append(block)
-                print(f"[debug] tool_use: {block['name']}({json.dumps(block.get('input', {}))})")
+                logger.debug("tool_use", tool=block['name'], input=block.get('input', {}))
 
         if not assistant_content:
-            print("[warn] empty response from model, stopping")
+            logger.warn("empty response from model, stopping")
             break
 
         messages.append({"role": "assistant", "content": assistant_content})
@@ -103,7 +104,7 @@ def run_agent(skills: List[Skill]) -> List[dict]:
             for block in response["content"]:
                 if block["type"] == "tool_use":
                     result = call_mcp_tool(block["name"], block["input"])
-                    print(f"[debug] tool result for {block['name']}: {result[:200]}")
+                    logger.debug("tool result", tool=block['name'], preview=result[:200])
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block["id"],
@@ -111,7 +112,7 @@ def run_agent(skills: List[Skill]) -> List[dict]:
                     })
             messages.append({"role": "user", "content": tool_results})
         else:
-            print(f"[warn] unexpected stop_reason: {response['stop_reason']}, stopping")
+            logger.warn("unexpected stop_reason, stopping", stop_reason=response['stop_reason'])
             break
 
     return findings

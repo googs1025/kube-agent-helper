@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix, KubeEvent } from "./types";
+import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix, KubeEvent, ModelConfig } from "./types";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -162,4 +162,29 @@ export async function getK8sResourceDetail(
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+export function useModelConfigs() {
+  return useSWR<ModelConfig[]>("/api/modelconfigs", fetcher, { refreshInterval: 10000 });
+}
+
+export async function createModelConfig(body: {
+  name: string;
+  namespace: string;
+  provider?: string;
+  model?: string;
+  baseURL?: string;
+  maxTurns?: number;
+  secretRef?: string;
+  secretKey?: string;
+}): Promise<void> {
+  const res = await fetch("/api/modelconfigs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
 }

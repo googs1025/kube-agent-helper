@@ -22,7 +22,8 @@ def load_skills(skill_names: List[str]) -> List[Skill]:
     for name in skill_names:
         path = os.path.join(SKILLS_DIR, f"{name}.md")
         if not os.path.exists(path):
-            print(f"[warn] skill file not found: {path}")
+            from . import logger
+            logger.warn("skill file not found", path=path)
             continue
         skill = _parse_skill_md(path)
         if skill:

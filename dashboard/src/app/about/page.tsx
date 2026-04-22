@@ -20,36 +20,41 @@ export default function AboutPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-gray-700 dark:text-gray-300">{t("about.arch.desc")}</p>
-          <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100 dark:bg-gray-950 leading-relaxed">{`┌─────────────────────────────────────────────────────────────────┐
-│  User: Dashboard (Next.js) / kubectl / REST API                 │
-└────────┬──────────────────────┬─────────────────────────────────┘
+          <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100 dark:bg-gray-950 leading-relaxed">{`┌───────────────────────────────────────────────────────────────────────┐
+│  User: Dashboard (Next.js :3000) / kubectl / REST API (:8080)        │
+│  4 CRDs: DiagnosticRun · DiagnosticFix · DiagnosticSkill · ModelConfig│
+└────────┬──────────────────────┬───────────────────────────────────────┘
          │ CR apply             │ /api/*
          ▼                      ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Controller (Go)                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
-│  │Run Reconciler │  │Fix Reconciler │  │ HTTP Server           │ │
-│  │Skill Reconciler│ │ apply/create │  │ /api/runs,skills,fixes│ │
-│  │Pod status     │  │ auto-rollback│  │ /api/findings/*/fix   │ │
-│  └──────┬────────┘  └──────────────┘  └───────────────────────┘ │
-│         │ Translator                                             │
-│         ▼                                                        │
-│  ┌──────────────────────────────────────────────┐               │
-│  │ SQLite (runs, findings, skills, fixes)        │               │
-│  └─────────���────────────────────────────────────┘               │
-└────────┬──────────────────────────┬─────────────────────────────┘
-         │ creates Job              │ creates Job
-         ▼                          ▼
-┌────────────────────┐   ┌─────────────────────────┐
-│ Diagnostic Agent   │   │ Fix Generator Pod        │
-│ multi-turn LLM     │   │ single LLM call          │
-│ ┌────────────────┐ │   │ kubectl_get → snapshot   │
-│ │k8s-mcp-server  │ │   │ LLM → patch JSON         │
-│ │9 read-only     │ │   │ POST /internal/fixes     │
-│ │MCP tools       │ │   └─────────────────────────┘
-│ └────────────────┘ │
-│ POST findings→ctrl │
-└────────────────────┘`}</pre>
+┌───────────────────────────────────────────────────────────────────────┐
+│  Controller (Go)                                                       │
+│  ┌────────────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
+│  │ 5 Reconcilers       │  │ HTTP Server   │  │ Translator            │ │
+│  │ DiagnosticRun       │  │ /api/runs     │  │ CR → Job + SA + RBAC  │ │
+│  │ DiagnosticFix       │  │ /api/skills   │  │ + ConfigMap           │ │
+│  │ DiagnosticSkill     │  │ /api/fixes    │  └───────────────────────┘ │
+│  │ ModelConfig         │  │ /api/events   │                            │
+│  │ ScheduledRun        │  │ /api/modelconfigs                        │ │
+│  └────────────────────┘  └──────────────┘                             │
+│  ┌──────────────────────────────────┐  ┌────────────────────────────┐ │
+│  │ SQLite                            │  │ EventCollector              │ │
+│  │ runs/findings/fixes/events/metrics│  │ K8s Warning + Prom Snapshots│ │
+│  └──────────────────────────────────┘  └────────────────────────────┘ │
+└────────┬──────────────────────────────────┬───────────────────────────┘
+         │ creates Job                       │ creates Job
+         ▼                                   ▼
+┌──────────────────────────┐   ┌────────────────────────────┐
+│ Diagnostic Agent Pod      │   │ Fix Generator Pod           │
+│ python -m runtime.main    │   │ single LLM call → patch JSON│
+│ multi-turn Claude loop    │   │ strategy: merge/create      │
+│ ┌──────────────────────┐ │   └────────────────────────────┘
+│ │ k8s-mcp-server (Go)  │ │         │
+│ │ 16 MCP Tools         │ │         ▼
+│ │ kubectl · prometheus  │ │   ┌──────────────┐
+│ │ events · metrics · …  │ │   │ Claude API   │
+│ └──────────────────────┘ │   │ (Anthropic)  │
+│ POST findings → Controller│   └──────────────┘
+└──────────────────────────┘`}</pre>
         </CardContent>
       </Card>
 

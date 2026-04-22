@@ -38,7 +38,8 @@ def discover_tools() -> list:
                 mcp_tools = parsed["result"].get("tools", [])
                 return [_mcp_to_anthropic_tool(t) for t in mcp_tools]
     except Exception as e:
-        print(f"[warn] tool discovery failed: {e}")
+        from . import logger
+        logger.warn("tool discovery failed", error=str(e))
     return []
 
 

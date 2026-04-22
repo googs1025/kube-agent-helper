@@ -20,13 +20,31 @@ spec:
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - containerPort: {{ .Values.dashboard.port }}
+          name: http
         env:
         - name: HOSTNAME
           value: "0.0.0.0"
         - name: API_URL
           value: "http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:8080"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           {{- toYaml .Values.dashboard.resources | nindent 10 }}
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          readOnlyRootFilesystem: false
+          allowPrivilegeEscalation: false
 ---
 apiVersion: v1
 kind: Service

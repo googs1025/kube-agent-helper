@@ -3,6 +3,7 @@
 import Link from "next/link";
 import "./globals.css";
 import { ClientProviders } from "@/components/client-providers";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useI18n } from "@/i18n/context";
@@ -22,6 +23,7 @@ function Nav() {
           <Link href="/skills" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.skills")}</Link>
           <Link href="/fixes" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.fixes")}</Link>
           <Link href="/events" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.events")}</Link>
+          <Link href="/modelconfigs" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.modelconfigs")}</Link>
           <Link href="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.about")}</Link>
         </div>
         <div className="flex items-center gap-1">
@@ -43,7 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <ClientProviders>
           <Nav />
-          <main className="mx-auto max-w-7xl px-6 py-8 text-gray-900 dark:text-gray-100">{children}</main>
+          <ErrorBoundary>
+            <main className="mx-auto max-w-7xl px-6 py-8 text-gray-900 dark:text-gray-100">{children}</main>
+          </ErrorBoundary>
         </ClientProviders>
       </body>
     </html>
