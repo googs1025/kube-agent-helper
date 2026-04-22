@@ -243,6 +243,25 @@ jobs:
             echo "  OK: $f"
           done
 
+  python-test:
+    name: Agent Runtime Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: agent-runtime
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Run tests
+        working-directory: agent-runtime
+        run: PYTHONPATH=. python -m pytest tests/ -v
+
   skill-lint:
     name: Skill File Validation
     runs-on: ubuntu-latest
