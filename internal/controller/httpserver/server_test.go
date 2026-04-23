@@ -550,6 +550,51 @@ func (r *rejectErrFakeStore) UpdateFixPhase(_ context.Context, _ string, _ store
 	return store.ErrNotFound
 }
 
+// filteringFakeStore extends fakeStore with ClusterName filtering for ListRuns, ListFixes, and ListEvents.
+type filteringFakeStore struct {
+	fakeStore
+}
+
+func (f *filteringFakeStore) ListRuns(_ context.Context, opts store.ListOpts) ([]*store.DiagnosticRun, error) {
+	if opts.ClusterName == "" {
+		return f.runs, nil
+	}
+	var out []*store.DiagnosticRun
+	for _, r := range f.runs {
+		if r.ClusterName == opts.ClusterName {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *filteringFakeStore) ListFixes(_ context.Context, opts store.ListOpts) ([]*store.Fix, error) {
+	if opts.ClusterName == "" {
+		return f.fixes, nil
+	}
+	var out []*store.Fix
+	for _, fx := range f.fixes {
+		if fx.ClusterName == opts.ClusterName {
+			out = append(out, fx)
+		}
+	}
+	return out, nil
+}
+
+func (f *filteringFakeStore) ListEvents(_ context.Context, opts store.ListEventsOpts) ([]*store.Event, error) {
+	f.lastListEvtsOpt = opts
+	if opts.ClusterName == "" {
+		return f.events, nil
+	}
+	var out []*store.Event
+	for _, ev := range f.events {
+		if ev.ClusterName == opts.ClusterName {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+
 func TestK8sResources_ListNamespaces(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -792,6 +837,133 @@ func TestGetRunCRD_NotFound(t *testing.T) {
 	srv.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPIRunsClusterFilter(t *testing.T) {
+	fs := &filteringFakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: "r1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+		{ID: "r2", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+		{ID: "r3", ClusterName: "prod", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Filter by cluster=prod → expect 1 run
+	req := httptest.NewRequest(http.MethodGet, "/api/runs?cluster=prod", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var prodRuns []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&prodRuns))
+	assert.Len(t, prodRuns, 1)
+
+	// Filter by cluster=local → expect 2 runs
+	req = httptest.NewRequest(http.MethodGet, "/api/runs?cluster=local", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var localRuns []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&localRuns))
+	assert.Len(t, localRuns, 2)
+
+	// No filter → expect 3 runs
+	req = httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var allRuns []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allRuns))
+	assert.Len(t, allRuns, 3)
+}
+
+func TestAPIFixesClusterFilter(t *testing.T) {
+	fs := &filteringFakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: "run-1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhaseSucceeded},
+	}
+	fs.fixes = []*store.Fix{
+		{ID: "fix-1", RunID: "run-1", ClusterName: "local", FindingTitle: "t1",
+			TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app",
+			Phase: store.FixPhasePendingApproval},
+		{ID: "fix-2", RunID: "run-1", ClusterName: "staging", FindingTitle: "t2",
+			TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app2",
+			Phase: store.FixPhasePendingApproval},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Filter by cluster=staging → expect 1 fix
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes?cluster=staging", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var stagingFixes []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&stagingFixes))
+	assert.Len(t, stagingFixes, 1)
+
+	// No filter → expect 2 fixes
+	req = httptest.NewRequest(http.MethodGet, "/api/fixes", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var allFixes []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allFixes))
+	assert.Len(t, allFixes, 2)
+}
+
+func TestAPIClustersGet(t *testing.T) {
+	// Use a fake k8s client with no ClusterConfig CRs — should still return "local"
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/clusters", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var clusters []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&clusters))
+	require.NotEmpty(t, clusters, "response should contain at least the local cluster")
+
+	// Verify the local cluster entry is present with phase "Connected"
+	var foundLocal bool
+	for _, c := range clusters {
+		if c["name"] == "local" {
+			foundLocal = true
+			assert.Equal(t, "Connected", c["phase"])
+		}
+	}
+	assert.True(t, foundLocal, "response must include a 'local' cluster entry")
+}
+
+func TestAPIEventsClusterFilter(t *testing.T) {
+	fs := &filteringFakeStore{}
+	fs.events = []*store.Event{
+		{UID: "ev-1", ClusterName: "local", Namespace: "default", Kind: "Pod", Name: "pod-1",
+			Reason: "OOMKilled", Message: "out of memory", Type: "Warning", Count: 1},
+		{UID: "ev-2", ClusterName: "prod", Namespace: "default", Kind: "Pod", Name: "pod-2",
+			Reason: "BackOff", Message: "crash loop", Type: "Warning", Count: 3},
+	}
+	srv := httpserver.New(fs, nil, nil)
+
+	// Filter by cluster=prod → expect 1 event
+	req := httptest.NewRequest(http.MethodGet, "/api/events?cluster=prod", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var prodEvents []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&prodEvents))
+	assert.Len(t, prodEvents, 1)
+	assert.Equal(t, "ev-2", prodEvents[0]["UID"])
+	assert.Equal(t, "prod", fs.lastListEvtsOpt.ClusterName)
+
+	// No filter → expect 2 events
+	req = httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var allEvents []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allEvents))
+	assert.Len(t, allEvents, 2)
+	assert.Equal(t, "", fs.lastListEvtsOpt.ClusterName)
 }
 
 func TestHandleAPIEvents(t *testing.T) {
