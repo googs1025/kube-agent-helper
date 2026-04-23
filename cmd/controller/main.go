@@ -124,10 +124,13 @@ func main() {
 		Model:            model,
 	})
 
+	clusterRegistry := registry.NewClusterClientRegistry()
+
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
 		Store:      st,
 		Translator: tr,
+		Registry:   clusterRegistry,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup reconciler", "error", err)
 		os.Exit(1)
@@ -162,8 +165,6 @@ func main() {
 		slog.Error("setup scheduled run reconciler", "error", err)
 		os.Exit(1)
 	}
-
-	clusterRegistry := registry.NewClusterClientRegistry()
 
 	if err := (&reconciler.ClusterConfigReconciler{
 		Client:   mgr.GetClient(),
