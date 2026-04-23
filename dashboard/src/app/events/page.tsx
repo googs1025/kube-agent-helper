@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useEvents } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
+import { useCluster } from "@/cluster/context";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,6 +23,7 @@ const SINCE_OPTIONS = [
 
 export default function EventsPage() {
   const { t } = useI18n();
+  const { cluster } = useCluster();
   const [namespace, setNamespace] = useState("");
   const [name, setName] = useState("");
   const [since, setSince] = useState<number>(60);
@@ -30,6 +32,7 @@ export default function EventsPage() {
     namespace: namespace.trim() || undefined,
     name: name.trim() || undefined,
     since,
+    cluster,
   });
 
   return (

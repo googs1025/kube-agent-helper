@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRuns } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
+import { useCluster } from "@/cluster/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { CreateRunDialog } from "@/components/create-run-dialog";
 import { Activity, Cpu, Wrench } from "lucide-react";
@@ -26,7 +27,8 @@ function duration(start: string | null, end: string | null): string {
 
 export default function RunsPage() {
   const { t } = useI18n();
-  const { data: runs, error, isLoading, mutate } = useRuns();
+  const { cluster } = useCluster();
+  const { data: runs, error, isLoading, mutate } = useRuns({ cluster });
   if (isLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
   if (error) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
 

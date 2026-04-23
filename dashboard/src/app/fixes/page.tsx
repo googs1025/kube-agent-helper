@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useFixes } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
+import { useCluster } from "@/cluster/context";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -20,7 +21,8 @@ const phaseColors: Record<string, string> = {
 
 export default function FixesPage() {
   const { t } = useI18n();
-  const { data: fixes, error, isLoading } = useFixes();
+  const { cluster } = useCluster();
+  const { data: fixes, error, isLoading } = useFixes({ cluster });
   if (isLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
   if (error) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
 
