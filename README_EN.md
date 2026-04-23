@@ -12,12 +12,13 @@
 ## Features
 
 - **CRD-driven diagnostics** — declare tasks with `DiagnosticRun`; extend with `DiagnosticSkill` CRs
-- **4 CRDs** — `DiagnosticRun`, `DiagnosticSkill`, `ModelConfig`, `DiagnosticFix`
+- **5 CRDs** — `DiagnosticRun`, `DiagnosticSkill`, `ModelConfig`, `DiagnosticFix`, `ClusterConfig`
 - **10 built-in skills** — health, security, cost, reliability, config-drift, alert-responder, network, node, rollout, storage
 - **16 MCP tools** — kubectl, Prometheus, logs, network policies, PVC, node status, event history, metric snapshots, and more
 - **Claude-powered agentic loop** — multi-turn reasoning over live cluster data
 - **Scheduled diagnostics** — `spec.schedule` (cron) + `spec.historyLimit` for periodic automated runs; controller creates child runs on schedule
 - **EventCollector** — background collector watches K8s Warning events and scrapes Prometheus metrics into SQLite, providing historical context to the agent
+- **Multi-cluster support** — register remote clusters via `ClusterConfig` CRD, use `spec.clusterRef` to target diagnostics
 - **Fix generation** — click "Generate Fix" on any finding; a short-lived Pod produces a patch or full resource manifest via LLM
 - **Before/After diff** — Fix detail page shows resource diff before applying
 - **Human-in-the-loop approval** — Fixes go through `PendingApproval → Approved → Applying → Succeeded` with optional auto-rollback
@@ -187,6 +188,7 @@ Custom skills: create a `DiagnosticSkill` CR or place a `.md` file in `skills/`.
 | `DiagnosticSkill` | Declares a diagnostic skill (dimension, prompt, tools) |
 | `ModelConfig` | LLM provider configuration (API key secret reference, `baseURL` proxy endpoint) |
 | `DiagnosticFix` | A proposed fix (patch or new resource) with approval workflow |
+| `ClusterConfig` | Remote cluster registration (kubeconfig Secret ref), displays connection status |
 
 ### ModelConfig
 

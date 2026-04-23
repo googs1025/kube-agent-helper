@@ -1,0 +1,14 @@
+# 本地集群无需 ClusterConfig — 默认可用。
+# 当 DiagnosticRun.spec.clusterRef 为空时，诊断运行在本地集群。
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: local-health-check
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: namespace
+    namespaces:
+      - default
+  modelConfigRef: "anthropic-credentials"
+  # clusterRef: ""  ← 省略或留空 = 本地集群

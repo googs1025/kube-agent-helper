@@ -1,0 +1,26 @@
+# 前置步骤：
+#   1. 在远端集群创建只读 ServiceAccount:
+#      kubectl create sa kah-reader -n kube-system
+#      kubectl create clusterrolebinding kah-reader \
+#        --clusterrole=view --serviceaccount=kube-system:kah-reader
+#
+#   2. 导出 kubeconfig:
+#      TOKEN=$(kubectl create token kah-reader -n kube-system --duration=8760h)
+#      # 用 TOKEN + CA + SERVER 构造 kubeconfig 文件
+#
+#   3. 创建 Secret:
+#      kubectl create secret generic prod-kubeconfig \
+#        -n kube-agent-helper \
+#        --from-file=kubeconfig=/tmp/prod-kubeconfig.yaml
+---
+apiVersion: k8sai.io/v1alpha1
+kind: ClusterConfig
+metadata:
+  name: prod
+  namespace: kube-agent-helper
+spec:
+  kubeConfigRef:
+    name: prod-kubeconfig
+    key: kubeconfig
+  prometheusURL: "http://prometheus.monitoring:9090"
+  description: "Production cluster (us-east-1)"
