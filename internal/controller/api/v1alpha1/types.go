@@ -67,6 +67,10 @@ type DiagnosticRunSpec struct {
 	// +optional
 	// +kubebuilder:default=10
 	HistoryLimit *int32 `json:"historyLimit,omitempty"`
+	// ClusterRef is the name of a ClusterConfig CR in the same namespace.
+	// When empty, the local (controller) cluster is used.
+	// +optional
+	ClusterRef string `json:"clusterRef,omitempty"`
 }
 
 type TargetSpec struct {
@@ -222,11 +226,49 @@ type DiagnosticFixList struct {
 	Items           []DiagnosticFix `json:"items"`
 }
 
+// ── ClusterConfig ─────────────────────────────────────────────────────────
+
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+type ClusterConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ClusterConfigSpec   `json:"spec,omitempty"`
+	Status            ClusterConfigStatus `json:"status,omitempty"`
+}
+
+type ClusterConfigSpec struct {
+	// KubeConfigRef is the reference to a Secret containing a kubeconfig for the remote cluster.
+	KubeConfigRef SecretKeyRef `json:"kubeConfigRef"`
+	// PrometheusURL is the Prometheus endpoint accessible from within the remote cluster (optional).
+	// +optional
+	PrometheusURL string `json:"prometheusURL,omitempty"`
+	// +optional
+	Description string `json:"description,omitempty"`
+}
+
+type ClusterConfigStatus struct {
+	// +kubebuilder:validation:Enum=Connected;Error
+	Phase   string `json:"phase,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type ClusterConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ClusterConfig `json:"items"`
+}
+
 func init() {
 	SchemeBuilder.Register(
 		&DiagnosticSkill{}, &DiagnosticSkillList{},
 		&DiagnosticRun{}, &DiagnosticRunList{},
 		&ModelConfig{}, &ModelConfigList{},
 		&DiagnosticFix{}, &DiagnosticFixList{},
+		&ClusterConfig{}, &ClusterConfigList{},
 	)
 }
