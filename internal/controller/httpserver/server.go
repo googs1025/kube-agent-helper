@@ -43,6 +43,7 @@ func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *S
 	srv.mux.HandleFunc("/api/events", srv.handleAPIEvents)
 	srv.mux.HandleFunc("/api/modelconfigs", srv.handleAPIModelConfigs)
 	srv.mux.HandleFunc("/api/k8s/resources", srv.handleAPIK8sResources)
+	srv.mux.HandleFunc("/api/clusters", srv.handleAPIClusters)
 	return srv
 }
 
@@ -205,6 +206,7 @@ func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		opts := parsePagination(r)
+		opts.ClusterName = r.URL.Query().Get("cluster")
 		runs, err := s.store.ListRuns(r.Context(), opts)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -531,7 +533,9 @@ func (s *Server) handleAPIFixes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	fixes, err := s.store.ListFixes(r.Context(), parsePagination(r))
+	fixOpts := parsePagination(r)
+	fixOpts.ClusterName = r.URL.Query().Get("cluster")
+	fixes, err := s.store.ListFixes(r.Context(), fixOpts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -889,6 +893,7 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		Name:         name,
 		SinceMinutes: since,
 		Limit:        limit,
+		ClusterName:  q.Get("cluster"),
 	}
 	events, err := s.store.ListEvents(r.Context(), opts)
 	if err != nil {
@@ -1096,6 +1101,87 @@ func (s *Server) handleK8sResource(ctx context.Context, w http.ResponseWriter, n
 		})
 	}
 	writeJSON(w, items)
+}
+
+// GET|POST /api/clusters
+func (s *Server) handleAPIClusters(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleAPIClustersGet(w, r)
+	case http.MethodPost:
+		s.handleAPIClustersPost(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAPIClustersGet(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var list v1alpha1.ClusterConfigList
+	if err := s.k8sClient.List(ctx, &list); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	type clusterItem struct {
+		Name          string `json:"name"`
+		Phase         string `json:"phase"`
+		PrometheusURL string `json:"prometheusURL,omitempty"`
+		Description   string `json:"description,omitempty"`
+	}
+
+	items := []clusterItem{{Name: "local", Phase: "Connected", Description: "In-cluster (local)"}}
+	for _, cc := range list.Items {
+		items = append(items, clusterItem{
+			Name:          cc.Name,
+			Phase:         cc.Status.Phase,
+			PrometheusURL: cc.Spec.PrometheusURL,
+			Description:   cc.Spec.Description,
+		})
+	}
+	writeJSON(w, items)
+}
+
+func (s *Server) handleAPIClustersPost(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name          string `json:"name"`
+		Namespace     string `json:"namespace"`
+		SecretName    string `json:"secretName"`
+		SecretKey     string `json:"secretKey"`
+		PrometheusURL string `json:"prometheusURL"`
+		Description   string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Name == "" || body.SecretName == "" || body.SecretKey == "" {
+		http.Error(w, "name, secretName, secretKey are required", http.StatusBadRequest)
+		return
+	}
+	if body.Namespace == "" {
+		body.Namespace = "kube-agent-helper"
+	}
+
+	cc := &v1alpha1.ClusterConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      body.Name,
+			Namespace: body.Namespace,
+		},
+		Spec: v1alpha1.ClusterConfigSpec{
+			KubeConfigRef: v1alpha1.SecretKeyRef{
+				Name: body.SecretName,
+				Key:  body.SecretKey,
+			},
+			PrometheusURL: body.PrometheusURL,
+			Description:   body.Description,
+		},
+	}
+	if err := s.k8sClient.Create(r.Context(), cc); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"name": cc.Name, "namespace": cc.Namespace})
 }
 
 func randSuffix(n int) string {
