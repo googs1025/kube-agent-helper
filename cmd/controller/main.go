@@ -163,6 +163,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	clusterRegistry := registry.NewClusterClientRegistry()
+
+	if err := (&reconciler.ClusterConfigReconciler{
+		Client:   mgr.GetClient(),
+		Registry: clusterRegistry,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("unable to create controller", "controller", "ClusterConfig", "error", err)
+		os.Exit(1)
+	}
+
 	// HTTP server as manager Runnable
 	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
