@@ -29,8 +29,8 @@ export default function RunsPage() {
   const { t } = useI18n();
   const { cluster } = useCluster();
   const { data: runs, error, isLoading, mutate } = useRuns({ cluster });
-  if (isLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
+  if (isLoading) return <p className="text-muted-foreground">{t("common.loading")}</p>;
+  if (error) return <p className="text-destructive">{t("common.loadFailed")}</p>;
 
   const total = runs?.length ?? 0;
   const running = runs?.filter((r) => r.Status === "Running").length ?? 0;
@@ -46,15 +46,16 @@ export default function RunsPage() {
   return (
     <div>
       {/* Overview hero */}
-      <div className="mb-8 rounded-xl border bg-gradient-to-br from-blue-50 to-indigo-50 p-6 dark:border-gray-800 dark:from-gray-900 dark:to-gray-800">
+      <div className="mb-8 relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-sky-50 to-indigo-50 p-6 dark:from-[#0d1b2e] dark:to-[#130d2e]">
+        <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-sky-400 via-indigo-400 to-sky-400" />
         <h1 className="text-2xl font-bold">{t("overview.title")}</h1>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t("overview.subtitle")}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t("overview.subtitle")}</p>
         <div className="mt-4 grid grid-cols-3 gap-4">
           {featureCards.map((card) => (
-            <Link key={card.title} href={card.href} className="group rounded-lg border bg-white p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
+            <Link key={card.title} href={card.href} className="group rounded-lg border border-border bg-background/60 p-4 transition-all hover:border-primary/50 hover:bg-primary/5">
               <card.icon className={`size-5 ${card.color}`} />
               <h3 className="mt-2 text-sm font-semibold">{card.title}</h3>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{card.desc}</p>
+              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{card.desc}</p>
             </Link>
           ))}
         </div>
@@ -62,26 +63,30 @@ export default function RunsPage() {
 
       {/* Runs section */}
       <div id="runs" className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold">{t("runs.title")}</h2>
+        <h2 className="flex items-center gap-2 text-xl font-semibold">
+          {t("runs.title")}
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{total}</span>
+        </h2>
         <CreateRunDialog onCreated={() => mutate()} />
       </div>
       <div className="mb-6 grid grid-cols-4 gap-4">
         {[
-          { label: t("runs.stat.total"), value: total, color: "text-gray-900 dark:text-gray-100" },
-          { label: t("runs.stat.running"), value: running, color: "text-blue-600 dark:text-blue-400" },
-          { label: t("runs.stat.succeeded"), value: succeeded, color: "text-green-600 dark:text-green-400" },
-          { label: t("runs.stat.failed"), value: failed, color: "text-red-600 dark:text-red-400" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-lg border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
-            <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+          { label: t("runs.stat.total"), value: total, color: "text-foreground", trend: null },
+          { label: t("runs.stat.running"), value: running, color: "text-sky-400", trend: null },
+          { label: t("runs.stat.succeeded"), value: succeeded, color: "text-green-400", trend: total > 0 ? `${Math.round(succeeded / total * 100)}%` : null },
+          { label: t("runs.stat.failed"), value: failed, color: "text-red-400", trend: null },
+        ].map(({ label, value, color, trend }) => (
+          <div key={label} className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+            <p className={`mt-1 text-3xl font-bold ${color}`}>{value}</p>
+            {trend && <p className="mt-1 text-xs text-muted-foreground">{trend}</p>}
           </div>
         ))}
       </div>
       {runs && runs.length === 0 ? (
-        <p className="text-gray-500 dark:text-gray-400">{t("runs.empty")}</p>
+        <p className="text-muted-foreground">{t("runs.empty")}</p>
       ) : (
-        <div className="rounded-lg border bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -105,19 +110,15 @@ export default function RunsPage() {
                 return (
                   <TableRow key={run.ID}>
                     <TableCell>
-                      <Link href={`/runs/${run.ID}`} className="text-blue-600 hover:underline dark:text-blue-400">
-                        {run.Name ? (
-                          <span className="font-medium">{run.Name}</span>
-                        ) : (
-                          <span className="font-mono text-sm">{run.ID.slice(0, 8)}...</span>
-                        )}
+                      <Link href={`/runs/${run.ID}`} className="font-mono text-sm text-primary hover:underline">
+                        {run.Name || run.ID.slice(0, 8)}
                       </Link>
                     </TableCell>
                     <TableCell><PhaseBadge phase={run.Status} /></TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">{formatTime(run.CreatedAt)}</TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">{duration(run.StartedAt, run.CompletedAt)}</TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">{target}</TableCell>
-                    <TableCell className="max-w-xs truncate text-sm text-gray-600 dark:text-gray-400" title={run.Message || ""}>
+                    <TableCell className="text-sm text-muted-foreground">{formatTime(run.CreatedAt)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{duration(run.StartedAt, run.CompletedAt)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{target}</TableCell>
+                    <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={run.Message || ""}>
                       {run.Message || "-"}
                     </TableCell>
                   </TableRow>
