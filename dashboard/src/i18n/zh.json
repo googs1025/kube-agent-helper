@@ -7,7 +7,39 @@
     "diagnose": "诊断",
     "events": "事件",
     "modelconfigs": "模型配置",
+    "clusters": "集群",
     "about": "关于"
+  },
+  "cluster": {
+    "label": "集群",
+    "local": "本地集群"
+  },
+  "clusters": {
+    "title": "集群管理",
+    "loading": "加载中...",
+    "empty": "尚未注册远端集群。本地集群始终可用。",
+    "col.name": "集群名称",
+    "col.phase": "状态",
+    "col.prometheus": "Prometheus",
+    "col.description": "描述",
+    "create.title": "注册远端集群",
+    "create.name": "集群名称",
+    "create.namespace": "命名空间",
+    "create.secretName": "Kubeconfig Secret 名称",
+    "create.secretKey": "Secret 中的 Key",
+    "create.prometheus": "Prometheus URL (可选)",
+    "create.description": "描述 (可选)",
+    "create.cancel": "取消",
+    "create.submit": "注册",
+    "setup.title": "如何准备 Kubeconfig Secret",
+    "setup.step1": "1. 准备远端集群的 kubeconfig 文件",
+    "setup.step1.desc": "可以从 ~/.kube/config 导出目标 context，或使用远端集群的 ServiceAccount Token 构造 kubeconfig",
+    "setup.step2": "2. 创建 Kubernetes Secret",
+    "setup.step2.cmd": "kubectl create secret generic <secret-name> -n kube-agent-helper --from-file=kubeconfig=/path/to/kubeconfig.yaml",
+    "setup.step3": "3. 在上方表单中填入 Secret 名称和 Key，点击注册",
+    "setup.step3.desc": "控制器会自动读取 Secret 中的 kubeconfig，建立与远端集群的连接。连接成功后状态显示为 Connected。",
+    "setup.sa.title": "推荐：使用 ServiceAccount Token（生产环境）",
+    "setup.sa.desc": "在远端集群创建只读 ServiceAccount，用其 Token 构造 kubeconfig，权限最小化且可控过期。"
   },
   "overview": {
     "title": "Kubernetes AI 诊断平台",
@@ -28,6 +60,7 @@
     "crd.skill": "DiagnosticSkill — 定义诊断维度（health/security/cost/reliability）的分析逻辑：Prompt + 工具白名单，10 个内置 + 自定义扩展",
     "crd.model": "ModelConfig — LLM 提供商配置：API Key Secret 引用、模型名称、可选 baseURL 代理、maxTurns 控制",
     "crd.fix": "DiagnosticFix — 修复建议：strategic-merge/json-patch/create 策略，人工审批流程（PendingApproval→Approved→Applying→Succeeded），支持自动回滚",
+    "crd.cluster": "ClusterConfig — 多集群管理：引用包含 kubeconfig 的 Secret 注册远程集群，支持独立 Prometheus 地址；DiagnosticRun 通过 clusterRef 指定目标集群",
     "flow.title": "诊断与修复流程",
     "flow.step1": "1. 创建 DiagnosticRun",
     "flow.step1.desc": "通过 Dashboard /diagnose 页面或 kubectl apply，声明诊断任务（一次性或定时调度）",
@@ -252,7 +285,9 @@
     "create.secretRef": "Secret 名称",
     "create.secretKey": "Secret Key",
     "create.submit": "创建",
-    "create.cancel": "取消"
+    "create.cancel": "取消",
+    "create.secretHint.title": "如何创建 Secret？",
+    "create.secretHint.desc": "在创建模型配置之前，请先在目标命名空间中创建包含 API Key 的 Kubernetes Secret："
   },
   "events": {
     "title": "事件",

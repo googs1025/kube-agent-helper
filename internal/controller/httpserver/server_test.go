@@ -550,6 +550,51 @@ func (r *rejectErrFakeStore) UpdateFixPhase(_ context.Context, _ string, _ store
 	return store.ErrNotFound
 }
 
+// filteringFakeStore extends fakeStore with ClusterName filtering for ListRuns, ListFixes, and ListEvents.
+type filteringFakeStore struct {
+	fakeStore
+}
+
+func (f *filteringFakeStore) ListRuns(_ context.Context, opts store.ListOpts) ([]*store.DiagnosticRun, error) {
+	if opts.ClusterName == "" {
+		return f.runs, nil
+	}
+	var out []*store.DiagnosticRun
+	for _, r := range f.runs {
+		if r.ClusterName == opts.ClusterName {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *filteringFakeStore) ListFixes(_ context.Context, opts store.ListOpts) ([]*store.Fix, error) {
+	if opts.ClusterName == "" {
+		return f.fixes, nil
+	}
+	var out []*store.Fix
+	for _, fx := range f.fixes {
+		if fx.ClusterName == opts.ClusterName {
+			out = append(out, fx)
+		}
+	}
+	return out, nil
+}
+
+func (f *filteringFakeStore) ListEvents(_ context.Context, opts store.ListEventsOpts) ([]*store.Event, error) {
+	f.lastListEvtsOpt = opts
+	if opts.ClusterName == "" {
+		return f.events, nil
+	}
+	var out []*store.Event
+	for _, ev := range f.events {
+		if ev.ClusterName == opts.ClusterName {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+
 func TestK8sResources_ListNamespaces(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -794,6 +839,133 @@ func TestGetRunCRD_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestAPIRunsClusterFilter(t *testing.T) {
+	fs := &filteringFakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: "r1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+		{ID: "r2", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+		{ID: "r3", ClusterName: "prod", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Filter by cluster=prod → expect 1 run
+	req := httptest.NewRequest(http.MethodGet, "/api/runs?cluster=prod", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var prodRuns []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&prodRuns))
+	assert.Len(t, prodRuns, 1)
+
+	// Filter by cluster=local → expect 2 runs
+	req = httptest.NewRequest(http.MethodGet, "/api/runs?cluster=local", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var localRuns []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&localRuns))
+	assert.Len(t, localRuns, 2)
+
+	// No filter → expect 3 runs
+	req = httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var allRuns []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allRuns))
+	assert.Len(t, allRuns, 3)
+}
+
+func TestAPIFixesClusterFilter(t *testing.T) {
+	fs := &filteringFakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: "run-1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhaseSucceeded},
+	}
+	fs.fixes = []*store.Fix{
+		{ID: "fix-1", RunID: "run-1", ClusterName: "local", FindingTitle: "t1",
+			TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app",
+			Phase: store.FixPhasePendingApproval},
+		{ID: "fix-2", RunID: "run-1", ClusterName: "staging", FindingTitle: "t2",
+			TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app2",
+			Phase: store.FixPhasePendingApproval},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Filter by cluster=staging → expect 1 fix
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes?cluster=staging", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var stagingFixes []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&stagingFixes))
+	assert.Len(t, stagingFixes, 1)
+
+	// No filter → expect 2 fixes
+	req = httptest.NewRequest(http.MethodGet, "/api/fixes", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var allFixes []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allFixes))
+	assert.Len(t, allFixes, 2)
+}
+
+func TestAPIClustersGet(t *testing.T) {
+	// Use a fake k8s client with no ClusterConfig CRs — should still return "local"
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/clusters", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var clusters []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&clusters))
+	require.NotEmpty(t, clusters, "response should contain at least the local cluster")
+
+	// Verify the local cluster entry is present with phase "Connected"
+	var foundLocal bool
+	for _, c := range clusters {
+		if c["name"] == "local" {
+			foundLocal = true
+			assert.Equal(t, "Connected", c["phase"])
+		}
+	}
+	assert.True(t, foundLocal, "response must include a 'local' cluster entry")
+}
+
+func TestAPIEventsClusterFilter(t *testing.T) {
+	fs := &filteringFakeStore{}
+	fs.events = []*store.Event{
+		{UID: "ev-1", ClusterName: "local", Namespace: "default", Kind: "Pod", Name: "pod-1",
+			Reason: "OOMKilled", Message: "out of memory", Type: "Warning", Count: 1},
+		{UID: "ev-2", ClusterName: "prod", Namespace: "default", Kind: "Pod", Name: "pod-2",
+			Reason: "BackOff", Message: "crash loop", Type: "Warning", Count: 3},
+	}
+	srv := httpserver.New(fs, nil, nil)
+
+	// Filter by cluster=prod → expect 1 event
+	req := httptest.NewRequest(http.MethodGet, "/api/events?cluster=prod", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var prodEvents []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&prodEvents))
+	assert.Len(t, prodEvents, 1)
+	assert.Equal(t, "ev-2", prodEvents[0]["UID"])
+	assert.Equal(t, "prod", fs.lastListEvtsOpt.ClusterName)
+
+	// No filter → expect 2 events
+	req = httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var allEvents []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&allEvents))
+	assert.Len(t, allEvents, 2)
+	assert.Equal(t, "", fs.lastListEvtsOpt.ClusterName)
+}
+
 func TestHandleAPIEvents(t *testing.T) {
 	t.Run("GET with no filters returns empty array when store returns nil", func(t *testing.T) {
 		fs := &fakeStore{}
@@ -853,4 +1025,161 @@ func TestHandleAPIEvents(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
+}
+
+// ── POST /api/clusters tests ──────────────────────────────────────────────────
+
+func TestAPIClustersPost_Success(t *testing.T) {
+	fc := newFakeK8sClient()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"name":       "prod",
+		"namespace":  "kube-agent-helper",
+		"secretName": "prod-kubeconfig",
+		"secretKey":  "kubeconfig",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "prod", resp["name"])
+	assert.Equal(t, "kube-agent-helper", resp["namespace"])
+
+	// Verify the ClusterConfig CR was actually created in the fake client
+	var cc v1alpha1.ClusterConfig
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{
+		Name: "prod", Namespace: "kube-agent-helper",
+	}, &cc))
+	assert.Equal(t, "prod-kubeconfig", cc.Spec.KubeConfigRef.Name)
+	assert.Equal(t, "kubeconfig", cc.Spec.KubeConfigRef.Key)
+}
+
+func TestAPIClustersPost_DefaultNamespace(t *testing.T) {
+	fc := newFakeK8sClient()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"name":       "staging",
+		"secretName": "staging-secret",
+		"secretKey":  "config",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "kube-agent-helper", resp["namespace"], "should default to kube-agent-helper namespace")
+}
+
+func TestAPIClustersPost_MissingRequiredFields(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	tests := []struct {
+		name string
+		body map[string]string
+	}{
+		{"missing name", map[string]string{"secretName": "s", "secretKey": "k"}},
+		{"missing secretName", map[string]string{"name": "n", "secretKey": "k"}},
+		{"missing secretKey", map[string]string{"name": "n", "secretName": "s"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
+}
+
+func TestAPIClustersPost_InvalidJSON(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", strings.NewReader("{invalid"))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPIClustersPost_WithOptionalFields(t *testing.T) {
+	fc := newFakeK8sClient()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"name":          "prod",
+		"namespace":     "default",
+		"secretName":    "prod-secret",
+		"secretKey":     "kubeconfig",
+		"prometheusURL": "http://prometheus.prod:9090",
+		"description":   "Production cluster",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var cc v1alpha1.ClusterConfig
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{
+		Name: "prod", Namespace: "default",
+	}, &cc))
+	assert.Equal(t, "http://prometheus.prod:9090", cc.Spec.PrometheusURL)
+	assert.Equal(t, "Production cluster", cc.Spec.Description)
+}
+
+func TestAPIClusters_MethodNotAllowed(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/clusters", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// ── GET /api/clusters with existing ClusterConfig CRs ──────────────────
+
+func TestAPIClustersGet_WithClusterConfigs(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
+
+	cc := &v1alpha1.ClusterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "default"},
+		Spec: v1alpha1.ClusterConfigSpec{
+			KubeConfigRef: v1alpha1.SecretKeyRef{Name: "s", Key: "k"},
+			PrometheusURL: "http://prom:9090",
+			Description:   "Production",
+		},
+		Status: v1alpha1.ClusterConfigStatus{Phase: "Connected"},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cc).Build()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/clusters", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var clusters []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&clusters))
+	require.Len(t, clusters, 2, "should have 'local' + 'prod'")
+
+	// Verify local is always first
+	assert.Equal(t, "local", clusters[0]["name"])
+
+	// Verify prod cluster has all fields
+	assert.Equal(t, "prod", clusters[1]["name"])
+	assert.Equal(t, "Connected", clusters[1]["phase"])
+	assert.Equal(t, "http://prom:9090", clusters[1]["prometheusURL"])
+	assert.Equal(t, "Production", clusters[1]["description"])
 }

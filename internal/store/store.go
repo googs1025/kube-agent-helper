@@ -20,6 +20,7 @@ const (
 type DiagnosticRun struct {
 	ID          string
 	Name        string // K8s CR name, populated at API layer (not persisted in SQLite)
+	ClusterName string
 	TargetJSON  string
 	SkillsJSON  string
 	Status      Phase
@@ -32,6 +33,7 @@ type DiagnosticRun struct {
 type Finding struct {
 	ID                string
 	RunID             string
+	ClusterName       string
 	Dimension         string
 	Severity          string
 	Title             string
@@ -71,6 +73,7 @@ const (
 type Fix struct {
 	ID               string
 	Name             string // K8s CR name, populated at API layer (not persisted in SQLite)
+	ClusterName      string
 	RunID            string
 	FindingTitle     string
 	TargetKind       string
@@ -92,9 +95,10 @@ type Fix struct {
 
 // Event represents a stored Kubernetes event (Warning type, 7-day retention).
 type Event struct {
-	ID        int64
-	UID       string
-	Namespace string
+	ID          int64
+	UID         string
+	ClusterName string
+	Namespace   string
 	Kind      string
 	Name      string
 	Reason    string
@@ -108,6 +112,7 @@ type Event struct {
 
 // ListEventsOpts filters for ListEvents.
 type ListEventsOpts struct {
+	ClusterName  string
 	Namespace    string
 	Name         string
 	Type         string // "" = all, "Warning", "Normal"
@@ -117,8 +122,9 @@ type ListEventsOpts struct {
 
 // MetricSnapshot represents a single scraped Prometheus metric data point.
 type MetricSnapshot struct {
-	ID         int64
-	Query      string
+	ID          int64
+	ClusterName string
+	Query       string
 	LabelsJSON string
 	Value      float64
 	Ts         time.Time
@@ -126,8 +132,9 @@ type MetricSnapshot struct {
 }
 
 type ListOpts struct {
-	Limit  int
-	Offset int
+	ClusterName string
+	Limit       int
+	Offset      int
 }
 
 // Store is the persistence interface. Both SQLite and PostgreSQL implement it.

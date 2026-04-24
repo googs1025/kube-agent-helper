@@ -1,0 +1,15 @@
+# 在远端集群 "prod" 上运行诊断（需先创建对应的 ClusterConfig）
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: prod-health-check
+  namespace: kube-agent-helper
+spec:
+  clusterRef: "prod"
+  target:
+    scope: namespace
+    namespaces:
+      - default
+      - production
+  modelConfigRef: "anthropic-credentials"
+  outputLanguage: zh

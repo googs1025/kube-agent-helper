@@ -22,13 +22,13 @@ function ScheduledRunInfo({ run }: { run: DiagnosticRun }) {
   const { t } = useI18n();
   if (!run.Schedule) return null;
   return (
-    <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm dark:border-blue-800 dark:bg-blue-950">
-      <div className="flex items-center gap-2 font-medium text-blue-700 dark:text-blue-300 mb-2">
+    <div className="mt-3 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm">
+      <div className="flex items-center gap-2 font-medium text-primary mb-2">
         <span>🔁</span>
         <span>{t("runs.detail.scheduledBadge")}</span>
-        <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded">{run.Schedule}</code>
+        <code className="font-mono text-xs bg-primary/10 px-1.5 py-0.5 rounded">{run.Schedule}</code>
       </div>
-      <div className="grid grid-cols-2 gap-2 text-blue-600 dark:text-blue-400">
+      <div className="grid grid-cols-2 gap-2 text-primary/80">
         <div><span className="font-medium">{t("runs.detail.lastRunAt")}:</span> {formatTime(run.LastRunAt)}</div>
         <div><span className="font-medium">{t("runs.detail.nextRunAt")}:</span> {formatTime(run.NextRunAt)}</div>
       </div>
@@ -40,13 +40,13 @@ function ScheduledRunInfo({ run }: { run: DiagnosticRun }) {
               <Link
                 key={name}
                 href={`/diagnose/${encodeURIComponent(name)}`}
-                className="font-mono text-xs bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded hover:underline"
+                className="font-mono text-xs bg-primary/10 px-2 py-0.5 rounded hover:underline"
               >
                 {name}
               </Link>
             ))}
             {run.ActiveRuns.length > 5 && (
-              <span className="text-xs text-blue-500">+{run.ActiveRuns.length - 5} more</span>
+              <span className="text-xs text-primary/60">+{run.ActiveRuns.length - 5} more</span>
             )}
           </div>
         </div>
@@ -79,9 +79,9 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
     }
   }
 
-  if (runLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
-  if (runErr) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
-  if (!run) return <p className="text-gray-500 dark:text-gray-400">{t("common.notFound")}</p>;
+  if (runLoading) return <p className="text-muted-foreground">{t("common.loading")}</p>;
+  if (runErr) return <p className="text-destructive">{t("common.loadFailed")}</p>;
+  if (!run) return <p className="text-muted-foreground">{t("common.notFound")}</p>;
 
   const grouped: Record<string, typeof findings> = {};
   findings?.forEach((f) => {
@@ -97,13 +97,13 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div>
-      <Link href="/" className="text-sm text-blue-600 hover:underline dark:text-blue-400">&larr; {t("runs.detail.backToRuns")}</Link>
+      <Link href="/" className="text-sm text-primary hover:underline">&larr; {t("runs.detail.backToRuns")}</Link>
       <div className="mt-4 mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold font-mono">{run.Name || run.ID.slice(0, 8)}</h1>
           <PhaseBadge phase={run.Status} />
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-600 sm:grid-cols-4 dark:text-gray-400">
+        <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-muted-foreground sm:grid-cols-4">
           <div><span className="font-medium">{t("runs.detail.created")}:</span> {formatTime(run.CreatedAt)}</div>
           <div><span className="font-medium">{t("runs.detail.started")}:</span> {formatTime(run.StartedAt)}</div>
           <div><span className="font-medium">{t("runs.detail.completed")}:</span> {formatTime(run.CompletedAt)}</div>
@@ -112,10 +112,10 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
         {run.Message && (
           <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
             run.Status === "Failed"
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+              ? "border-red-500/20 bg-red-500/10 text-red-400"
               : run.Status === "Running"
-                ? "border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-300"
-                : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-400"
+                : "border-border bg-muted/30 text-muted-foreground"
           }`}>
             {run.Message}
           </div>
@@ -126,16 +126,16 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
             {crdYAML ? (
               <CRDYamlBlock yaml={crdYAML} title="DiagnosticRun CRD YAML" />
             ) : (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic">{t("runs.detail.crdNotFound")}</p>
+              <p className="text-sm text-muted-foreground italic">{t("runs.detail.crdNotFound")}</p>
             )}
           </div>
         )}
       </div>
       <Separator className="mb-6" />
       <h2 className="mb-4 text-xl font-semibold">{t("runs.findings.title")}</h2>
-      {findLoading && <p className="text-gray-500 dark:text-gray-400">{t("runs.findings.loading")}</p>}
-      {findErr && <p className="text-red-600 dark:text-red-400">{t("runs.findings.loadFailed")}</p>}
-      {findings && findings.length === 0 && <p className="text-gray-500 dark:text-gray-400">{t("runs.findings.empty")}</p>}
+      {findLoading && <p className="text-muted-foreground">{t("runs.findings.loading")}</p>}
+      {findErr && <p className="text-destructive">{t("runs.findings.loadFailed")}</p>}
+      {findings && findings.length === 0 && <p className="text-muted-foreground">{t("runs.findings.empty")}</p>}
       <div className="space-y-6">
         {sortedDims.map((dim) => (
           <div key={dim}>
@@ -150,20 +150,20 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-gray-700 dark:text-gray-300">{f.Description}</p>
+                    <p className="text-sm text-foreground">{f.Description}</p>
                     {f.ResourceKind && (
-                      <p className="mt-2 font-mono text-xs text-gray-500 dark:text-gray-500">
+                      <p className="mt-2 font-mono text-xs text-muted-foreground">
                         {f.ResourceKind}/{f.ResourceNamespace}/{f.ResourceName}
                       </p>
                     )}
                     {f.Suggestion && (
-                      <div className="mt-2 rounded bg-blue-50 p-2 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                      <div className="mt-2 rounded-lg border border-primary/20 bg-primary/10 p-2 text-sm text-primary">
                         <span className="font-medium">{t("runs.findings.suggestion")}: </span>{f.Suggestion}
                       </div>
                     )}
                     <div className="mt-3 flex justify-end">
                       {f.FixID ? (
-                        <Link href={`/fixes/${f.FixID}`} className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+                        <Link href={`/fixes/${f.FixID}`} className="text-sm text-primary hover:underline">
                           {t("runs.findings.viewFix")} →
                         </Link>
                       ) : (

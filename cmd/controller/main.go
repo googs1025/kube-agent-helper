@@ -124,10 +124,13 @@ func main() {
 		Model:            model,
 	})
 
+	clusterRegistry := registry.NewClusterClientRegistry()
+
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
 		Store:      st,
 		Translator: tr,
+		Registry:   clusterRegistry,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup reconciler", "error", err)
 		os.Exit(1)
@@ -160,6 +163,14 @@ func main() {
 		Client: mgr.GetClient(),
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup scheduled run reconciler", "error", err)
+		os.Exit(1)
+	}
+
+	if err := (&reconciler.ClusterConfigReconciler{
+		Client:   mgr.GetClient(),
+		Registry: clusterRegistry,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("unable to create controller", "controller", "ClusterConfig", "error", err)
 		os.Exit(1)
 	}
 

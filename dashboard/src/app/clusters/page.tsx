@@ -1,0 +1,295 @@
+"use client";
+
+import { useState } from "react";
+import { useI18n } from "@/i18n/context";
+import { useClusterConfigs, createClusterConfig, useK8sNamespaces } from "@/lib/api";
+import type { ClusterItem } from "@/lib/api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const SA_SCRIPT = `# On the REMOTE cluster:
+kubectl create sa kah-reader -n kube-system
+kubectl create clusterrolebinding kah-reader \\
+  --clusterrole=view --serviceaccount=kube-system:kah-reader
+
+TOKEN=$(kubectl create token kah-reader -n kube-system --duration=8760h)
+CA=$(kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+SERVER=$(kubectl config view --raw -o jsonpath='{.clusters[0].cluster.server}')
+
+cat > /tmp/remote-kubeconfig.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: \${CA}
+    server: \${SERVER}
+  name: remote
+contexts:
+- context: {cluster: remote, user: kah-reader}
+  name: remote
+current-context: remote
+users:
+- name: kah-reader
+  user: {token: \${TOKEN}}
+EOF
+
+# Back on the LOCAL cluster:
+kubectl create secret generic remote-kubeconfig \\
+  -n kube-agent-helper \\
+  --from-file=kubeconfig=/tmp/remote-kubeconfig.yaml`;
+
+const clusterPhaseConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  Connected: { bg: "bg-green-500/10", text: "text-green-400", dot: "bg-green-400" },
+  Error:     { bg: "bg-red-500/10",   text: "text-red-400",   dot: "bg-red-400" },
+  Pending:   { bg: "bg-yellow-500/10",text: "text-yellow-400",dot: "bg-yellow-400" },
+};
+
+function ClusterPhaseBadge({ phase }: { phase: string }) {
+  const c = clusterPhaseConfig[phase] ?? { bg: "bg-slate-500/10", text: "text-slate-400", dot: "bg-slate-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-md border border-current/20 px-2 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}>
+      <span className={`size-1.5 rounded-full ${c.dot}`} />
+      {phase}
+    </span>
+  );
+}
+
+function CreateDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const { data: namespaces } = useK8sNamespaces();
+  const [form, setForm] = useState({
+    name: "",
+    namespace: "kube-agent-helper",
+    secretName: "",
+    secretKey: "kubeconfig",
+    prometheusURL: "",
+    description: "",
+  });
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await createClusterConfig({
+        ...form,
+        prometheusURL: form.prometheusURL || undefined,
+        description: form.description || undefined,
+      });
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputClass =
+    "w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-lg rounded-lg bg-card border border-border p-6 shadow-xl"
+      >
+        <h2 className="mb-4 text-lg font-semibold">{t("clusters.create.title")}</h2>
+        {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs mb-1 text-muted-foreground">
+              {t("clusters.create.name")}
+            </label>
+            <input
+              className={inputClass}
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-1 text-muted-foreground">
+              {t("clusters.create.namespace")}
+            </label>
+            <select
+              className={inputClass}
+              value={form.namespace}
+              onChange={(e) => setForm({ ...form, namespace: e.target.value })}
+            >
+              {(namespaces || []).map((ns) => (
+                <option key={ns.name} value={ns.name}>
+                  {ns.name}
+                </option>
+              ))}
+              {(!namespaces || namespaces.length === 0) && (
+                <option value="kube-agent-helper">kube-agent-helper</option>
+              )}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs mb-1 text-muted-foreground">
+              {t("clusters.create.secretName")}
+            </label>
+            <input
+              className={inputClass}
+              required
+              value={form.secretName}
+              onChange={(e) => setForm({ ...form, secretName: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-1 text-muted-foreground">
+              {t("clusters.create.secretKey")}
+            </label>
+            <input
+              className={inputClass}
+              required
+              value={form.secretKey}
+              onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs mb-1 text-muted-foreground">
+              {t("clusters.create.prometheus")}
+            </label>
+            <input
+              className={inputClass}
+              placeholder="http://prometheus:9090"
+              value={form.prometheusURL}
+              onChange={(e) => setForm({ ...form, prometheusURL: e.target.value })}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs mb-1 text-muted-foreground">
+              {t("clusters.create.description")}
+            </label>
+            <input
+              className={inputClass}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
+          >
+            {t("clusters.create.cancel")}
+          </button>
+          <button
+            type="submit"
+            disabled={submitting || !form.name || !form.secretName || !form.secretKey}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            {t("clusters.create.submit")}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default function ClustersPage() {
+  const { t } = useI18n();
+  const { data: clusters, isLoading, mutate } = useClusterConfigs();
+  const [showCreate, setShowCreate] = useState(false);
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">{t("clusters.title")}</h1>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+        >
+          + {t("clusters.create.title")}
+        </button>
+      </div>
+
+      {isLoading && <p className="text-muted-foreground">{t("clusters.loading")}</p>}
+
+      {!isLoading && (!clusters || clusters.length === 0) && (
+        <p className="text-muted-foreground">{t("clusters.empty")}</p>
+      )}
+
+      {clusters && clusters.length > 0 && (
+        <div className="mb-8 rounded-lg border border-border bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("clusters.col.name")}</TableHead>
+                <TableHead>{t("clusters.col.phase")}</TableHead>
+                <TableHead>{t("clusters.col.prometheus")}</TableHead>
+                <TableHead>{t("clusters.col.description")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {clusters.map((c: ClusterItem) => (
+                <TableRow key={c.name}>
+                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell><ClusterPhaseBadge phase={c.phase} /></TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {c.prometheusURL || <span className="italic">-</span>}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{c.description || "-"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Setup guide */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">{t("clusters.setup.title")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6 text-sm">
+          {/* Step 1 */}
+          <div>
+            <p className="font-semibold text-foreground">{t("clusters.setup.step1")}</p>
+            <p className="mt-1 text-muted-foreground">{t("clusters.setup.step1.desc")}</p>
+          </div>
+
+          {/* Step 2 */}
+          <div>
+            <p className="font-semibold text-foreground">{t("clusters.setup.step2")}</p>
+            <pre className="mt-2 rounded bg-muted/50 p-3 text-xs font-mono text-foreground overflow-x-auto">
+              {t("clusters.setup.step2.cmd")}
+            </pre>
+          </div>
+
+          {/* Step 3 */}
+          <div>
+            <p className="font-semibold text-foreground">{t("clusters.setup.step3")}</p>
+            <p className="mt-1 text-muted-foreground">{t("clusters.setup.step3.desc")}</p>
+          </div>
+
+          {/* SA Token recommendation */}
+          <div className="rounded-lg border border-primary/20 bg-primary/10 p-4">
+            <p className="font-semibold text-primary">{t("clusters.setup.sa.title")}</p>
+            <p className="mt-1 text-primary/80">{t("clusters.setup.sa.desc")}</p>
+            <pre className="mt-3 rounded bg-[#0a0e14] p-3 text-xs font-mono text-slate-200 overflow-x-auto whitespace-pre">
+              {SA_SCRIPT}
+            </pre>
+          </div>
+        </CardContent>
+      </Card>
+
+      {showCreate && (
+        <CreateDialog
+          onClose={() => {
+            setShowCreate(false);
+            mutate();
+          }}
+        />
+      )}
+    </div>
+  );
+}

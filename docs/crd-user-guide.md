@@ -14,6 +14,7 @@
 | `DiagnosticRun` | 触发一次诊断任务 | **每次诊断都要写** |
 | `DiagnosticSkill` | 自定义诊断技能 | 可选（内置 10 个） |
 | `DiagnosticFix` | 修复提案（系统自动生成） | 一般不需要手写 |
+| `ClusterConfig` | 注册远端集群（kubeconfig） | 多集群时配置 |
 
 ---
 
@@ -806,6 +807,120 @@ curl -X POST http://localhost:8080/api/findings/<finding-id>/generate-fix
 kubectl get dfix <name> -n kube-agent-helper -w
 # PendingApproval → Approved → Applying → Succeeded
 ```
+
+---
+
+## 多集群诊断
+
+### 概述
+
+默认情况下，kube-agent-helper 诊断的是控制器所在的本地集群。通过 `ClusterConfig` CRD 注册远端集群，然后在 `DiagnosticRun` 中通过 `spec.clusterRef` 指定目标集群。
+
+### 第一步：准备远端集群的 kubeconfig
+
+**方式 A：直接使用现有 kubeconfig 文件**
+
+```bash
+kubectl create secret generic prod-kubeconfig \
+  -n kube-agent-helper \
+  --from-file=kubeconfig=$HOME/.kube/prod-config
+```
+
+**方式 B：使用 ServiceAccount Token（推荐生产环境）**
+
+在远端集群执行：
+
+```bash
+kubectl create sa kah-reader -n kube-system
+kubectl create clusterrolebinding kah-reader \
+  --clusterrole=view --serviceaccount=kube-system:kah-reader
+
+TOKEN=$(kubectl create token kah-reader -n kube-system --duration=8760h)
+CA=$(kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+SERVER=$(kubectl config view --raw -o jsonpath='{.clusters[0].cluster.server}')
+
+cat > /tmp/prod-kubeconfig.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: ${CA}
+    server: ${SERVER}
+  name: prod
+contexts:
+- context:
+    cluster: prod
+    user: kah-reader
+  name: prod
+current-context: prod
+users:
+- name: kah-reader
+  user:
+    token: ${TOKEN}
+EOF
+```
+
+回到本地集群：
+
+```bash
+kubectl create secret generic prod-kubeconfig \
+  -n kube-agent-helper \
+  --from-file=kubeconfig=/tmp/prod-kubeconfig.yaml
+```
+
+### 第二步：创建 ClusterConfig CR
+
+```yaml
+apiVersion: k8sai.io/v1alpha1
+kind: ClusterConfig
+metadata:
+  name: prod
+  namespace: kube-agent-helper
+spec:
+  kubeConfigRef:
+    name: prod-kubeconfig
+    key: kubeconfig
+  prometheusURL: "http://prometheus.monitoring:9090"
+  description: "生产集群"
+```
+
+```bash
+kubectl apply -f the-above.yaml
+kubectl get clusterconfig prod -n kube-agent-helper
+# NAME   PHASE       AGE
+# prod   Connected   10s
+```
+
+### 第三步：在 DiagnosticRun 中指定目标集群
+
+```yaml
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: prod-health-check
+  namespace: kube-agent-helper
+spec:
+  clusterRef: "prod"
+  target:
+    scope: namespace
+    namespaces:
+      - default
+  modelConfigRef: "anthropic-credentials"
+  outputLanguage: zh
+```
+
+省略 `clusterRef` 或留空 = 在本地集群运行（向后兼容）。
+
+### ClusterConfig 字段说明
+
+| 字段 | 说明 |
+|------|------|
+| `spec.kubeConfigRef.name` | 包含 kubeconfig 的 Secret 名称 |
+| `spec.kubeConfigRef.key` | Secret 中 kubeconfig 数据的 key |
+| `spec.prometheusURL` | 远端集群的 Prometheus 端点（可选） |
+| `spec.description` | 集群描述（显示在 Dashboard） |
+| `status.phase` | 连接状态：`Connected` 或 `Error` |
+| `status.message` | 错误信息（仅在 `Error` 时有值） |
 
 ---
 

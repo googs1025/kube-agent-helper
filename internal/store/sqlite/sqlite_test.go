@@ -440,3 +440,280 @@ func TestPurgeOldMetrics(t *testing.T) {
 	require.Len(t, remaining, 1)
 	assert.InDelta(t, 0.3, remaining[0].Value, 0.001)
 }
+
+func TestListRunsFilterByCluster(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	// Create runs in different clusters
+	run1 := &store.DiagnosticRun{ID: "r1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	run2 := &store.DiagnosticRun{ID: "r2", ClusterName: "prod", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	run3 := &store.DiagnosticRun{ID: "r3", ClusterName: "prod", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+
+	for _, r := range []*store.DiagnosticRun{run1, run2, run3} {
+		if err := st.CreateRun(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Filter by "prod" cluster
+	runs, err := st.ListRuns(context.Background(), store.ListOpts{ClusterName: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs for prod cluster, got %d", len(runs))
+	}
+	for _, r := range runs {
+		if r.ClusterName != "prod" {
+			t.Errorf("expected ClusterName=prod, got %s", r.ClusterName)
+		}
+	}
+
+	// Filter by "local" cluster
+	runs, err = st.ListRuns(context.Background(), store.ListOpts{ClusterName: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected 1 run for local cluster, got %d", len(runs))
+	}
+
+	// No filter = all clusters
+	runs, err = st.ListRuns(context.Background(), store.ListOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 3 {
+		t.Fatalf("expected 3 runs total, got %d", len(runs))
+	}
+}
+
+func TestListFixesFilterByCluster(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	// Create a run first (fixes reference runs)
+	run := &store.DiagnosticRun{ID: "r1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	if err := st.CreateRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+
+	fix1 := &store.Fix{ID: "f1", RunID: "r1", ClusterName: "local", FindingTitle: "t1", TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app", PatchContent: "{}", Phase: store.FixPhasePendingApproval}
+	fix2 := &store.Fix{ID: "f2", RunID: "r1", ClusterName: "staging", FindingTitle: "t2", TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app2", PatchContent: "{}", Phase: store.FixPhasePendingApproval}
+
+	for _, f := range []*store.Fix{fix1, fix2} {
+		if err := st.CreateFix(context.Background(), f); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Filter by staging
+	fixes, err := st.ListFixes(context.Background(), store.ListOpts{ClusterName: "staging"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixes) != 1 {
+		t.Fatalf("expected 1 fix for staging, got %d", len(fixes))
+	}
+	if fixes[0].ClusterName != "staging" {
+		t.Errorf("expected ClusterName=staging, got %s", fixes[0].ClusterName)
+	}
+
+	// No filter = all
+	fixes, err = st.ListFixes(context.Background(), store.ListOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixes) != 2 {
+		t.Fatalf("expected 2 fixes total, got %d", len(fixes))
+	}
+}
+
+func TestListEventsFilterByCluster(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	now := time.Now()
+	ev1 := &store.Event{UID: "e1", ClusterName: "local", Namespace: "default", Kind: "Pod", Name: "pod-1", Reason: "OOMKilled", Message: "mem", Type: "Warning", Count: 1, FirstTime: now, LastTime: now}
+	ev2 := &store.Event{UID: "e2", ClusterName: "prod", Namespace: "default", Kind: "Pod", Name: "pod-2", Reason: "BackOff", Message: "crash", Type: "Warning", Count: 1, FirstTime: now, LastTime: now}
+
+	for _, e := range []*store.Event{ev1, ev2} {
+		if err := st.UpsertEvent(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Filter by prod
+	events, err := st.ListEvents(context.Background(), store.ListEventsOpts{ClusterName: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event for prod, got %d", len(events))
+	}
+	if events[0].ClusterName != "prod" {
+		t.Errorf("expected ClusterName=prod, got %s", events[0].ClusterName)
+	}
+
+	// No filter = all
+	events, err = st.ListEvents(context.Background(), store.ListEventsOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events total, got %d", len(events))
+	}
+}
+
+func TestClusterNameDefaultsToLocal(t *testing.T) {
+	st := newTestStore(t)
+	defer st.Close()
+
+	// Create run without ClusterName — should default to "local"
+	run := &store.DiagnosticRun{ID: "r1", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	if err := st.CreateRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.GetRun(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ClusterName != "local" {
+		t.Errorf("expected default ClusterName=local, got %q", got.ClusterName)
+	}
+
+	// Create finding without ClusterName
+	f := &store.Finding{ID: "f1", RunID: "r1", Dimension: "health", Severity: "high", Title: "test"}
+	if err := st.CreateFinding(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+
+	findings, err := st.ListFindings(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].ClusterName != "local" {
+		t.Errorf("expected finding ClusterName=local, got %q", findings[0].ClusterName)
+	}
+
+	// Create fix without ClusterName
+	fix := &store.Fix{
+		ID: "fix1", RunID: "r1", FindingTitle: "crash",
+		TargetKind: "Deployment", TargetNamespace: "default", TargetName: "app",
+		PatchContent: "{}", Phase: store.FixPhasePendingApproval,
+	}
+	if err := st.CreateFix(context.Background(), fix); err != nil {
+		t.Fatal(err)
+	}
+
+	gotFix, err := st.GetFix(context.Background(), "fix1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotFix.ClusterName != "local" {
+		t.Errorf("expected fix ClusterName=local, got %q", gotFix.ClusterName)
+	}
+
+	// Upsert event without ClusterName
+	ev := &store.Event{
+		UID: "ev1", Namespace: "default", Kind: "Pod", Name: "pod-1",
+		Reason: "OOM", Message: "oom", Type: "Warning", Count: 1,
+		FirstTime: time.Now(), LastTime: time.Now(),
+	}
+	if err := st.UpsertEvent(context.Background(), ev); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := st.ListEvents(context.Background(), store.ListEventsOpts{ClusterName: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ClusterName != "local" {
+		t.Errorf("expected event ClusterName=local, got %v events", len(events))
+	}
+}
+
+func TestFilterByNonExistentCluster_ReturnsEmpty(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// Create data only in "local"
+	run := &store.DiagnosticRun{ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	require.NoError(t, st.CreateRun(ctx, run))
+
+	fix := &store.Fix{
+		RunID: run.ID, ClusterName: "local", FindingTitle: "t",
+		TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app",
+		PatchContent: "{}", Phase: store.FixPhasePendingApproval,
+	}
+	require.NoError(t, st.CreateFix(ctx, fix))
+
+	ev := &store.Event{
+		UID: "ev1", ClusterName: "local", Namespace: "default", Kind: "Pod", Name: "p",
+		Reason: "r", Message: "m", Type: "Warning", Count: 1,
+		FirstTime: time.Now(), LastTime: time.Now(),
+	}
+	require.NoError(t, st.UpsertEvent(ctx, ev))
+
+	// Query with non-existent cluster → empty results
+	runs, err := st.ListRuns(ctx, store.ListOpts{ClusterName: "nonexistent"})
+	require.NoError(t, err)
+	assert.Empty(t, runs)
+
+	fixes, err := st.ListFixes(ctx, store.ListOpts{ClusterName: "nonexistent"})
+	require.NoError(t, err)
+	assert.Empty(t, fixes)
+
+	events, err := st.ListEvents(ctx, store.ListEventsOpts{ClusterName: "nonexistent"})
+	require.NoError(t, err)
+	assert.Empty(t, events)
+}
+
+func TestClusterNamePreservedWhenExplicitlySet(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// Run with explicit ClusterName
+	run := &store.DiagnosticRun{ClusterName: "prod", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	require.NoError(t, st.CreateRun(ctx, run))
+
+	got, err := st.GetRun(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "prod", got.ClusterName, "explicit ClusterName should be preserved, not overwritten with 'local'")
+
+	// Finding with explicit ClusterName
+	f := &store.Finding{RunID: run.ID, ClusterName: "prod", Dimension: "health", Severity: "high", Title: "test"}
+	require.NoError(t, st.CreateFinding(ctx, f))
+
+	findings, err := st.ListFindings(ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	assert.Equal(t, "prod", findings[0].ClusterName)
+
+	// Fix with explicit ClusterName
+	fix := &store.Fix{
+		RunID: run.ID, ClusterName: "prod", FindingTitle: "t",
+		TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app",
+		PatchContent: "{}", Phase: store.FixPhasePendingApproval,
+	}
+	require.NoError(t, st.CreateFix(ctx, fix))
+
+	gotFix, err := st.GetFix(ctx, fix.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "prod", gotFix.ClusterName)
+
+	// Event with explicit ClusterName
+	ev := &store.Event{
+		UID: "ev1", ClusterName: "prod", Namespace: "default", Kind: "Pod", Name: "p",
+		Reason: "r", Message: "m", Type: "Warning", Count: 1,
+		FirstTime: time.Now(), LastTime: time.Now(),
+	}
+	require.NoError(t, st.UpsertEvent(ctx, ev))
+
+	events, err := st.ListEvents(ctx, store.ListEventsOpts{ClusterName: "prod"})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "prod", events[0].ClusterName)
+}

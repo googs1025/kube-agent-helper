@@ -63,18 +63,21 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run *store.DiagnosticRun) e
 	if run.ID == "" {
 		run.ID = uuid.NewString()
 	}
+	if run.ClusterName == "" {
+		run.ClusterName = "local"
+	}
 	run.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO diagnostic_runs (id, target_json, skills_json, status, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		run.ID, run.TargetJSON, run.SkillsJSON, string(run.Status), run.CreatedAt,
+		`INSERT INTO diagnostic_runs (id, cluster_name, target_json, skills_json, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		run.ID, run.ClusterName, run.TargetJSON, run.SkillsJSON, string(run.Status), run.CreatedAt,
 	)
 	return err
 }
 
 func (s *SQLiteStore) GetRun(ctx context.Context, id string) (*store.DiagnosticRun, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, target_json, skills_json, status, message, started_at, completed_at, created_at
+		`SELECT id, cluster_name, target_json, skills_json, status, message, started_at, completed_at, created_at
 		 FROM diagnostic_runs WHERE id = ?`, id)
 	r, err := scanRun(row)
 	if err == sql.ErrNoRows {
@@ -118,10 +121,15 @@ func (s *SQLiteStore) ListRuns(ctx context.Context, opts store.ListOpts) ([]*sto
 	if limit == 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, target_json, skills_json, status, message, started_at, completed_at, created_at
-		 FROM diagnostic_runs ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-		limit, opts.Offset)
+	query := `SELECT id, cluster_name, target_json, skills_json, status, message, started_at, completed_at, created_at
+	          FROM diagnostic_runs WHERE 1=1`
+	args := []interface{}{}
+	if opts.ClusterName != "" {
+		query += " AND cluster_name = ?"
+		args = append(args, opts.ClusterName)
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d OFFSET %d", limit, opts.Offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -141,13 +149,16 @@ func (s *SQLiteStore) CreateFinding(ctx context.Context, f *store.Finding) error
 	if f.ID == "" {
 		f.ID = uuid.NewString()
 	}
+	if f.ClusterName == "" {
+		f.ClusterName = "local"
+	}
 	f.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO findings
-		 (id, run_id, dimension, severity, title, description,
+		 (id, run_id, cluster_name, dimension, severity, title, description,
 		  resource_kind, resource_namespace, resource_name, suggestion, created_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		f.ID, f.RunID, f.Dimension, f.Severity, f.Title, f.Description,
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		f.ID, f.RunID, f.ClusterName, f.Dimension, f.Severity, f.Title, f.Description,
 		f.ResourceKind, f.ResourceNamespace, f.ResourceName, f.Suggestion, f.CreatedAt,
 	)
 	return err
@@ -155,7 +166,7 @@ func (s *SQLiteStore) CreateFinding(ctx context.Context, f *store.Finding) error
 
 func (s *SQLiteStore) ListFindings(ctx context.Context, runID string) ([]*store.Finding, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, run_id, dimension, severity, title, description,
+		`SELECT id, run_id, cluster_name, dimension, severity, title, description,
 		        resource_kind, resource_namespace, resource_name, suggestion, created_at
 		 FROM findings WHERE run_id = ? ORDER BY created_at ASC`, runID)
 	if err != nil {
@@ -165,7 +176,7 @@ func (s *SQLiteStore) ListFindings(ctx context.Context, runID string) ([]*store.
 	findings := make([]*store.Finding, 0)
 	for rows.Next() {
 		f := &store.Finding{}
-		if err := rows.Scan(&f.ID, &f.RunID, &f.Dimension, &f.Severity, &f.Title,
+		if err := rows.Scan(&f.ID, &f.RunID, &f.ClusterName, &f.Dimension, &f.Severity, &f.Title,
 			&f.Description, &f.ResourceKind, &f.ResourceNamespace, &f.ResourceName,
 			&f.Suggestion, &f.CreatedAt); err != nil {
 			return nil, err
@@ -249,14 +260,17 @@ func (s *SQLiteStore) CreateFix(ctx context.Context, f *store.Fix) error {
 	if f.ID == "" {
 		f.ID = uuid.NewString()
 	}
+	if f.ClusterName == "" {
+		f.ClusterName = "local"
+	}
 	f.CreatedAt = time.Now()
 	f.UpdatedAt = f.CreatedAt
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO fixes (id, run_id, finding_title, target_kind, target_namespace, target_name,
+		`INSERT INTO fixes (id, cluster_name, run_id, finding_title, target_kind, target_namespace, target_name,
 		  strategy, approval_required, patch_type, patch_content, phase, message,
 		  finding_id, before_snapshot, created_at, updated_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		f.ID, f.RunID, f.FindingTitle, f.TargetKind, f.TargetNamespace, f.TargetName,
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		f.ID, f.ClusterName, f.RunID, f.FindingTitle, f.TargetKind, f.TargetNamespace, f.TargetName,
 		f.Strategy, f.ApprovalRequired, f.PatchType, f.PatchContent,
 		string(f.Phase), f.Message, f.FindingID, f.BeforeSnapshot, f.CreatedAt, f.UpdatedAt)
 	return err
@@ -264,7 +278,7 @@ func (s *SQLiteStore) CreateFix(ctx context.Context, f *store.Fix) error {
 
 func (s *SQLiteStore) GetFix(ctx context.Context, id string) (*store.Fix, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
+		`SELECT id, cluster_name, run_id, finding_title, target_kind, target_namespace, target_name,
 		        strategy, approval_required, patch_type, patch_content, phase,
 		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
 		        created_at, updated_at
@@ -277,12 +291,18 @@ func (s *SQLiteStore) ListFixes(ctx context.Context, opts store.ListOpts) ([]*st
 	if limit == 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
-		        strategy, approval_required, patch_type, patch_content, phase,
-		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
-		        created_at, updated_at
-		 FROM fixes ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, opts.Offset)
+	query := `SELECT id, cluster_name, run_id, finding_title, target_kind, target_namespace, target_name,
+	                 strategy, approval_required, patch_type, patch_content, phase,
+	                 approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+	                 created_at, updated_at
+	          FROM fixes WHERE 1=1`
+	args := []interface{}{}
+	if opts.ClusterName != "" {
+		query += " AND cluster_name = ?"
+		args = append(args, opts.ClusterName)
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d OFFSET %d", limit, opts.Offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +320,7 @@ func (s *SQLiteStore) ListFixes(ctx context.Context, opts store.ListOpts) ([]*st
 
 func (s *SQLiteStore) ListFixesByRun(ctx context.Context, runID string) ([]*store.Fix, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, run_id, finding_title, target_kind, target_namespace, target_name,
+		`SELECT id, cluster_name, run_id, finding_title, target_kind, target_namespace, target_name,
 		        strategy, approval_required, patch_type, patch_content, phase,
 		        approved_by, rollback_snapshot, message, finding_id, before_snapshot,
 		        created_at, updated_at
@@ -365,7 +385,7 @@ func (s *SQLiteStore) UpdateFixSnapshot(ctx context.Context, id string, snapshot
 func scanFix(s scanner) (*store.Fix, error) {
 	f := &store.Fix{}
 	var phase string
-	err := s.Scan(&f.ID, &f.RunID, &f.FindingTitle, &f.TargetKind, &f.TargetNamespace,
+	err := s.Scan(&f.ID, &f.ClusterName, &f.RunID, &f.FindingTitle, &f.TargetKind, &f.TargetNamespace,
 		&f.TargetName, &f.Strategy, &f.ApprovalRequired, &f.PatchType, &f.PatchContent,
 		&phase, &f.ApprovedBy, &f.RollbackSnapshot, &f.Message,
 		&f.FindingID, &f.BeforeSnapshot,
@@ -388,7 +408,7 @@ type scanner interface {
 func scanRun(s scanner) (*store.DiagnosticRun, error) {
 	r := &store.DiagnosticRun{}
 	var startedAt, completedAt sql.NullTime
-	err := s.Scan(&r.ID, &r.TargetJSON, &r.SkillsJSON, &r.Status, &r.Message,
+	err := s.Scan(&r.ID, &r.ClusterName, &r.TargetJSON, &r.SkillsJSON, &r.Status, &r.Message,
 		&startedAt, &completedAt, &r.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -403,24 +423,31 @@ func scanRun(s scanner) (*store.DiagnosticRun, error) {
 }
 
 func (s *SQLiteStore) UpsertEvent(ctx context.Context, e *store.Event) error {
+	if e.ClusterName == "" {
+		e.ClusterName = "local"
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO events (uid, namespace, kind, name, reason, message, type, count, first_time, last_time)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO events (uid, cluster_name, namespace, kind, name, reason, message, type, count, first_time, last_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(uid) DO UPDATE SET
 			count     = excluded.count,
 			last_time = excluded.last_time,
 			message   = excluded.message`,
-		e.UID, e.Namespace, e.Kind, e.Name, e.Reason, e.Message,
+		e.UID, e.ClusterName, e.Namespace, e.Kind, e.Name, e.Reason, e.Message,
 		e.Type, e.Count, e.FirstTime.Unix(), e.LastTime.Unix(),
 	)
 	return err
 }
 
 func (s *SQLiteStore) ListEvents(ctx context.Context, opts store.ListEventsOpts) ([]*store.Event, error) {
-	query := `SELECT id, uid, namespace, kind, name, reason, message, type, count, first_time, last_time, created_at
+	query := `SELECT id, uid, cluster_name, namespace, kind, name, reason, message, type, count, first_time, last_time, created_at
 	          FROM events WHERE 1=1`
 	args := []interface{}{}
 
+	if opts.ClusterName != "" {
+		query += " AND cluster_name = ?"
+		args = append(args, opts.ClusterName)
+	}
 	if opts.Namespace != "" {
 		query += " AND namespace = ?"
 		args = append(args, opts.Namespace)
@@ -456,7 +483,7 @@ func (s *SQLiteStore) ListEvents(ctx context.Context, opts store.ListEventsOpts)
 		var ev store.Event
 		var firstTS, lastTS int64
 		var createdAt string
-		if err := rows.Scan(&ev.ID, &ev.UID, &ev.Namespace, &ev.Kind, &ev.Name,
+		if err := rows.Scan(&ev.ID, &ev.UID, &ev.ClusterName, &ev.Namespace, &ev.Kind, &ev.Name,
 			&ev.Reason, &ev.Message, &ev.Type, &ev.Count, &firstTS, &lastTS, &createdAt); err != nil {
 			return nil, err
 		}
@@ -468,9 +495,12 @@ func (s *SQLiteStore) ListEvents(ctx context.Context, opts store.ListEventsOpts)
 }
 
 func (s *SQLiteStore) InsertMetricSnapshot(ctx context.Context, snap *store.MetricSnapshot) error {
+	if snap.ClusterName == "" {
+		snap.ClusterName = "local"
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO metric_snapshots (query, labels_json, value, ts) VALUES (?, ?, ?, ?)`,
-		snap.Query, snap.LabelsJSON, snap.Value, snap.Ts.Unix(),
+		`INSERT INTO metric_snapshots (cluster_name, query, labels_json, value, ts) VALUES (?, ?, ?, ?, ?)`,
+		snap.ClusterName, snap.Query, snap.LabelsJSON, snap.Value, snap.Ts.Unix(),
 	)
 	return err
 }
@@ -478,7 +508,7 @@ func (s *SQLiteStore) InsertMetricSnapshot(ctx context.Context, snap *store.Metr
 func (s *SQLiteStore) QueryMetricHistory(ctx context.Context, query string, sinceMinutes int) ([]*store.MetricSnapshot, error) {
 	cutoff := time.Now().Add(-time.Duration(sinceMinutes) * time.Minute).Unix()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, query, labels_json, value, ts, created_at
+		`SELECT id, cluster_name, query, labels_json, value, ts, created_at
 		 FROM metric_snapshots WHERE query = ? AND ts >= ?
 		 ORDER BY ts DESC LIMIT 500`,
 		query, cutoff,
@@ -493,7 +523,7 @@ func (s *SQLiteStore) QueryMetricHistory(ctx context.Context, query string, sinc
 		var snap store.MetricSnapshot
 		var ts int64
 		var createdAt string
-		if err := rows.Scan(&snap.ID, &snap.Query, &snap.LabelsJSON, &snap.Value, &ts, &createdAt); err != nil {
+		if err := rows.Scan(&snap.ID, &snap.ClusterName, &snap.Query, &snap.LabelsJSON, &snap.Value, &ts, &createdAt); err != nil {
 			return nil, err
 		}
 		snap.Ts = time.Unix(ts, 0)

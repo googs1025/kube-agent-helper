@@ -11,6 +11,7 @@ export default function AboutPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">{t("about.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Kube Agent Helper — AI-powered Kubernetes diagnostics</p>
       </div>
 
       {/* Architecture */}
@@ -19,30 +20,36 @@ export default function AboutPage() {
           <CardTitle>{t("about.arch.title")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-gray-700 dark:text-gray-300">{t("about.arch.desc")}</p>
-          <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100 dark:bg-gray-950 leading-relaxed">{`┌───────────────────────────────────────────────────────────────────────┐
-│  User: Dashboard (Next.js :3000) / kubectl / REST API (:8080)        │
-│  4 CRDs: DiagnosticRun · DiagnosticFix · DiagnosticSkill · ModelConfig│
-└────────┬──────────────────────┬───────────────────────────────────────┘
+          <p className="text-sm text-muted-foreground">{t("about.arch.desc")}</p>
+          <pre className="overflow-x-auto rounded-lg bg-[#0a0e14] border border-border p-4 text-xs text-slate-300 leading-relaxed">{`┌────────────────────────────────────────────────────────────────────────────┐
+│  User: Dashboard (Next.js :3000) / kubectl / REST API (:8080)             │
+│  5 CRDs: DiagnosticRun · DiagnosticFix · DiagnosticSkill · ModelConfig    │
+│          · ClusterConfig                                                  │
+└────────┬──────────────────────┬────────────────────────────────────────────┘
          │ CR apply             │ /api/*
          ▼                      ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│  Controller (Go)                                                       │
-│  ┌────────────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
-│  │ 5 Reconcilers       │  │ HTTP Server   │  │ Translator            │ │
-│  │ DiagnosticRun       │  │ /api/runs     │  │ CR → Job + SA + RBAC  │ │
-│  │ DiagnosticFix       │  │ /api/skills   │  │ + ConfigMap           │ │
-│  │ DiagnosticSkill     │  │ /api/fixes    │  └───────────────────────┘ │
-│  │ ModelConfig         │  │ /api/events   │                            │
-│  │ ScheduledRun        │  │ /api/modelconfigs                        │ │
-│  └────────────────────┘  └──────────────┘                             │
-│  ┌──────────────────────────────────┐  ┌────────────────────────────┐ │
-│  │ SQLite                            │  │ EventCollector              │ │
-│  │ runs/findings/fixes/events/metrics│  │ K8s Warning + Prom Snapshots│ │
-│  └──────────────────────────────────┘  └────────────────────────────┘ │
-└────────┬──────────────────────────────────┬───────────────────────────┘
-         │ creates Job                       │ creates Job
-         ▼                                   ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Controller (Go)                                                           │
+│  ┌─────────────────────┐  ┌────────────────┐  ┌────────────────────────┐  │
+│  │ 6 Reconcilers        │  │ HTTP Server     │  │ Translator             │  │
+│  │ DiagnosticRun        │  │ /api/runs       │  │ CR → Job + SA + RBAC   │  │
+│  │ DiagnosticFix        │  │ /api/skills     │  │ + ConfigMap            │  │
+│  │ DiagnosticSkill      │  │ /api/fixes      │  │ ClusterRef → target    │  │
+│  │ ModelConfig          │  │ /api/events     │  │ cluster routing        │  │
+│  │ ScheduledRun         │  │ /api/modelconfigs│  └────────────────────────┘  │
+│  │ ClusterConfig        │  │ /api/clusters   │                              │
+│  └─────────────────────┘  └────────────────┘                               │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────────────┐  │
+│  │ SQLite                           │  │ EventCollector                   │  │
+│  │ runs/findings/fixes/events       │  │ K8s Warning + Prom Snapshots     │  │
+│  │ (cluster_name filter)            │  └─────────────────────────────────┘  │
+│  └─────────────────────────────────┘  ┌─────────────────────────────────┐  │
+│                                        │ ClusterClientRegistry           │  │
+│                                        │ kubeconfig → remote K8s client  │  │
+│                                        └─────────────────────────────────┘  │
+└────────┬────────────────────────┬──────────────────────────────────────────┘
+         │ creates Job            │ creates Job (on target cluster)
+         ▼                        ▼
 ┌──────────────────────────┐   ┌────────────────────────────┐
 │ Diagnostic Agent Pod      │   │ Fix Generator Pod           │
 │ python -m runtime.main    │   │ single LLM call → patch JSON│
@@ -66,14 +73,15 @@ export default function AboutPage() {
         <CardContent>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {[
-              { name: "DiagnosticRun", color: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300", desc: t("about.crd.run") },
-              { name: "DiagnosticSkill", color: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300", desc: t("about.crd.skill") },
-              { name: "ModelConfig", color: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300", desc: t("about.crd.model") },
-              { name: "DiagnosticFix", color: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300", desc: t("about.crd.fix") },
+              { name: "DiagnosticRun", color: "bg-sky-500/10 text-sky-400", desc: t("about.crd.run") },
+              { name: "DiagnosticSkill", color: "bg-green-500/10 text-green-400", desc: t("about.crd.skill") },
+              { name: "ModelConfig", color: "bg-purple-500/10 text-purple-400", desc: t("about.crd.model") },
+              { name: "DiagnosticFix", color: "bg-orange-500/10 text-orange-400", desc: t("about.crd.fix") },
+              { name: "ClusterConfig", color: "bg-cyan-500/10 text-cyan-400", desc: t("about.crd.cluster") },
             ].map((crd) => (
-              <div key={crd.name} className="rounded-lg border p-4 dark:border-gray-800">
-                <Badge className={crd.color}>{crd.name}</Badge>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{crd.desc}</p>
+              <div key={crd.name} className="rounded-lg border border-border bg-background p-4">
+                <Badge className={`${crd.color} border border-current/20`}>{crd.name}</Badge>
+                <p className="mt-2 text-sm text-muted-foreground">{crd.desc}</p>
               </div>
             ))}
           </div>
@@ -89,12 +97,12 @@ export default function AboutPage() {
           <div className="space-y-4">
             {[1, 2, 3, 4, 5].map((step) => (
               <div key={step} className="flex gap-4">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
                   {step}
                 </div>
                 <div>
                   <p className="font-medium text-sm">{t(`about.flow.step${step}`)}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{t(`about.flow.step${step}.desc`)}</p>
+                  <p className="text-sm text-muted-foreground">{t(`about.flow.step${step}.desc`)}</p>
                 </div>
               </div>
             ))}
@@ -108,7 +116,7 @@ export default function AboutPage() {
           <CardTitle>{t("about.tools.title")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{t("about.tools.desc")}</p>
+          <p className="text-sm text-muted-foreground mb-3">{t("about.tools.desc")}</p>
           <div className="flex flex-wrap gap-2">
             {t("about.tools.list").split(" · ").map((tool) => (
               <Badge key={tool} variant="outline" className="font-mono text-xs">{tool}</Badge>

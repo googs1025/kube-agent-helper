@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useEvents } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
+import { useCluster } from "@/cluster/context";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,6 +23,7 @@ const SINCE_OPTIONS = [
 
 export default function EventsPage() {
   const { t } = useI18n();
+  const { cluster } = useCluster();
   const [namespace, setNamespace] = useState("");
   const [name, setName] = useState("");
   const [since, setSince] = useState<number>(60);
@@ -30,6 +32,7 @@ export default function EventsPage() {
     namespace: namespace.trim() || undefined,
     name: name.trim() || undefined,
     since,
+    cluster,
   });
 
   return (
@@ -41,7 +44,7 @@ export default function EventsPage() {
       {/* Filter bar */}
       <div className="mb-6 flex flex-wrap gap-4">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             {t("events.filter.namespace")}
           </label>
           <input
@@ -49,12 +52,12 @@ export default function EventsPage() {
             value={namespace}
             onChange={(e) => setNamespace(e.target.value)}
             placeholder={t("events.filter.namespace")}
-            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             {t("events.filter.name")}
           </label>
           <input
@@ -62,18 +65,18 @@ export default function EventsPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t("events.filter.name")}
-            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             {t("events.filter.since")}
           </label>
           <select
             value={since}
             onChange={(e) => setSince(Number(e.target.value))}
-            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             {SINCE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -86,18 +89,18 @@ export default function EventsPage() {
 
       {/* Loading / error / empty states */}
       {isLoading && (
-        <p className="text-gray-500 dark:text-gray-400">{t("events.loading")}</p>
+        <p className="text-muted-foreground">{t("events.loading")}</p>
       )}
       {error && (
-        <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>
+        <p className="text-destructive">{t("common.loadFailed")}</p>
       )}
       {!isLoading && !error && events && events.length === 0 && (
-        <p className="text-gray-500 dark:text-gray-400">{t("events.empty")}</p>
+        <p className="text-muted-foreground">{t("events.empty")}</p>
       )}
 
       {/* Events table */}
       {!isLoading && !error && events && events.length > 0 && (
-        <div className="rounded-lg border bg-white dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -112,25 +115,26 @@ export default function EventsPage() {
             <TableBody>
               {events.map((ev) => (
                 <TableRow key={ev.ID}>
-                  <TableCell className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {formatTime(ev.LastTime)}
                   </TableCell>
                   <TableCell className="text-sm">{ev.Namespace}</TableCell>
                   <TableCell className="text-sm">
                     <span className="font-medium">{ev.Kind}</span>
-                    <span className="text-gray-400 dark:text-gray-500">/</span>
+                    <span className="text-muted-foreground">/</span>
                     {ev.Name}
                   </TableCell>
                   <TableCell className="text-sm">
                     {ev.Type === "Warning" ? (
-                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                      <span className="inline-flex items-center gap-1 rounded-md border border-red-400/20 bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-400">
+                        <span className="size-1.5 rounded-full bg-red-400" />
                         {ev.Reason}
                       </span>
                     ) : (
                       <span>{ev.Reason}</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate" title={ev.Message}>
+                  <TableCell className="text-sm text-muted-foreground max-w-xs truncate" title={ev.Message}>
                     {ev.Message}
                   </TableCell>
                   <TableCell className="text-sm text-right">{ev.Count}</TableCell>

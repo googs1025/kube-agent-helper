@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
@@ -24,6 +25,7 @@ type DiagnosticRunReconciler struct {
 	client.Client
 	Store      store.Store
 	Translator *translator.Translator
+	Registry   *registry.ClusterClientRegistry // nil = local-only mode
 }
 
 func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -51,12 +53,28 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if run.Status.Phase == "" || run.Status.Phase == string(store.PhasePending) {
 		logger.Info("translating run", "name", run.Name)
 
+		// Resolve target cluster client
+		targetClient := client.Client(r.Client) // default: local cluster
+		clusterName := "local"
+		if run.Spec.ClusterRef != "" {
+			clusterName = run.Spec.ClusterRef
+			if r.Registry == nil {
+				return r.failRun(ctx, &run, "cluster registry not configured")
+			}
+			c, ok := r.Registry.Get(run.Spec.ClusterRef)
+			if !ok {
+				return r.failRun(ctx, &run, fmt.Sprintf("cluster %q not registered — create a ClusterConfig CR", run.Spec.ClusterRef))
+			}
+			targetClient = c
+		}
+
 		// Persist to store
 		storeRun := &store.DiagnosticRun{
-			ID:         string(run.UID),
-			TargetJSON: mustJSON(run.Spec.Target),
-			SkillsJSON: mustJSON(run.Spec.Skills),
-			Status:     store.PhasePending,
+			ID:          string(run.UID),
+			TargetJSON:  mustJSON(run.Spec.Target),
+			SkillsJSON:  mustJSON(run.Spec.Skills),
+			Status:      store.PhasePending,
+			ClusterName: clusterName,
 		}
 		if err := r.Store.CreateRun(ctx, storeRun); err != nil {
 			return ctrl.Result{}, fmt.Errorf("store.CreateRun: %w", err)
@@ -71,7 +89,7 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Apply all generated objects
 		for _, obj := range objects {
 			obj.SetNamespace(run.Namespace)
-			if err := r.Create(ctx, obj); err != nil && !errors.IsAlreadyExists(err) {
+			if err := targetClient.Create(ctx, obj); err != nil && !errors.IsAlreadyExists(err) {
 				return r.failRun(ctx, &run, fmt.Sprintf("create %T: %s", obj, err))
 			}
 		}

@@ -7,7 +7,39 @@
     "diagnose": "Diagnose",
     "events": "Events",
     "modelconfigs": "Models",
+    "clusters": "Clusters",
     "about": "About"
+  },
+  "cluster": {
+    "label": "Cluster",
+    "local": "Local (in-cluster)"
+  },
+  "clusters": {
+    "title": "Cluster Management",
+    "loading": "Loading...",
+    "empty": "No remote clusters registered. Local cluster is always available.",
+    "col.name": "Cluster Name",
+    "col.phase": "Status",
+    "col.prometheus": "Prometheus",
+    "col.description": "Description",
+    "create.title": "Register Remote Cluster",
+    "create.name": "Cluster Name",
+    "create.namespace": "Namespace",
+    "create.secretName": "Kubeconfig Secret Name",
+    "create.secretKey": "Key in Secret",
+    "create.prometheus": "Prometheus URL (optional)",
+    "create.description": "Description (optional)",
+    "create.cancel": "Cancel",
+    "create.submit": "Register",
+    "setup.title": "How to Prepare the Kubeconfig Secret",
+    "setup.step1": "1. Prepare the kubeconfig file for the remote cluster",
+    "setup.step1.desc": "Export the target context from ~/.kube/config, or create a kubeconfig using a ServiceAccount token from the remote cluster.",
+    "setup.step2": "2. Create a Kubernetes Secret",
+    "setup.step2.cmd": "kubectl create secret generic <secret-name> -n kube-agent-helper --from-file=kubeconfig=/path/to/kubeconfig.yaml",
+    "setup.step3": "3. Fill in the Secret name and key in the form above, then click Register",
+    "setup.step3.desc": "The controller will read the kubeconfig from the Secret and establish a connection to the remote cluster. Status shows Connected on success.",
+    "setup.sa.title": "Recommended: Use ServiceAccount Token (production)",
+    "setup.sa.desc": "Create a read-only ServiceAccount in the remote cluster and build the kubeconfig with its token for minimal privileges and controlled expiration."
   },
   "overview": {
     "title": "Kubernetes AI Diagnostic Platform",
@@ -28,6 +60,7 @@
     "crd.skill": "DiagnosticSkill — Defines analysis logic per dimension (health/security/cost/reliability): Prompt + tool whitelist, 10 built-in + custom extensible",
     "crd.model": "ModelConfig — LLM provider config: API Key Secret ref, model name, optional baseURL proxy, maxTurns control",
     "crd.fix": "DiagnosticFix — Fix proposal: strategic-merge/json-patch/create strategy, human approval flow (PendingApproval→Approved→Applying→Succeeded), auto-rollback support",
+    "crd.cluster": "ClusterConfig — Multi-cluster management: references a Secret containing kubeconfig to register remote clusters, supports independent Prometheus URL; DiagnosticRun uses clusterRef to target a specific cluster",
     "flow.title": "Diagnostic & Fix Flow",
     "flow.step1": "1. Create DiagnosticRun",
     "flow.step1.desc": "Via Dashboard /diagnose page or kubectl apply — one-time or scheduled (cron expression)",
@@ -252,7 +285,9 @@
     "create.secretRef": "Secret Name",
     "create.secretKey": "Secret Key",
     "create.submit": "Create",
-    "create.cancel": "Cancel"
+    "create.cancel": "Cancel",
+    "create.secretHint.title": "How to create a Secret?",
+    "create.secretHint.desc": "Before creating a model config, create a Kubernetes Secret containing your API key in the target namespace:"
   },
   "events": {
     "title": "Events",

@@ -13,15 +13,25 @@ import { CRDYamlBlock } from "@/components/crd-yaml-block";
 import { computeAfter, decodeBefore } from "@/lib/utils";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
-const phaseColors: Record<string, string> = {
-  PendingApproval: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
-  Approved: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  Applying: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  Succeeded: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  Failed: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  RolledBack: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300",
-  DryRunComplete: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+const fixDetailPhaseConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  PendingApproval: { bg: "bg-yellow-500/10", text: "text-yellow-400", dot: "bg-yellow-400" },
+  Approved:        { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400" },
+  Applying:        { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400" },
+  Succeeded:       { bg: "bg-green-500/10",  text: "text-green-400",  dot: "bg-green-400" },
+  Failed:          { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
+  RolledBack:      { bg: "bg-orange-500/10", text: "text-orange-400", dot: "bg-orange-400" },
+  DryRunComplete:  { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
 };
+
+function FixDetailPhaseBadge({ phase }: { phase: string }) {
+  const c = fixDetailPhaseConfig[phase] ?? { bg: "bg-slate-500/10", text: "text-slate-400", dot: "bg-slate-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-md border border-current/20 px-2 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}>
+      <span className={`size-1.5 rounded-full ${c.dot}`} />
+      {phase}
+    </span>
+  );
+}
 
 export default function FixDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { t } = useI18n();
@@ -58,9 +68,9 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
     }
   }, [toast]);
 
-  if (isLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
-  if (!fix) return <p className="text-gray-500 dark:text-gray-400">{t("common.notFound")}</p>;
+  if (isLoading) return <p className="text-muted-foreground">{t("common.loading")}</p>;
+  if (error) return <p className="text-destructive">{t("common.loadFailed")}</p>;
+  if (!fix) return <p className="text-muted-foreground">{t("common.notFound")}</p>;
 
   async function handleApprove() {
     setActing(true);
@@ -90,40 +100,40 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
       {toast && (
         <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-3 text-sm animate-in fade-in slide-in-from-top-2 ${
           toast.type === "success"
-            ? "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300"
+            ? "border-green-500/20 bg-green-500/10 text-green-400"
             : toast.type === "applying"
-              ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
-              : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+              ? "border-primary/20 bg-primary/10 text-primary"
+              : "border-red-500/20 bg-red-500/10 text-red-400"
         }`}>
-          {toast.type === "success" && <CheckCircle2 className="size-5 text-green-600 dark:text-green-400" />}
-          {toast.type === "applying" && <Loader2 className="size-5 animate-spin text-blue-600 dark:text-blue-400" />}
-          {toast.type === "error" && <XCircle className="size-5 text-red-600 dark:text-red-400" />}
+          {toast.type === "success" && <CheckCircle2 className="size-5 text-green-400" />}
+          {toast.type === "applying" && <Loader2 className="size-5 animate-spin text-primary" />}
+          {toast.type === "error" && <XCircle className="size-5 text-red-400" />}
           <span>{toast.message}</span>
           <button onClick={() => setToast(null)} className="ml-auto text-xs opacity-60 hover:opacity-100">&times;</button>
         </div>
       )}
 
-      <Link href="/fixes" className="text-sm text-blue-600 hover:underline dark:text-blue-400">&larr; {t("fixes.detail.backToFixes")}</Link>
+      <Link href="/fixes" className="text-sm text-primary hover:underline">&larr; {t("fixes.detail.backToFixes")}</Link>
       <div className="mt-4 mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold font-mono">{fix.Name || fix.ID.slice(0, 8)}</h1>
-          <Badge className={phaseColors[fix.Phase] || ""}>{t(`phase.${fix.Phase}`)}</Badge>
+          <FixDetailPhaseBadge phase={fix.Phase} />
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-600 sm:grid-cols-4 dark:text-gray-400">
+        <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-muted-foreground sm:grid-cols-4">
           <div><span className="font-medium">{t("fixes.detail.target")}:</span> {fix.TargetKind}/{fix.TargetNamespace}/{fix.TargetName}</div>
           <div><span className="font-medium">{t("fixes.detail.strategy")}:</span> {fix.Strategy}</div>
           <div><span className="font-medium">{t("fixes.detail.approval")}:</span> {fix.ApprovalRequired ? t("fixes.detail.approvalRequired") : t("fixes.detail.approvalAuto")}</div>
           <div><span className="font-medium">{t("fixes.detail.run")}:</span>
-            <Link href={`/runs/${fix.RunID}`} className="ml-1 text-blue-600 hover:underline dark:text-blue-400">{fix.RunID.slice(0, 8)}…</Link>
+            <Link href={`/runs/${fix.RunID}`} className="ml-1 text-primary hover:underline">{fix.RunID.slice(0, 8)}…</Link>
           </div>
         </div>
         {fix.Message && (
           <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
             fix.Phase === "Failed" || fix.Phase === "RolledBack"
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+              ? "border-red-500/20 bg-red-500/10 text-red-400"
               : fix.Phase === "PendingApproval"
-                ? "border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-300"
-                : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-400"
+                : "border-border bg-muted/30 text-muted-foreground"
           }`}>
             {fix.Message}
           </div>
@@ -145,10 +155,10 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
       {(fix.Phase === "Succeeded" || fix.Phase === "Failed" || fix.Phase === "RolledBack") && (
         <Card className="mb-6">
           <CardContent className="py-4">
-            <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+            <p className="text-sm text-muted-foreground mb-2">
               {fix.Phase === "Succeeded" ? t("fixes.verify.successHint") : t("fixes.verify.failHint")}
             </p>
-            <code className="block rounded-lg bg-gray-900 px-4 py-2 text-sm text-gray-100 dark:bg-gray-950 select-all">
+            <code className="block rounded-lg bg-muted/30 px-4 py-2 text-sm text-muted-foreground select-all">
               kubectl get {fix.TargetKind.toLowerCase()} {fix.TargetName} -n {fix.TargetNamespace} -o yaml
             </code>
           </CardContent>
@@ -165,12 +175,12 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
           <CardContent>
             {(() => {
               if (fix.PatchType === "json-patch") {
-                return <p className="text-sm text-gray-500 dark:text-gray-400">{t("fixes.detail.diffUnavailable")}</p>;
+                return <p className="text-sm text-muted-foreground">{t("fixes.detail.diffUnavailable")}</p>;
               }
               const before = decodeBefore(fix.BeforeSnapshot);
               const after = computeAfter(fix.BeforeSnapshot, fix.PatchType, fix.PatchContent);
               if (!after) {
-                return <p className="text-sm text-gray-500 dark:text-gray-400">{t("fixes.detail.diffUnavailable")}</p>;
+                return <p className="text-sm text-muted-foreground">{t("fixes.detail.diffUnavailable")}</p>;
               }
               return <ResourceDiff before={before} after={after} />;
             })()}
@@ -185,9 +195,9 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
         <CardContent>
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="outline">{fix.PatchType}</Badge>
-            <span className="text-xs text-gray-500 dark:text-gray-400">{t("fixes.detail.finding")}: {fix.FindingTitle}</span>
+            <span className="text-xs text-muted-foreground">{t("fixes.detail.finding")}: {fix.FindingTitle}</span>
           </div>
-          <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-sm text-gray-100 dark:bg-gray-950">
+          <pre className="overflow-x-auto rounded-lg bg-muted/30 p-4 text-sm text-muted-foreground">
             {fix.PatchContent}
           </pre>
         </CardContent>

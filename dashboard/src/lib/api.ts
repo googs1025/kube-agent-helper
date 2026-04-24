@@ -3,8 +3,37 @@ import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillReques
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export function useRuns() {
-  return useSWR<DiagnosticRun[]>("/api/runs", fetcher, { refreshInterval: 5000 });
+export interface ClusterItem {
+  name: string;
+  phase: string;
+  prometheusURL?: string;
+  description?: string;
+}
+
+export function useClusterConfigs() {
+  return useSWR<ClusterItem[]>("/api/clusters", fetcher, { refreshInterval: 30000 });
+}
+
+export async function createClusterConfig(body: {
+  name: string;
+  namespace: string;
+  secretName: string;
+  secretKey: string;
+  prometheusURL?: string;
+  description?: string;
+}) {
+  const res = await fetch("/api/clusters", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export function useRuns(opts?: { cluster?: string }) {
+  const params = opts?.cluster ? `?cluster=${opts.cluster}` : "";
+  return useSWR<DiagnosticRun[]>(`/api/runs${params}`, fetcher, { refreshInterval: 5000 });
 }
 
 export function useRun(id: string) {
@@ -87,8 +116,9 @@ export async function createSkill(body: CreateSkillRequest): Promise<void> {
   }
 }
 
-export function useFixes() {
-  return useSWR<Fix[]>("/api/fixes", fetcher, { refreshInterval: 5000 });
+export function useFixes(opts?: { cluster?: string }) {
+  const params = opts?.cluster ? `?cluster=${opts.cluster}` : "";
+  return useSWR<Fix[]>(`/api/fixes${params}`, fetcher, { refreshInterval: 5000 });
 }
 
 export function useFix(id: string) {
@@ -131,12 +161,13 @@ export async function generateFix(findingID: string): Promise<{ fixID?: string; 
   return res.json();
 }
 
-export function useEvents(opts?: { namespace?: string; name?: string; since?: number; limit?: number }) {
+export function useEvents(opts?: { namespace?: string; name?: string; since?: number; limit?: number; cluster?: string }) {
   const params = new URLSearchParams();
   if (opts?.namespace) params.set("namespace", opts.namespace);
   if (opts?.name) params.set("name", opts.name);
   if (opts?.since) params.set("since", String(opts.since));
   if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.cluster) params.set("cluster", opts.cluster);
   const query = params.toString();
   return useSWR<KubeEvent[]>(`/api/events${query ? `?${query}` : ""}`, fetcher, { refreshInterval: 15000 });
 }
