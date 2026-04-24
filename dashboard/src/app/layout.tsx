@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import "./globals.css";
 import { ClientProviders } from "@/components/client-providers";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -13,21 +14,43 @@ import { ClusterProvider } from "@/cluster/context";
 
 function Nav() {
   const { t } = useI18n();
+  const pathname = usePathname();
+
+  const links = [
+    { href: "/", label: t("nav.runs") },
+    { href: "/diagnose", label: t("nav.diagnose") },
+    { href: "/skills", label: t("nav.skills") },
+    { href: "/fixes", label: t("nav.fixes") },
+    { href: "/events", label: t("nav.events") },
+    { href: "/modelconfigs", label: t("nav.modelconfigs") },
+    { href: "/clusters", label: t("nav.clusters") },
+    { href: "/about", label: t("nav.about") },
+  ];
+
   return (
-    <nav className="border-b bg-white px-6 py-3 dark:bg-gray-900 dark:border-gray-800">
-      <div className="mx-auto flex max-w-7xl items-center gap-8">
-        <Link href="/" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+    <nav className="border-b border-border bg-background px-6" style={{ height: "52px", display: "flex", alignItems: "center" }}>
+      <div className="mx-auto flex max-w-7xl w-full items-center gap-8">
+        <Link href="/" className="flex items-center gap-2 text-[15px] font-bold text-foreground">
+          <span className="inline-block size-2 rounded-full bg-primary animate-pulse" />
           {t("nav.brand")}
         </Link>
-        <div className="flex flex-1 gap-6 text-sm">
-          <Link href="/diagnose" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.diagnose")}</Link>
-          <Link href="/" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.runs")}</Link>
-          <Link href="/skills" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.skills")}</Link>
-          <Link href="/fixes" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.fixes")}</Link>
-          <Link href="/events" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.events")}</Link>
-          <Link href="/modelconfigs" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.modelconfigs")}</Link>
-          <Link href="/clusters" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.clusters")}</Link>
-          <Link href="/about" className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{t("nav.about")}</Link>
+        <div className="flex flex-1 gap-1 text-sm">
+          {links.map((link) => {
+            const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`rounded-md px-2.5 py-1.5 transition-colors ${
+                  isActive
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </div>
         <div className="flex items-center gap-1">
           <ClusterToggle />
@@ -46,12 +69,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <title>Kube Agent Helper</title>
         <script dangerouslySetInnerHTML={{ __html: preHydrationScript }} />
       </head>
-      <body className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <body className="min-h-screen bg-background">
         <ClientProviders>
           <ClusterProvider>
             <Nav />
             <ErrorBoundary>
-              <main className="mx-auto max-w-7xl px-6 py-8 text-gray-900 dark:text-gray-100">{children}</main>
+              <main className="mx-auto max-w-7xl px-6 py-6 text-foreground">{children}</main>
             </ErrorBoundary>
           </ClusterProvider>
         </ClientProviders>
