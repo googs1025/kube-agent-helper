@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useI18n } from "@/i18n/context";
 import { useModelConfigs, createModelConfig, useK8sNamespaces } from "@/lib/api";
 import type { ModelConfig } from "@/lib/types";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 function CreateDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
@@ -41,13 +42,13 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded border border-gray-300 bg-white px-3 py-1.5 text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100";
+    "w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900"
+        className="w-full max-w-lg rounded-lg bg-card border border-border p-6 shadow-xl"
       >
         <h2 className="mb-4 text-lg font-semibold">{t("modelconfigs.create.title")}</h2>
         {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
@@ -148,18 +149,28 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
+          <p className="font-semibold mb-1">{t("modelconfigs.create.secretHint.title")}</p>
+          <p className="mb-1.5 text-blue-700 dark:text-blue-400">{t("modelconfigs.create.secretHint.desc")}</p>
+          <pre className="rounded bg-blue-100 p-2 font-mono text-[11px] leading-relaxed dark:bg-blue-900 select-all overflow-x-auto whitespace-pre">
+{`kubectl create secret generic ${form.secretRef || form.name || "<secret-name>"} \\
+  --from-literal=${form.secretKey || "apiKey"}=<your-api-key> \\
+  -n ${form.namespace || "kube-agent-helper"}`}
+          </pre>
+        </div>
+
         <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+            className="rounded-lg px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
           >
             {t("modelconfigs.create.cancel")}
           </button>
           <button
             type="submit"
             disabled={submitting || !form.name}
-            className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             {t("modelconfigs.create.submit")}
           </button>
@@ -180,60 +191,60 @@ export default function ModelConfigsPage() {
         <h1 className="text-2xl font-bold">{t("modelconfigs.title")}</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700"
+          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
         >
           + {t("modelconfigs.create.title")}
         </button>
       </div>
 
-      {isLoading && <p className="text-gray-500">{t("modelconfigs.loading")}</p>}
+      {isLoading && <p className="text-muted-foreground">{t("modelconfigs.loading")}</p>}
 
       {!isLoading && (!configs || configs.length === 0) && (
-        <p className="text-gray-500">{t("modelconfigs.empty")}</p>
+        <p className="text-muted-foreground">{t("modelconfigs.empty")}</p>
       )}
 
       {configs && configs.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              <tr>
-                <th className="px-4 py-3">{t("modelconfigs.col.name")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.namespace")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.provider")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.model")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.baseURL")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.maxTurns")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.secret")}</th>
-                <th className="px-4 py-3">{t("modelconfigs.col.apiKey")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("modelconfigs.col.name")}</TableHead>
+                <TableHead>{t("modelconfigs.col.namespace")}</TableHead>
+                <TableHead>{t("modelconfigs.col.provider")}</TableHead>
+                <TableHead>{t("modelconfigs.col.model")}</TableHead>
+                <TableHead>{t("modelconfigs.col.baseURL")}</TableHead>
+                <TableHead>{t("modelconfigs.col.maxTurns")}</TableHead>
+                <TableHead>{t("modelconfigs.col.secret")}</TableHead>
+                <TableHead>{t("modelconfigs.col.apiKey")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {configs.map((mc: ModelConfig) => (
-                <tr key={`${mc.namespace}/${mc.name}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                  <td className="px-4 py-3 font-medium">{mc.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{mc.namespace}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                <TableRow key={`${mc.namespace}/${mc.name}`}>
+                  <TableCell className="font-medium">{mc.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{mc.namespace}</TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center rounded-md border border-sky-400/20 bg-sky-500/10 px-2 py-0.5 text-xs font-semibold text-sky-400">
                       {mc.provider}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{mc.model}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs font-mono">
-                    {mc.baseURL || <span className="text-gray-400 italic">default</span>}
-                  </td>
-                  <td className="px-4 py-3 text-center">{mc.maxTurns ?? 20}</td>
-                  <td className="px-4 py-3 text-xs font-mono">
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{mc.model}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs font-mono">
+                    {mc.baseURL || <span className="italic">default</span>}
+                  </TableCell>
+                  <TableCell className="text-center">{mc.maxTurns ?? 20}</TableCell>
+                  <TableCell className="font-mono text-xs">
                     {mc.secretRef}/{mc.secretKey}
-                  </td>
-                  <td className="px-4 py-3">
-                    <code className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">
+                  </TableCell>
+                  <TableCell>
+                    <code className="rounded-md bg-muted px-2 py-0.5 text-xs font-mono">
                       {mc.apiKey}
                     </code>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

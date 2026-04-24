@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n/context";
 import { useClusterConfigs, createClusterConfig, useK8sNamespaces } from "@/lib/api";
 import type { ClusterItem } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const SA_SCRIPT = `# On the REMOTE cluster:
 kubectl create sa kah-reader -n kube-system
@@ -38,11 +38,21 @@ kubectl create secret generic remote-kubeconfig \\
   -n kube-agent-helper \\
   --from-file=kubeconfig=/tmp/remote-kubeconfig.yaml`;
 
-const phaseColors: Record<string, string> = {
-  Connected: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  Error: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  Pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
+const clusterPhaseConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  Connected: { bg: "bg-green-500/10", text: "text-green-400", dot: "bg-green-400" },
+  Error:     { bg: "bg-red-500/10",   text: "text-red-400",   dot: "bg-red-400" },
+  Pending:   { bg: "bg-yellow-500/10",text: "text-yellow-400",dot: "bg-yellow-400" },
 };
+
+function ClusterPhaseBadge({ phase }: { phase: string }) {
+  const c = clusterPhaseConfig[phase] ?? { bg: "bg-slate-500/10", text: "text-slate-400", dot: "bg-slate-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-md border border-current/20 px-2 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}>
+      <span className={`size-1.5 rounded-full ${c.dot}`} />
+      {phase}
+    </span>
+  );
+}
 
 function CreateDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
@@ -77,13 +87,13 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded border border-gray-300 bg-white px-3 py-1.5 text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100";
+    "w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900"
+        className="w-full max-w-lg rounded-lg bg-card border border-border p-6 shadow-xl"
       >
         <h2 className="mb-4 text-lg font-semibold">{t("clusters.create.title")}</h2>
         {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
@@ -168,14 +178,14 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+            className="rounded-lg px-4 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors"
           >
             {t("clusters.create.cancel")}
           </button>
           <button
             type="submit"
             disabled={submitting || !form.name || !form.secretName || !form.secretKey}
-            className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             {t("clusters.create.submit")}
           </button>
@@ -196,48 +206,42 @@ export default function ClustersPage() {
         <h1 className="text-2xl font-bold">{t("clusters.title")}</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700"
+          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
         >
           + {t("clusters.create.title")}
         </button>
       </div>
 
-      {isLoading && <p className="text-gray-500">{t("clusters.loading")}</p>}
+      {isLoading && <p className="text-muted-foreground">{t("clusters.loading")}</p>}
 
       {!isLoading && (!clusters || clusters.length === 0) && (
-        <p className="text-gray-500 dark:text-gray-400">{t("clusters.empty")}</p>
+        <p className="text-muted-foreground">{t("clusters.empty")}</p>
       )}
 
       {clusters && clusters.length > 0 && (
-        <div className="mb-8 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              <tr>
-                <th className="px-4 py-3">{t("clusters.col.name")}</th>
-                <th className="px-4 py-3">{t("clusters.col.phase")}</th>
-                <th className="px-4 py-3">{t("clusters.col.prometheus")}</th>
-                <th className="px-4 py-3">{t("clusters.col.description")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="mb-8 rounded-lg border border-border bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("clusters.col.name")}</TableHead>
+                <TableHead>{t("clusters.col.phase")}</TableHead>
+                <TableHead>{t("clusters.col.prometheus")}</TableHead>
+                <TableHead>{t("clusters.col.description")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {clusters.map((c: ClusterItem) => (
-                <tr key={c.name} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
-                  <td className="px-4 py-3">
-                    <Badge className={phaseColors[c.phase] || "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}>
-                      {c.phase}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-gray-500 dark:text-gray-400">
-                    {c.prometheusURL || <span className="italic text-gray-400">-</span>}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                    {c.description || "-"}
-                  </td>
-                </tr>
+                <TableRow key={c.name}>
+                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell><ClusterPhaseBadge phase={c.phase} /></TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {c.prometheusURL || <span className="italic">-</span>}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{c.description || "-"}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
