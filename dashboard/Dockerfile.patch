@@ -1,0 +1,12 @@
+FROM kube-agent-helper/dashboard:v3 AS base
+
+FROM base
+RUN rm -rf /app
+RUN mkdir -p /app
+WORKDIR /app
+COPY .next/standalone/kube-agent-helper/dashboard/ /app/
+COPY .next/static /app/.next/static
+COPY public /app/public
+ENV HOSTNAME=0.0.0.0
+EXPOSE 3000
+CMD ["node", "server.js"]

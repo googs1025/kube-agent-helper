@@ -10,10 +10,10 @@ metadata:
   name: {{ .Release.Name }}-controller
 rules:
 - apiGroups: ["k8sai.io"]
-  resources: ["diagnosticruns","diagnosticskills","modelconfigs","diagnosticfixes"]
+  resources: ["diagnosticruns","diagnosticskills","modelconfigs","diagnosticfixes","clusterconfigs"]
   verbs: ["get","list","watch","create","update","patch"]
 - apiGroups: ["k8sai.io"]
-  resources: ["diagnosticruns/status","diagnosticfixes/status"]
+  resources: ["diagnosticruns/status","diagnosticfixes/status","clusterconfigs/status"]
   verbs: ["update","patch"]
 - apiGroups: ["batch"]
   resources: ["jobs"]

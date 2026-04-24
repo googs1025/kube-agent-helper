@@ -60,6 +60,7 @@
     "crd.skill": "DiagnosticSkill — 定义诊断维度（health/security/cost/reliability）的分析逻辑：Prompt + 工具白名单，10 个内置 + 自定义扩展",
     "crd.model": "ModelConfig — LLM 提供商配置：API Key Secret 引用、模型名称、可选 baseURL 代理、maxTurns 控制",
     "crd.fix": "DiagnosticFix — 修复建议：strategic-merge/json-patch/create 策略，人工审批流程（PendingApproval→Approved→Applying→Succeeded），支持自动回滚",
+    "crd.cluster": "ClusterConfig — 多集群管理：引用包含 kubeconfig 的 Secret 注册远程集群，支持独立 Prometheus 地址；DiagnosticRun 通过 clusterRef 指定目标集群",
     "flow.title": "诊断与修复流程",
     "flow.step1": "1. 创建 DiagnosticRun",
     "flow.step1.desc": "通过 Dashboard /diagnose 页面或 kubectl apply，声明诊断任务（一次性或定时调度）",
@@ -284,7 +285,9 @@
     "create.secretRef": "Secret 名称",
     "create.secretKey": "Secret Key",
     "create.submit": "创建",
-    "create.cancel": "取消"
+    "create.cancel": "取消",
+    "create.secretHint.title": "如何创建 Secret？",
+    "create.secretHint.desc": "在创建模型配置之前，请先在目标命名空间中创建包含 API Key 的 Kubernetes Secret："
   },
   "events": {
     "title": "事件",

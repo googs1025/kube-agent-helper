@@ -12,11 +12,13 @@
 > | Claude Agent SDK (Python) | **原生 Anthropic API + httpx SSE streaming** |
 > | DiagnosticReport CRD | **不存在**，findings 直接写入 DiagnosticRun status |
 > | Data Collector (Watch + Prometheus) | **不存在**，Agent Pod 按需拉数据 |
-> | schedule 字段 | **不存在**，仅支持手动触发 |
-> | 3 个 CRD | **4 个 CRD** (加了 DiagnosticFix) |
-> | 3 个内置 Skill | **5 个内置 Skill** (加了 reliability-analyst, config-drift-analyst) |
+> | schedule 字段 | **已实现**，`spec.schedule` (cron) + `spec.historyLimit` 定时调度 |
+> | 3 个 CRD | **5 个 CRD** (加了 DiagnosticFix, ClusterConfig) |
+> | 3 个内置 Skill | **10 个内置 Skill** |
 > | 无 Dashboard | **Next.js Dashboard** (i18n 中/英，dark/light 主题) |
-> | 无 Fix 功�� | **DiagnosticFix CRD** (LLM 生成 patch/create，HITL 审批，auto-rollback) |
+> | 无 Fix 功能 | **DiagnosticFix CRD** (LLM 生成 patch/create，HITL 审批，auto-rollback) |
+> | 单集群 | **多集群支持** — ClusterConfig CRD + ClusterClientRegistry + clusterRef 路由 |
+> | 无事件采集 | **EventCollector** — K8s Warning 事件 + Prometheus 指标自动采集 |
 >
 > 关于当前架构的准确描述，请参考 [README.md](../README.md)。
 

@@ -597,4 +597,123 @@ func TestClusterNameDefaultsToLocal(t *testing.T) {
 	if len(findings) != 1 || findings[0].ClusterName != "local" {
 		t.Errorf("expected finding ClusterName=local, got %q", findings[0].ClusterName)
 	}
+
+	// Create fix without ClusterName
+	fix := &store.Fix{
+		ID: "fix1", RunID: "r1", FindingTitle: "crash",
+		TargetKind: "Deployment", TargetNamespace: "default", TargetName: "app",
+		PatchContent: "{}", Phase: store.FixPhasePendingApproval,
+	}
+	if err := st.CreateFix(context.Background(), fix); err != nil {
+		t.Fatal(err)
+	}
+
+	gotFix, err := st.GetFix(context.Background(), "fix1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotFix.ClusterName != "local" {
+		t.Errorf("expected fix ClusterName=local, got %q", gotFix.ClusterName)
+	}
+
+	// Upsert event without ClusterName
+	ev := &store.Event{
+		UID: "ev1", Namespace: "default", Kind: "Pod", Name: "pod-1",
+		Reason: "OOM", Message: "oom", Type: "Warning", Count: 1,
+		FirstTime: time.Now(), LastTime: time.Now(),
+	}
+	if err := st.UpsertEvent(context.Background(), ev); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := st.ListEvents(context.Background(), store.ListEventsOpts{ClusterName: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ClusterName != "local" {
+		t.Errorf("expected event ClusterName=local, got %v events", len(events))
+	}
+}
+
+func TestFilterByNonExistentCluster_ReturnsEmpty(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// Create data only in "local"
+	run := &store.DiagnosticRun{ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	require.NoError(t, st.CreateRun(ctx, run))
+
+	fix := &store.Fix{
+		RunID: run.ID, ClusterName: "local", FindingTitle: "t",
+		TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app",
+		PatchContent: "{}", Phase: store.FixPhasePendingApproval,
+	}
+	require.NoError(t, st.CreateFix(ctx, fix))
+
+	ev := &store.Event{
+		UID: "ev1", ClusterName: "local", Namespace: "default", Kind: "Pod", Name: "p",
+		Reason: "r", Message: "m", Type: "Warning", Count: 1,
+		FirstTime: time.Now(), LastTime: time.Now(),
+	}
+	require.NoError(t, st.UpsertEvent(ctx, ev))
+
+	// Query with non-existent cluster → empty results
+	runs, err := st.ListRuns(ctx, store.ListOpts{ClusterName: "nonexistent"})
+	require.NoError(t, err)
+	assert.Empty(t, runs)
+
+	fixes, err := st.ListFixes(ctx, store.ListOpts{ClusterName: "nonexistent"})
+	require.NoError(t, err)
+	assert.Empty(t, fixes)
+
+	events, err := st.ListEvents(ctx, store.ListEventsOpts{ClusterName: "nonexistent"})
+	require.NoError(t, err)
+	assert.Empty(t, events)
+}
+
+func TestClusterNamePreservedWhenExplicitlySet(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// Run with explicit ClusterName
+	run := &store.DiagnosticRun{ClusterName: "prod", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending}
+	require.NoError(t, st.CreateRun(ctx, run))
+
+	got, err := st.GetRun(ctx, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "prod", got.ClusterName, "explicit ClusterName should be preserved, not overwritten with 'local'")
+
+	// Finding with explicit ClusterName
+	f := &store.Finding{RunID: run.ID, ClusterName: "prod", Dimension: "health", Severity: "high", Title: "test"}
+	require.NoError(t, st.CreateFinding(ctx, f))
+
+	findings, err := st.ListFindings(ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	assert.Equal(t, "prod", findings[0].ClusterName)
+
+	// Fix with explicit ClusterName
+	fix := &store.Fix{
+		RunID: run.ID, ClusterName: "prod", FindingTitle: "t",
+		TargetKind: "Deployment", TargetNamespace: "ns", TargetName: "app",
+		PatchContent: "{}", Phase: store.FixPhasePendingApproval,
+	}
+	require.NoError(t, st.CreateFix(ctx, fix))
+
+	gotFix, err := st.GetFix(ctx, fix.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "prod", gotFix.ClusterName)
+
+	// Event with explicit ClusterName
+	ev := &store.Event{
+		UID: "ev1", ClusterName: "prod", Namespace: "default", Kind: "Pod", Name: "p",
+		Reason: "r", Message: "m", Type: "Warning", Count: 1,
+		FirstTime: time.Now(), LastTime: time.Now(),
+	}
+	require.NoError(t, st.UpsertEvent(ctx, ev))
+
+	events, err := st.ListEvents(ctx, store.ListEventsOpts{ClusterName: "prod"})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "prod", events[0].ClusterName)
 }

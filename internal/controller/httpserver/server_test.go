@@ -1026,3 +1026,160 @@ func TestHandleAPIEvents(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
+
+// ── POST /api/clusters tests ──────────────────────────────────────────────────
+
+func TestAPIClustersPost_Success(t *testing.T) {
+	fc := newFakeK8sClient()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"name":       "prod",
+		"namespace":  "kube-agent-helper",
+		"secretName": "prod-kubeconfig",
+		"secretKey":  "kubeconfig",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "prod", resp["name"])
+	assert.Equal(t, "kube-agent-helper", resp["namespace"])
+
+	// Verify the ClusterConfig CR was actually created in the fake client
+	var cc v1alpha1.ClusterConfig
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{
+		Name: "prod", Namespace: "kube-agent-helper",
+	}, &cc))
+	assert.Equal(t, "prod-kubeconfig", cc.Spec.KubeConfigRef.Name)
+	assert.Equal(t, "kubeconfig", cc.Spec.KubeConfigRef.Key)
+}
+
+func TestAPIClustersPost_DefaultNamespace(t *testing.T) {
+	fc := newFakeK8sClient()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"name":       "staging",
+		"secretName": "staging-secret",
+		"secretKey":  "config",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "kube-agent-helper", resp["namespace"], "should default to kube-agent-helper namespace")
+}
+
+func TestAPIClustersPost_MissingRequiredFields(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	tests := []struct {
+		name string
+		body map[string]string
+	}{
+		{"missing name", map[string]string{"secretName": "s", "secretKey": "k"}},
+		{"missing secretName", map[string]string{"name": "n", "secretKey": "k"}},
+		{"missing secretKey", map[string]string{"name": "n", "secretName": "s"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+		})
+	}
+}
+
+func TestAPIClustersPost_InvalidJSON(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", strings.NewReader("{invalid"))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPIClustersPost_WithOptionalFields(t *testing.T) {
+	fc := newFakeK8sClient()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"name":          "prod",
+		"namespace":     "default",
+		"secretName":    "prod-secret",
+		"secretKey":     "kubeconfig",
+		"prometheusURL": "http://prometheus.prod:9090",
+		"description":   "Production cluster",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/clusters", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var cc v1alpha1.ClusterConfig
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{
+		Name: "prod", Namespace: "default",
+	}, &cc))
+	assert.Equal(t, "http://prometheus.prod:9090", cc.Spec.PrometheusURL)
+	assert.Equal(t, "Production cluster", cc.Spec.Description)
+}
+
+func TestAPIClusters_MethodNotAllowed(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/clusters", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// ── GET /api/clusters with existing ClusterConfig CRs ──────────────────
+
+func TestAPIClustersGet_WithClusterConfigs(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = batchv1.AddToScheme(scheme)
+
+	cc := &v1alpha1.ClusterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "default"},
+		Spec: v1alpha1.ClusterConfigSpec{
+			KubeConfigRef: v1alpha1.SecretKeyRef{Name: "s", Key: "k"},
+			PrometheusURL: "http://prom:9090",
+			Description:   "Production",
+		},
+		Status: v1alpha1.ClusterConfigStatus{Phase: "Connected"},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cc).Build()
+	srv := httpserver.New(&fakeStore{}, fc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/clusters", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var clusters []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&clusters))
+	require.Len(t, clusters, 2, "should have 'local' + 'prod'")
+
+	// Verify local is always first
+	assert.Equal(t, "local", clusters[0]["name"])
+
+	// Verify prod cluster has all fields
+	assert.Equal(t, "prod", clusters[1]["name"])
+	assert.Equal(t, "Connected", clusters[1]["phase"])
+	assert.Equal(t, "http://prom:9090", clusters[1]["prometheusURL"])
+	assert.Equal(t, "Production", clusters[1]["description"])
+}
