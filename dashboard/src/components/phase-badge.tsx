@@ -2,12 +2,12 @@
 
 import { useI18n } from "@/i18n/context";
 
-const colors: Record<string, string> = {
-  Pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-  Running: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  Succeeded: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  Failed: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-  Scheduled: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+const config: Record<string, { bg: string; text: string; dot: string; pulse?: boolean }> = {
+  Pending:   { bg: "bg-slate-500/10",  text: "text-slate-400",  dot: "bg-slate-400" },
+  Running:   { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400",   pulse: true },
+  Succeeded: { bg: "bg-green-500/10",  text: "text-green-400",  dot: "bg-green-400" },
+  Failed:    { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
+  Scheduled: { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
 };
 
 interface Props {
@@ -16,6 +16,11 @@ interface Props {
 
 export function PhaseBadge({ phase }: Props) {
   const { t } = useI18n();
-  const cls = colors[phase] || "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{t(`phase.${phase}`)}</span>;
+  const c = config[phase] ?? { bg: "bg-slate-500/10", text: "text-slate-400", dot: "bg-slate-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-md border border-current/20 px-2 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}>
+      <span className={`size-1.5 rounded-full ${c.dot} ${c.pulse ? "animate-pulse" : ""}`} />
+      {t(`phase.${phase}`)}
+    </span>
+  );
 }
