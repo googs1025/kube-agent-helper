@@ -48,13 +48,13 @@ export default function FixesPage() {
       </div>
       <div className="mb-6 grid grid-cols-4 gap-4">
         {[
-          { label: t("fixes.stat.total"), value: total, color: "text-gray-900 dark:text-gray-100" },
-          { label: t("fixes.stat.pending"), value: pending, color: "text-yellow-600 dark:text-yellow-400" },
-          { label: t("fixes.stat.succeeded"), value: succeeded, color: "text-green-600 dark:text-green-400" },
-          { label: t("fixes.stat.failed"), value: failed, color: "text-red-600 dark:text-red-400" },
+          { label: t("fixes.stat.total"), value: total, color: "text-foreground" },
+          { label: t("fixes.stat.pending"), value: pending, color: "text-yellow-400" },
+          { label: t("fixes.stat.succeeded"), value: succeeded, color: "text-green-400" },
+          { label: t("fixes.stat.failed"), value: failed, color: "text-red-400" },
         ].map(({ label, value, color }) => (
           <div key={label} className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
             <p className={`mt-1 text-3xl font-bold ${color}`}>{value}</p>
           </div>
         ))}

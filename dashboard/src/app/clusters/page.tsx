@@ -100,7 +100,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
 
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
-            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+            <label className="block text-xs mb-1 text-muted-foreground">
               {t("clusters.create.name")}
             </label>
             <input
@@ -111,7 +111,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+            <label className="block text-xs mb-1 text-muted-foreground">
               {t("clusters.create.namespace")}
             </label>
             <select
@@ -130,7 +130,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+            <label className="block text-xs mb-1 text-muted-foreground">
               {t("clusters.create.secretName")}
             </label>
             <input
@@ -141,7 +141,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+            <label className="block text-xs mb-1 text-muted-foreground">
               {t("clusters.create.secretKey")}
             </label>
             <input
@@ -152,7 +152,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+            <label className="block text-xs mb-1 text-muted-foreground">
               {t("clusters.create.prometheus")}
             </label>
             <input
@@ -163,7 +163,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div className="col-span-2">
-            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+            <label className="block text-xs mb-1 text-muted-foreground">
               {t("clusters.create.description")}
             </label>
             <input
@@ -253,29 +253,29 @@ export default function ClustersPage() {
         <CardContent className="space-y-6 text-sm">
           {/* Step 1 */}
           <div>
-            <p className="font-semibold text-gray-800 dark:text-gray-200">{t("clusters.setup.step1")}</p>
-            <p className="mt-1 text-gray-600 dark:text-gray-400">{t("clusters.setup.step1.desc")}</p>
+            <p className="font-semibold text-foreground">{t("clusters.setup.step1")}</p>
+            <p className="mt-1 text-muted-foreground">{t("clusters.setup.step1.desc")}</p>
           </div>
 
           {/* Step 2 */}
           <div>
-            <p className="font-semibold text-gray-800 dark:text-gray-200">{t("clusters.setup.step2")}</p>
-            <pre className="mt-2 rounded bg-gray-100 p-3 text-xs font-mono text-gray-800 dark:bg-gray-800 dark:text-gray-200 overflow-x-auto">
+            <p className="font-semibold text-foreground">{t("clusters.setup.step2")}</p>
+            <pre className="mt-2 rounded bg-muted/50 p-3 text-xs font-mono text-foreground overflow-x-auto">
               {t("clusters.setup.step2.cmd")}
             </pre>
           </div>
 
           {/* Step 3 */}
           <div>
-            <p className="font-semibold text-gray-800 dark:text-gray-200">{t("clusters.setup.step3")}</p>
-            <p className="mt-1 text-gray-600 dark:text-gray-400">{t("clusters.setup.step3.desc")}</p>
+            <p className="font-semibold text-foreground">{t("clusters.setup.step3")}</p>
+            <p className="mt-1 text-muted-foreground">{t("clusters.setup.step3.desc")}</p>
           </div>
 
           {/* SA Token recommendation */}
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
-            <p className="font-semibold text-blue-800 dark:text-blue-300">{t("clusters.setup.sa.title")}</p>
-            <p className="mt-1 text-blue-700 dark:text-blue-400">{t("clusters.setup.sa.desc")}</p>
-            <pre className="mt-3 rounded bg-white p-3 text-xs font-mono text-gray-800 dark:bg-gray-900 dark:text-gray-200 overflow-x-auto whitespace-pre">
+          <div className="rounded-lg border border-primary/20 bg-primary/10 p-4">
+            <p className="font-semibold text-primary">{t("clusters.setup.sa.title")}</p>
+            <p className="mt-1 text-primary/80">{t("clusters.setup.sa.desc")}</p>
+            <pre className="mt-3 rounded bg-[#0a0e14] p-3 text-xs font-mono text-slate-200 overflow-x-auto whitespace-pre">
               {SA_SCRIPT}
             </pre>
           </div>

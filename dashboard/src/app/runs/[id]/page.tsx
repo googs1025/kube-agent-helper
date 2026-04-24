@@ -126,7 +126,7 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
             {crdYAML ? (
               <CRDYamlBlock yaml={crdYAML} title="DiagnosticRun CRD YAML" />
             ) : (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic">{t("runs.detail.crdNotFound")}</p>
+              <p className="text-sm text-muted-foreground italic">{t("runs.detail.crdNotFound")}</p>
             )}
           </div>
         )}

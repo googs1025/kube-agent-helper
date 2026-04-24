@@ -38,9 +38,9 @@ export default function RunsPage() {
   const failed = runs?.filter((r) => r.Status === "Failed").length ?? 0;
 
   const featureCards = [
-    { icon: Activity, title: t("overview.card.runs.title"), desc: t("overview.card.runs.desc"), href: "#runs", color: "text-blue-600 dark:text-blue-400" },
-    { icon: Cpu, title: t("overview.card.skills.title"), desc: t("overview.card.skills.desc"), href: "/skills", color: "text-green-600 dark:text-green-400" },
-    { icon: Wrench, title: t("overview.card.fixes.title"), desc: t("overview.card.fixes.desc"), href: "/fixes", color: "text-orange-600 dark:text-orange-400" },
+    { icon: Activity, title: t("overview.card.runs.title"), desc: t("overview.card.runs.desc"), href: "#runs", color: "text-primary" },
+    { icon: Cpu, title: t("overview.card.skills.title"), desc: t("overview.card.skills.desc"), href: "/skills", color: "text-green-400" },
+    { icon: Wrench, title: t("overview.card.fixes.title"), desc: t("overview.card.fixes.desc"), href: "/fixes", color: "text-orange-400" },
   ];
 
   return (

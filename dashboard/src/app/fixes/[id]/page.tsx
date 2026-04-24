@@ -13,15 +13,25 @@ import { CRDYamlBlock } from "@/components/crd-yaml-block";
 import { computeAfter, decodeBefore } from "@/lib/utils";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
-const phaseColors: Record<string, string> = {
-  PendingApproval: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
-  Approved: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  Applying: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  Succeeded: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  Failed: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  RolledBack: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300",
-  DryRunComplete: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+const fixDetailPhaseConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  PendingApproval: { bg: "bg-yellow-500/10", text: "text-yellow-400", dot: "bg-yellow-400" },
+  Approved:        { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400" },
+  Applying:        { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400" },
+  Succeeded:       { bg: "bg-green-500/10",  text: "text-green-400",  dot: "bg-green-400" },
+  Failed:          { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
+  RolledBack:      { bg: "bg-orange-500/10", text: "text-orange-400", dot: "bg-orange-400" },
+  DryRunComplete:  { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
 };
+
+function FixDetailPhaseBadge({ phase }: { phase: string }) {
+  const c = fixDetailPhaseConfig[phase] ?? { bg: "bg-slate-500/10", text: "text-slate-400", dot: "bg-slate-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-md border border-current/20 px-2 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}>
+      <span className={`size-1.5 rounded-full ${c.dot}`} />
+      {phase}
+    </span>
+  );
+}
 
 export default function FixDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { t } = useI18n();
@@ -107,7 +117,7 @@ export default function FixDetailPage({ params }: { params: Promise<{ id: string
       <div className="mt-4 mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold font-mono">{fix.Name || fix.ID.slice(0, 8)}</h1>
-          <Badge className={phaseColors[fix.Phase] || ""}>{t(`phase.${fix.Phase}`)}</Badge>
+          <FixDetailPhaseBadge phase={fix.Phase} />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-4 text-sm text-muted-foreground sm:grid-cols-4">
           <div><span className="font-medium">{t("fixes.detail.target")}:</span> {fix.TargetKind}/{fix.TargetNamespace}/{fix.TargetName}</div>

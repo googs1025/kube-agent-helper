@@ -109,8 +109,8 @@ export default function DiagnosePage() {
           </p>
         </div>
         <div>
-          <p className="text-sm font-medium mb-2 text-gray-600 dark:text-gray-400">{t("diagnose.createdYAML")}</p>
-          <pre className="rounded-lg border bg-gray-50 dark:bg-gray-900 dark:border-gray-700 p-4 text-xs font-mono overflow-x-auto whitespace-pre leading-relaxed">{createdYAML}</pre>
+          <p className="text-sm font-medium mb-2 text-muted-foreground">{t("diagnose.createdYAML")}</p>
+          <pre className="rounded-lg border border-border bg-[#0a0e14] text-slate-200 p-4 text-xs font-mono overflow-x-auto whitespace-pre leading-relaxed">{createdYAML}</pre>
         </div>
         <div className="flex gap-3">
           <Link
@@ -297,7 +297,7 @@ export default function DiagnosePage() {
       <div>
         <h2 className="text-lg font-semibold mb-3">{t("diagnose.recent")}</h2>
         {recentDiagnoses.length === 0 ? (
-          <p className="text-sm text-gray-500">{t("diagnose.recentEmpty")}</p>
+          <p className="text-sm text-muted-foreground">{t("diagnose.recentEmpty")}</p>
         ) : (
           <div className="space-y-2">
             {recentDiagnoses.map((run) => (
@@ -310,7 +310,7 @@ export default function DiagnosePage() {
                   <PhaseBadge phase={run.Status} />
                   <span className="text-sm font-medium">{run.ID}</span>
                 </div>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {new Date(run.CreatedAt).toLocaleString()}
                 </span>
               </Link>
