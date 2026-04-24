@@ -47,6 +47,11 @@ spec:
             type: object
           spec:
             properties:
+              clusterRef:
+                description: |-
+                  ClusterRef is the name of a ClusterConfig CR in the same namespace.
+                  When empty, the local (controller) cluster is used.
+                type: string
               historyLimit:
                 default: 10
                 description: HistoryLimit is the maximum number of completed child
