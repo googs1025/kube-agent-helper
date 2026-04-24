@@ -11,6 +11,7 @@ export default function AboutPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">{t("about.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Kube Agent Helper — AI-powered Kubernetes diagnostics</p>
       </div>
 
       {/* Architecture */}
@@ -20,29 +21,35 @@ export default function AboutPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-gray-700 dark:text-gray-300">{t("about.arch.desc")}</p>
-          <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100 dark:bg-gray-950 leading-relaxed">{`┌───────────────────────────────────────────────────────────────────────┐
-│  User: Dashboard (Next.js :3000) / kubectl / REST API (:8080)        │
-│  4 CRDs: DiagnosticRun · DiagnosticFix · DiagnosticSkill · ModelConfig│
-└────────┬──────────────────────┬───────────────────────────────────────┘
+          <pre className="overflow-x-auto rounded-lg bg-[#0a0e14] border border-border p-4 text-xs text-slate-300 leading-relaxed">{`┌────────────────────────────────────────────────────────────────────────────┐
+│  User: Dashboard (Next.js :3000) / kubectl / REST API (:8080)             │
+│  5 CRDs: DiagnosticRun · DiagnosticFix · DiagnosticSkill · ModelConfig    │
+│          · ClusterConfig                                                  │
+└────────┬──────────────────────┬────────────────────────────────────────────┘
          │ CR apply             │ /api/*
          ▼                      ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│  Controller (Go)                                                       │
-│  ┌────────────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
-│  │ 5 Reconcilers       │  │ HTTP Server   │  │ Translator            │ │
-│  │ DiagnosticRun       │  │ /api/runs     │  │ CR → Job + SA + RBAC  │ │
-│  │ DiagnosticFix       │  │ /api/skills   │  │ + ConfigMap           │ │
-│  │ DiagnosticSkill     │  │ /api/fixes    │  └───────────────────────┘ │
-│  │ ModelConfig         │  │ /api/events   │                            │
-│  │ ScheduledRun        │  │ /api/modelconfigs                        │ │
-│  └────────────────────┘  └──────────────┘                             │
-│  ┌──────────────────────────────────┐  ┌────────────────────────────┐ │
-│  │ SQLite                            │  │ EventCollector              │ │
-│  │ runs/findings/fixes/events/metrics│  │ K8s Warning + Prom Snapshots│ │
-│  └──────────────────────────────────┘  └────────────────────────────┘ │
-└────────┬──────────────────────────────────┬───────────────────────────┘
-         │ creates Job                       │ creates Job
-         ▼                                   ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Controller (Go)                                                           │
+│  ┌─────────────────────┐  ┌────────────────┐  ┌────────────────────────┐  │
+│  │ 6 Reconcilers        │  │ HTTP Server     │  │ Translator             │  │
+│  │ DiagnosticRun        │  │ /api/runs       │  │ CR → Job + SA + RBAC   │  │
+│  │ DiagnosticFix        │  │ /api/skills     │  │ + ConfigMap            │  │
+│  │ DiagnosticSkill      │  │ /api/fixes      │  │ ClusterRef → target    │  │
+│  │ ModelConfig          │  │ /api/events     │  │ cluster routing        │  │
+│  │ ScheduledRun         │  │ /api/modelconfigs│  └────────────────────────┘  │
+│  │ ClusterConfig        │  │ /api/clusters   │                              │
+│  └─────────────────────┘  └────────────────┘                               │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────────────┐  │
+│  │ SQLite                           │  │ EventCollector                   │  │
+│  │ runs/findings/fixes/events       │  │ K8s Warning + Prom Snapshots     │  │
+│  │ (cluster_name filter)            │  └─────────────────────────────────┘  │
+│  └─────────────────────────────────┘  ┌─────────────────────────────────┐  │
+│                                        │ ClusterClientRegistry           │  │
+│                                        │ kubeconfig → remote K8s client  │  │
+│                                        └─────────────────────────────────┘  │
+└────────┬────────────────────────┬──────────────────────────────────────────┘
+         │ creates Job            │ creates Job (on target cluster)
+         ▼                        ▼
 ┌──────────────────────────┐   ┌────────────────────────────┐
 │ Diagnostic Agent Pod      │   │ Fix Generator Pod           │
 │ python -m runtime.main    │   │ single LLM call → patch JSON│
@@ -70,8 +77,9 @@ export default function AboutPage() {
               { name: "DiagnosticSkill", color: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300", desc: t("about.crd.skill") },
               { name: "ModelConfig", color: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300", desc: t("about.crd.model") },
               { name: "DiagnosticFix", color: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300", desc: t("about.crd.fix") },
+              { name: "ClusterConfig", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300", desc: t("about.crd.cluster") },
             ].map((crd) => (
-              <div key={crd.name} className="rounded-lg border p-4 dark:border-gray-800">
+              <div key={crd.name} className="rounded-lg border border-border bg-background p-4">
                 <Badge className={crd.color}>{crd.name}</Badge>
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{crd.desc}</p>
               </div>
@@ -89,7 +97,7 @@ export default function AboutPage() {
           <div className="space-y-4">
             {[1, 2, 3, 4, 5].map((step) => (
               <div key={step} className="flex gap-4">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
                   {step}
                 </div>
                 <div>
