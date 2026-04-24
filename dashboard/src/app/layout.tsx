@@ -28,7 +28,7 @@ function Nav() {
   ];
 
   return (
-    <nav className="border-b border-border bg-background px-6" style={{ height: "52px", display: "flex", alignItems: "center" }}>
+    <nav className="flex h-[52px] items-center border-b border-border bg-background px-6">
       <div className="mx-auto flex max-w-7xl w-full items-center gap-8">
         <Link href="/" className="flex items-center gap-2 text-[15px] font-bold text-foreground">
           <span className="inline-block size-2 rounded-full bg-primary animate-pulse" />
