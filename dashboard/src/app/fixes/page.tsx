@@ -9,22 +9,32 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 
-const phaseColors: Record<string, string> = {
-  PendingApproval: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
-  Approved: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  Applying: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-  Succeeded: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-  Failed: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-  RolledBack: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300",
-  DryRunComplete: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+const fixPhaseConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  PendingApproval: { bg: "bg-yellow-500/10", text: "text-yellow-400", dot: "bg-yellow-400" },
+  Approved:        { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400" },
+  Applying:        { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400" },
+  Succeeded:       { bg: "bg-green-500/10",  text: "text-green-400",  dot: "bg-green-400" },
+  Failed:          { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
+  RolledBack:      { bg: "bg-orange-500/10", text: "text-orange-400", dot: "bg-orange-400" },
+  DryRunComplete:  { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
 };
+
+function FixPhaseBadge({ phase }: { phase: string }) {
+  const c = fixPhaseConfig[phase] ?? { bg: "bg-slate-500/10", text: "text-slate-400", dot: "bg-slate-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-md border border-current/20 px-2 py-0.5 text-xs font-semibold ${c.bg} ${c.text}`}>
+      <span className={`size-1.5 rounded-full ${c.dot}`} />
+      {phase}
+    </span>
+  );
+}
 
 export default function FixesPage() {
   const { t } = useI18n();
   const { cluster } = useCluster();
   const { data: fixes, error, isLoading } = useFixes({ cluster });
-  if (isLoading) return <p className="text-gray-500 dark:text-gray-400">{t("common.loading")}</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">{t("common.loadFailed")}</p>;
+  if (isLoading) return <p className="text-muted-foreground">{t("common.loading")}</p>;
+  if (error) return <p className="text-destructive">{t("common.loadFailed")}</p>;
 
   const total = fixes?.length ?? 0;
   const pending = fixes?.filter((f) => f.Phase === "PendingApproval").length ?? 0;
@@ -43,16 +53,16 @@ export default function FixesPage() {
           { label: t("fixes.stat.succeeded"), value: succeeded, color: "text-green-600 dark:text-green-400" },
           { label: t("fixes.stat.failed"), value: failed, color: "text-red-600 dark:text-red-400" },
         ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-lg border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div key={label} className="rounded-lg border border-border bg-card p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
-            <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+            <p className={`mt-1 text-3xl font-bold ${color}`}>{value}</p>
           </div>
         ))}
       </div>
       {fixes && fixes.length === 0 ? (
-        <p className="text-gray-500 dark:text-gray-400">{t("fixes.empty")}</p>
+        <p className="text-muted-foreground">{t("fixes.empty")}</p>
       ) : (
-        <div className="rounded-lg border bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -68,7 +78,7 @@ export default function FixesPage() {
               {fixes?.map((fix) => (
                 <TableRow key={fix.ID}>
                   <TableCell>
-                    <Link href={`/fixes/${fix.ID}`} className="text-blue-600 hover:underline dark:text-blue-400">
+                    <Link href={`/fixes/${fix.ID}`} className="font-mono text-sm text-primary hover:underline">
                       {fix.Name ? (
                         <span className="font-medium">{fix.Name}</span>
                       ) : (
@@ -77,14 +87,14 @@ export default function FixesPage() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge className={phaseColors[fix.Phase] || ""}>{t(`phase.${fix.Phase}`)}</Badge>
+                    <FixPhaseBadge phase={fix.Phase} />
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate text-sm">{fix.FindingTitle}</TableCell>
-                  <TableCell className="text-sm text-gray-600 dark:text-gray-400">
+                  <TableCell className="text-sm text-muted-foreground">
                     {fix.TargetKind}/{fix.TargetNamespace}/{fix.TargetName}
                   </TableCell>
                   <TableCell><Badge variant="outline">{fix.Strategy}</Badge></TableCell>
-                  <TableCell className="max-w-xs truncate text-sm text-gray-600 dark:text-gray-400" title={fix.Message || ""}>
+                  <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={fix.Message || ""}>
                     {fix.Message || "-"}
                   </TableCell>
                 </TableRow>
