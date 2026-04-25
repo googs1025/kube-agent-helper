@@ -42,7 +42,7 @@ export default function DiagnosePage() {
   };
 
   const handleSubmit = async () => {
-    if (!namespace || symptoms.length === 0) return;
+    if (symptoms.length === 0) return;
     setSubmitting(true);
     setError("");
 
@@ -69,16 +69,15 @@ export default function DiagnosePage() {
       }
 
       const symptomSuffix = symptoms.slice(0, 2).join("-");
-      const runName = resourceName
-        ? `diagnose-${resourceName}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`
-        : `diagnose-${namespace}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`;
+      const scopeLabel = resourceName || namespace || "cluster";
+      const runName = `diagnose-${scopeLabel}-${symptomSuffix}-${Math.random().toString(36).slice(2, 6)}`;
 
       const { id: runId, yaml } = await createRun({
         name: runName,
         namespace: "kube-agent-helper",
         target: {
-          scope: "namespace",
-          namespaces: [namespace],
+          scope: namespace ? "namespace" : "cluster",
+          namespaces: namespace ? [namespace] : undefined,
           labelSelector,
         },
         skills: symptomsToSkills(symptoms),
@@ -287,7 +286,7 @@ export default function DiagnosePage() {
         {error && <p className="text-sm text-red-500">{t("diagnose.error")}: {error}</p>}
         <button
           onClick={handleSubmit}
-          disabled={submitting || !namespace || symptoms.length === 0}
+          disabled={submitting || symptoms.length === 0}
           className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {submitting ? t("diagnose.submitting") : t("diagnose.submit")}

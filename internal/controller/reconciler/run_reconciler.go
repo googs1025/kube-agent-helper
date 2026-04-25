@@ -163,7 +163,10 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 		// Still running — check Pod health for early error signals
 		msg := r.podWaitingReason(ctx, job.Name, run.Namespace)
-		if msg != "" && msg != run.Status.Message {
+		if msg == "" {
+			msg = "agent pod running"
+		}
+		if msg != run.Status.Message {
 			run.Status.Message = msg
 			if err := r.Status().Update(ctx, &run); err != nil {
 				logger.Error(err, "failed to update run message")

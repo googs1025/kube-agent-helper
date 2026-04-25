@@ -39,7 +39,7 @@ export function LogViewer({ runId, isRunning }: LogViewerProps) {
   const [logs, setLogs] = useState<RunLogEntry[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 

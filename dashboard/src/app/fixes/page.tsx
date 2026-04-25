@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useFixes } from "@/lib/api";
+import { useFixesPaginated, batchApproveFixes, batchRejectFixes } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { useCluster } from "@/cluster/context";
 import { Badge } from "@/components/ui/badge";
+import { Pagination } from "@/components/Pagination";
+import { FilterBar, type FilterField } from "@/components/FilterBar";
+import { BatchToolbar } from "@/components/BatchToolbar";
+import { useTableState } from "@/hooks/useTableState";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -29,80 +33,153 @@ function FixPhaseBadge({ phase }: { phase: string }) {
   );
 }
 
+const FIX_FILTER_FIELDS: FilterField[] = [
+  {
+    key: "phase",
+    labelKey: "filter.phase",
+    type: "select",
+    options: [
+      { value: "PendingApproval", labelKey: "phase.PendingApproval" },
+      { value: "Approved", labelKey: "phase.Approved" },
+      { value: "Applying", labelKey: "phase.Applying" },
+      { value: "Succeeded", labelKey: "phase.Succeeded" },
+      { value: "Failed", labelKey: "phase.Failed" },
+      { value: "RolledBack", labelKey: "phase.RolledBack" },
+      { value: "DryRunComplete", labelKey: "phase.DryRunComplete" },
+    ],
+  },
+];
+
 export default function FixesPage() {
   const { t } = useI18n();
   const { cluster } = useCluster();
-  const { data: fixes, error, isLoading } = useFixes({ cluster });
-  if (isLoading) return <p className="text-muted-foreground">{t("common.loading")}</p>;
-  if (error) return <p className="text-destructive">{t("common.loadFailed")}</p>;
+  const table = useTableState({ pageSize: 20 });
+  const { data, error, isLoading, mutate } = useFixesPaginated({
+    ...table.params,
+    cluster,
+  });
 
-  const total = fixes?.length ?? 0;
-  const pending = fixes?.filter((f) => f.Phase === "PendingApproval").length ?? 0;
-  const succeeded = fixes?.filter((f) => f.Phase === "Succeeded").length ?? 0;
-  const failed = fixes?.filter((f) => ["Failed", "RolledBack"].includes(f.Phase)).length ?? 0;
+  const fixes = data?.items;
+  const total = data?.total ?? 0;
+
+  const handleBatchApprove = async () => {
+    if (table.selected.size === 0) return;
+    try {
+      await batchApproveFixes(Array.from(table.selected));
+      table.clearSelection();
+      mutate();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBatchReject = async () => {
+    if (table.selected.size === 0) return;
+    try {
+      await batchRejectFixes(Array.from(table.selected));
+      table.clearSelection();
+      mutate();
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t("fixes.title")}</h1>
       </div>
-      <div className="mb-6 grid grid-cols-4 gap-4">
-        {[
-          { label: t("fixes.stat.total"), value: total, color: "text-foreground" },
-          { label: t("fixes.stat.pending"), value: pending, color: "text-yellow-400" },
-          { label: t("fixes.stat.succeeded"), value: succeeded, color: "text-green-400" },
-          { label: t("fixes.stat.failed"), value: failed, color: "text-red-400" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className={`mt-1 text-3xl font-bold ${color}`}>{value}</p>
-          </div>
-        ))}
-      </div>
-      {fixes && fixes.length === 0 ? (
+
+      <FilterBar
+        fields={FIX_FILTER_FIELDS}
+        values={table.filters}
+        onChange={table.setFilter}
+        onClear={table.clearFilters}
+      />
+
+      {isLoading && <p className="text-muted-foreground">{t("common.loading")}</p>}
+      {error && <p className="text-destructive">{t("common.loadFailed")}</p>}
+
+      {!isLoading && !error && fixes && fixes.length === 0 ? (
         <p className="text-muted-foreground">{t("fixes.empty")}</p>
-      ) : (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("fixes.col.id")}</TableHead>
-                <TableHead>{t("fixes.col.phase")}</TableHead>
-                <TableHead>{t("fixes.col.finding")}</TableHead>
-                <TableHead>{t("fixes.col.target")}</TableHead>
-                <TableHead>{t("fixes.col.strategy")}</TableHead>
-                <TableHead>{t("fixes.col.message")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {fixes?.map((fix) => (
-                <TableRow key={fix.ID}>
-                  <TableCell>
-                    <Link href={`/fixes/${fix.ID}`} className="font-mono text-sm text-primary hover:underline">
-                      {fix.Name ? (
-                        <span className="font-medium">{fix.Name}</span>
-                      ) : (
-                        <span className="font-mono text-sm">{fix.ID.slice(0, 8)}...</span>
-                      )}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <FixPhaseBadge phase={fix.Phase} />
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate text-sm">{fix.FindingTitle}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {fix.TargetKind}/{fix.TargetNamespace}/{fix.TargetName}
-                  </TableCell>
-                  <TableCell><Badge variant="outline">{fix.Strategy}</Badge></TableCell>
-                  <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={fix.Message || ""}>
-                    {fix.Message || "-"}
-                  </TableCell>
+      ) : null}
+
+      {!isLoading && !error && fixes && fixes.length > 0 && (
+        <>
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={fixes.length > 0 && table.selected.size === fixes.length}
+                      onChange={() => table.selectAll(fixes.map((f) => f.ID))}
+                      className="rounded border-border"
+                    />
+                  </TableHead>
+                  <TableHead>{t("fixes.col.id")}</TableHead>
+                  <TableHead>{t("fixes.col.phase")}</TableHead>
+                  <TableHead>{t("fixes.col.finding")}</TableHead>
+                  <TableHead>{t("fixes.col.target")}</TableHead>
+                  <TableHead>{t("fixes.col.strategy")}</TableHead>
+                  <TableHead>{t("fixes.col.message")}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {fixes.map((fix) => (
+                  <TableRow key={fix.ID} data-selected={table.selected.has(fix.ID) || undefined}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={table.selected.has(fix.ID)}
+                        onChange={() => table.toggleSelect(fix.ID)}
+                        className="rounded border-border"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/fixes/${fix.ID}`} className="font-mono text-sm text-primary hover:underline">
+                        {fix.Name ? (
+                          <span className="font-medium">{fix.Name}</span>
+                        ) : (
+                          <span className="font-mono text-sm">{fix.ID.slice(0, 8)}...</span>
+                        )}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <FixPhaseBadge phase={fix.Phase} />
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate text-sm">{fix.FindingTitle}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {fix.TargetKind}/{fix.TargetNamespace}/{fix.TargetName}
+                    </TableCell>
+                    <TableCell><Badge variant="outline">{fix.Strategy}</Badge></TableCell>
+                    <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={fix.Message || ""}>
+                      {fix.Message || "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <Pagination
+            page={table.page}
+            pageSize={table.pageSize}
+            total={total}
+            onPageChange={table.setPage}
+            onPageSizeChange={table.setPageSize}
+          />
+        </>
       )}
+
+      <BatchToolbar
+        count={table.selected.size}
+        actions={[
+          { labelKey: "batch.approve", onClick: handleBatchApprove },
+          { labelKey: "batch.reject", variant: "destructive", onClick: handleBatchReject },
+        ]}
+        onClear={table.clearSelection}
+      />
     </div>
   );
 }

@@ -134,3 +134,19 @@ export interface KubeEvent {
   LastTime: string;
   CreatedAt: string;
 }
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ListParams {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  cluster?: string;
+  [key: string]: string | number | undefined;
+}

@@ -98,8 +98,8 @@ export function CreateRunDialog({ onCreated }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <label className={labelClass}>{t("runs.form.namespace")} *</label>
-              <input required value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="kube-agent-helper"
+              <label className={labelClass}>{t("runs.form.namespace")} <span className={hintClass}>（{t("runs.form.optional")}）</span></label>
+              <input value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="kube-agent-helper"
                 className={inputClass} />
             </div>
 
