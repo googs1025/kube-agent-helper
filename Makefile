@@ -1,7 +1,12 @@
 MCP_SERVER_PKG := ./cmd/main.go
 CONTROLLER_PKG := ./cmd/controller
+KAH_PKG        := ./cmd/kah
 
-.PHONY: build build-controller test envtest lint vet fmt image-controller image-agent image helm-lint clean
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+KAH_LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+
+.PHONY: build build-controller build-kah build-kah-all test envtest lint vet fmt image-controller image-agent image helm-lint clean
 
 ## ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -11,6 +16,15 @@ build:
 
 build-controller:
 	CGO_ENABLED=0 go build -o bin/controller $(CONTROLLER_PKG)
+
+build-kah:
+	go build -ldflags "$(KAH_LDFLAGS)" -o bin/kah $(KAH_PKG)
+
+build-kah-all:
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(KAH_LDFLAGS)" -o bin/kah-linux-amd64 $(KAH_PKG)
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(KAH_LDFLAGS)" -o bin/kah-linux-arm64 $(KAH_PKG)
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(KAH_LDFLAGS)" -o bin/kah-darwin-amd64 $(KAH_PKG)
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(KAH_LDFLAGS)" -o bin/kah-darwin-arm64 $(KAH_PKG)
 
 ## ── Test ──────────────────────────────────────────────────────────────────────
 
