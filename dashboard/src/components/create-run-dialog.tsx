@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DialogRoot, DialogTrigger, DialogPortal, DialogBackdrop, DialogPopup, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -30,11 +30,6 @@ export function CreateRunDialog({ onCreated }: Props) {
   const [outputLanguage, setOutputLanguage] = useState<"zh" | "en">(lang);
   const [schedule, setSchedule] = useState("");
   const [historyLimit, setHistoryLimit] = useState<string>("");
-
-  // Keep outputLanguage in sync with UI language until the user opens the dialog
-  useEffect(() => {
-    if (!open) setOutputLanguage(lang);
-  }, [lang, open]);
 
   function parseLabelSelector(tags: string[]): Record<string, string> {
     const result: Record<string, string> = {};
