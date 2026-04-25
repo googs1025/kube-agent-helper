@@ -152,24 +152,40 @@ func main() {
 	// Notification manager
 	dedupTTL, _ := time.ParseDuration(notifyDedupTTL)
 	notifMgr := notification.NewManager(logger, dedupTTL)
-	if notifyWebhookURL != "" {
-		notifMgr.Register(notification.NewWebhookChannel(notifyWebhookURL, notifyWebhookSecret))
+
+	// Try to load notification configs from DB first
+	dbConfigs, _ := st.ListNotificationConfigs(context.Background())
+	if len(dbConfigs) > 0 {
+		ncfgs := make([]*notification.NotificationConfig, len(dbConfigs))
+		for i, c := range dbConfigs {
+			ncfgs[i] = &notification.NotificationConfig{
+				ID: c.ID, Name: c.Name, Type: c.Type,
+				WebhookURL: c.WebhookURL, Secret: c.Secret,
+				Events: c.Events, Enabled: c.Enabled,
+			}
+		}
+		notifMgr.ReloadFromConfigs(ncfgs)
+		slog.Info("notification channels loaded from DB", "count", notifMgr.ChannelCount())
+	} else {
+		// Fall back to CLI flags
+		if notifyWebhookURL != "" {
+			notifMgr.Register(notification.NewWebhookChannel(notifyWebhookURL, notifyWebhookSecret))
+		}
+		if notifySlackURL != "" {
+			notifMgr.Register(notification.NewSlackChannel(notifySlackURL))
+		}
+		if notifyDingTalkURL != "" {
+			notifMgr.Register(notification.NewDingTalkChannel(notifyDingTalkURL, notifyDingTalkSecret))
+		}
+		if notifyFeishuURL != "" {
+			notifMgr.Register(notification.NewFeishuChannel(notifyFeishuURL, notifyFeishuSecret))
+		}
+		if notifMgr.ChannelCount() > 0 {
+			slog.Info("notification channels configured from CLI flags", "count", notifMgr.ChannelCount())
+		}
 	}
-	if notifySlackURL != "" {
-		notifMgr.Register(notification.NewSlackChannel(notifySlackURL))
-	}
-	if notifyDingTalkURL != "" {
-		notifMgr.Register(notification.NewDingTalkChannel(notifyDingTalkURL, notifyDingTalkSecret))
-	}
-	if notifyFeishuURL != "" {
-		notifMgr.Register(notification.NewFeishuChannel(notifyFeishuURL, notifyFeishuSecret))
-	}
-	// Only inject notifier if at least one channel is configured
-	var notifier reconciler.NotifyDispatcher
-	if notifMgr.ChannelCount() > 0 {
-		notifier = notifMgr
-		slog.Info("notification channels configured", "count", notifMgr.ChannelCount())
-	}
+	// Always inject notifier (DB-backed configs can be added later via API)
+	var notifier reconciler.NotifyDispatcher = notifMgr
 
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
@@ -225,9 +241,10 @@ func main() {
 	}
 
 	// HTTP server as manager Runnable
-	httpOpts := []httpserver.Option{httpserver.WithMetrics(m)}
-	if notifier != nil {
-		httpOpts = append(httpOpts, httpserver.WithNotifier(notifMgr))
+	httpOpts := []httpserver.Option{
+		httpserver.WithMetrics(m),
+		httpserver.WithNotifier(notifMgr),
+		httpserver.WithNotificationManager(notifMgr),
 	}
 	httpSrv := httpserver.New(st, mgr.GetClient(), fg, httpOpts...)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {

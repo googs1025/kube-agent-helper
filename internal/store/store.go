@@ -145,6 +145,38 @@ type ListOpts struct {
 	ClusterName string
 	Limit       int
 	Offset      int
+	// Paginated query fields (Page >= 1 enables paginated mode)
+	Page      int
+	PageSize  int
+	SortBy    string
+	SortOrder string            // "asc" or "desc"
+	Filters   map[string]string // e.g. {"phase":"Running","namespace":"default"}
+}
+
+// PaginatedResult wraps a paginated list response.
+type PaginatedResult[T any] struct {
+	Items    []T `json:"items"`
+	Total    int `json:"total"`
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+}
+
+// DefaultListOpts returns sensible defaults for paginated queries.
+func DefaultListOpts() ListOpts {
+	return ListOpts{Page: 1, PageSize: 20, SortBy: "created_at", SortOrder: "desc"}
+}
+
+// NotificationConfig represents a notification channel configuration stored in DB.
+type NotificationConfig struct {
+	ID         string
+	Name       string
+	Type       string // webhook, slack, dingtalk, feishu
+	WebhookURL string
+	Secret     string
+	Events     string // comma-separated event types
+	Enabled    bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // Store is the persistence interface. Both SQLite and PostgreSQL implement it.
@@ -182,9 +214,25 @@ type Store interface {
 	InsertMetricSnapshot(ctx context.Context, s *MetricSnapshot) error
 	QueryMetricHistory(ctx context.Context, query string, sinceMinutes int) ([]*MetricSnapshot, error)
 
+	// Paginated list methods
+	ListRunsPaginated(ctx context.Context, opts ListOpts) (PaginatedResult[*DiagnosticRun], error)
+	ListFixesPaginated(ctx context.Context, opts ListOpts) (PaginatedResult[*Fix], error)
+	ListEventsPaginated(ctx context.Context, opts ListEventsOpts, page, pageSize int) (PaginatedResult[*Event], error)
+
+	// Batch operations
+	DeleteRuns(ctx context.Context, ids []string) error
+	BatchUpdateFixPhase(ctx context.Context, ids []string, phase FixPhase, msg string) error
+
 	// Run logs (agent pod structured log entries)
 	AppendRunLog(ctx context.Context, log RunLog) error
 	ListRunLogs(ctx context.Context, runID string, afterID int64) ([]RunLog, error)
+
+	// Notification configs
+	ListNotificationConfigs(ctx context.Context) ([]*NotificationConfig, error)
+	GetNotificationConfig(ctx context.Context, id string) (*NotificationConfig, error)
+	CreateNotificationConfig(ctx context.Context, cfg *NotificationConfig) error
+	UpdateNotificationConfig(ctx context.Context, cfg *NotificationConfig) error
+	DeleteNotificationConfig(ctx context.Context, id string) error
 
 	// TTL cleanup
 	PurgeOldEvents(ctx context.Context, before time.Time) error

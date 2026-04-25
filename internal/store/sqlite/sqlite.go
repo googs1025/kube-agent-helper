@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -571,4 +572,345 @@ func (s *SQLiteStore) ListRunLogs(ctx context.Context, runID string, afterID int
 		logs = append(logs, l)
 	}
 	return logs, rows.Err()
+}
+
+// ── Paginated list methods ──────────────────────────────────────────────────
+
+var allowedRunSort = map[string]bool{"created_at": true, "status": true}
+var allowedFixSort = map[string]bool{"created_at": true, "updated_at": true, "phase": true}
+
+func sanitizeSortOrder(order string) string {
+	if order == "asc" || order == "ASC" {
+		return "ASC"
+	}
+	return "DESC"
+}
+
+func (s *SQLiteStore) ListRunsPaginated(ctx context.Context, opts store.ListOpts) (store.PaginatedResult[*store.DiagnosticRun], error) {
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = 20
+	}
+	if opts.PageSize > 100 {
+		opts.PageSize = 100
+	}
+	sortCol := "created_at"
+	if allowedRunSort[opts.SortBy] {
+		sortCol = opts.SortBy
+	}
+	sortOrder := sanitizeSortOrder(opts.SortOrder)
+
+	where := " WHERE 1=1"
+	args := []interface{}{}
+	if opts.ClusterName != "" {
+		where += " AND cluster_name = ?"
+		args = append(args, opts.ClusterName)
+	}
+	if f := opts.Filters; f != nil {
+		if v, ok := f["phase"]; ok && v != "" {
+			where += " AND status = ?"
+			args = append(args, v)
+		}
+		if v, ok := f["status"]; ok && v != "" {
+			where += " AND status = ?"
+			args = append(args, v)
+		}
+	}
+
+	var total int
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM diagnostic_runs"+where, args...).Scan(&total)
+	if err != nil {
+		return store.PaginatedResult[*store.DiagnosticRun]{}, err
+	}
+
+	query := fmt.Sprintf(`SELECT id, cluster_name, target_json, skills_json, status, message, started_at, completed_at, created_at
+	          FROM diagnostic_runs%s ORDER BY %s %s LIMIT ? OFFSET ?`, where, sortCol, sortOrder)
+	args = append(args, opts.PageSize, (opts.Page-1)*opts.PageSize)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return store.PaginatedResult[*store.DiagnosticRun]{}, err
+	}
+	defer rows.Close()
+	runs := make([]*store.DiagnosticRun, 0)
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return store.PaginatedResult[*store.DiagnosticRun]{}, err
+		}
+		runs = append(runs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return store.PaginatedResult[*store.DiagnosticRun]{}, err
+	}
+
+	return store.PaginatedResult[*store.DiagnosticRun]{
+		Items: runs, Total: total, Page: opts.Page, PageSize: opts.PageSize,
+	}, nil
+}
+
+func (s *SQLiteStore) ListFixesPaginated(ctx context.Context, opts store.ListOpts) (store.PaginatedResult[*store.Fix], error) {
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = 20
+	}
+	if opts.PageSize > 100 {
+		opts.PageSize = 100
+	}
+	sortCol := "created_at"
+	if allowedFixSort[opts.SortBy] {
+		sortCol = opts.SortBy
+	}
+	sortOrder := sanitizeSortOrder(opts.SortOrder)
+
+	where := " WHERE 1=1"
+	args := []interface{}{}
+	if opts.ClusterName != "" {
+		where += " AND cluster_name = ?"
+		args = append(args, opts.ClusterName)
+	}
+	if f := opts.Filters; f != nil {
+		if v, ok := f["phase"]; ok && v != "" {
+			where += " AND phase = ?"
+			args = append(args, v)
+		}
+		if v, ok := f["namespace"]; ok && v != "" {
+			where += " AND target_namespace = ?"
+			args = append(args, v)
+		}
+	}
+
+	var total int
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM fixes"+where, args...).Scan(&total)
+	if err != nil {
+		return store.PaginatedResult[*store.Fix]{}, err
+	}
+
+	selectCols := `id, cluster_name, run_id, finding_title, target_kind, target_namespace, target_name,
+	                 strategy, approval_required, patch_type, patch_content, phase,
+	                 approved_by, rollback_snapshot, message, finding_id, before_snapshot,
+	                 created_at, updated_at`
+	query := fmt.Sprintf("SELECT %s FROM fixes%s ORDER BY %s %s LIMIT ? OFFSET ?",
+		selectCols, where, sortCol, sortOrder)
+	args = append(args, opts.PageSize, (opts.Page-1)*opts.PageSize)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return store.PaginatedResult[*store.Fix]{}, err
+	}
+	defer rows.Close()
+	fixes := make([]*store.Fix, 0)
+	for rows.Next() {
+		f, err := scanFix(rows)
+		if err != nil {
+			return store.PaginatedResult[*store.Fix]{}, err
+		}
+		fixes = append(fixes, f)
+	}
+	if err := rows.Err(); err != nil {
+		return store.PaginatedResult[*store.Fix]{}, err
+	}
+
+	return store.PaginatedResult[*store.Fix]{
+		Items: fixes, Total: total, Page: opts.Page, PageSize: opts.PageSize,
+	}, nil
+}
+
+func (s *SQLiteStore) ListEventsPaginated(ctx context.Context, opts store.ListEventsOpts, page, pageSize int) (store.PaginatedResult[*store.Event], error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	where := " WHERE 1=1"
+	args := []interface{}{}
+	if opts.ClusterName != "" {
+		where += " AND cluster_name = ?"
+		args = append(args, opts.ClusterName)
+	}
+	if opts.Namespace != "" {
+		where += " AND namespace = ?"
+		args = append(args, opts.Namespace)
+	}
+	if opts.Name != "" {
+		where += " AND name = ?"
+		args = append(args, opts.Name)
+	}
+	if opts.Type != "" {
+		where += " AND type = ?"
+		args = append(args, opts.Type)
+	}
+	if opts.SinceMinutes > 0 {
+		cutoff := time.Now().Add(-time.Duration(opts.SinceMinutes) * time.Minute).Unix()
+		where += " AND last_time >= ?"
+		args = append(args, cutoff)
+	}
+
+	var total int
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events"+where, args...).Scan(&total)
+	if err != nil {
+		return store.PaginatedResult[*store.Event]{}, err
+	}
+
+	query := fmt.Sprintf(`SELECT id, uid, cluster_name, namespace, kind, name, reason, message, type, count, first_time, last_time, created_at
+	          FROM events%s ORDER BY last_time DESC LIMIT ? OFFSET ?`, where)
+	args = append(args, pageSize, (page-1)*pageSize)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return store.PaginatedResult[*store.Event]{}, err
+	}
+	defer rows.Close()
+
+	events := make([]*store.Event, 0)
+	for rows.Next() {
+		var ev store.Event
+		var firstTS, lastTS int64
+		var createdAt string
+		if err := rows.Scan(&ev.ID, &ev.UID, &ev.ClusterName, &ev.Namespace, &ev.Kind, &ev.Name,
+			&ev.Reason, &ev.Message, &ev.Type, &ev.Count, &firstTS, &lastTS, &createdAt); err != nil {
+			return store.PaginatedResult[*store.Event]{}, err
+		}
+		ev.FirstTime = time.Unix(firstTS, 0)
+		ev.LastTime = time.Unix(lastTS, 0)
+		events = append(events, &ev)
+	}
+	if err := rows.Err(); err != nil {
+		return store.PaginatedResult[*store.Event]{}, err
+	}
+
+	return store.PaginatedResult[*store.Event]{
+		Items: events, Total: total, Page: page, PageSize: pageSize,
+	}, nil
+}
+
+// ── Notification config methods ───────────────────────────────────────────────
+
+func (s *SQLiteStore) ListNotificationConfigs(ctx context.Context) ([]*store.NotificationConfig, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, type, webhook_url, secret, events, enabled, created_at, updated_at
+		 FROM notification_configs ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	configs := make([]*store.NotificationConfig, 0)
+	for rows.Next() {
+		cfg := &store.NotificationConfig{}
+		var enabled int
+		if err := rows.Scan(&cfg.ID, &cfg.Name, &cfg.Type, &cfg.WebhookURL, &cfg.Secret,
+			&cfg.Events, &enabled, &cfg.CreatedAt, &cfg.UpdatedAt); err != nil {
+			return nil, err
+		}
+		cfg.Enabled = enabled != 0
+		configs = append(configs, cfg)
+	}
+	return configs, rows.Err()
+}
+
+func (s *SQLiteStore) GetNotificationConfig(ctx context.Context, id string) (*store.NotificationConfig, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, type, webhook_url, secret, events, enabled, created_at, updated_at
+		 FROM notification_configs WHERE id = ?`, id)
+	cfg := &store.NotificationConfig{}
+	var enabled int
+	err := row.Scan(&cfg.ID, &cfg.Name, &cfg.Type, &cfg.WebhookURL, &cfg.Secret,
+		&cfg.Events, &enabled, &cfg.CreatedAt, &cfg.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, store.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	cfg.Enabled = enabled != 0
+	return cfg, nil
+}
+
+func (s *SQLiteStore) CreateNotificationConfig(ctx context.Context, cfg *store.NotificationConfig) error {
+	if cfg.ID == "" {
+		cfg.ID = uuid.NewString()
+	}
+	now := time.Now()
+	cfg.CreatedAt = now
+	cfg.UpdatedAt = now
+	enabledInt := 0
+	if cfg.Enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO notification_configs (id, name, type, webhook_url, secret, events, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cfg.ID, cfg.Name, cfg.Type, cfg.WebhookURL, cfg.Secret, cfg.Events, enabledInt, cfg.CreatedAt, cfg.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) UpdateNotificationConfig(ctx context.Context, cfg *store.NotificationConfig) error {
+	cfg.UpdatedAt = time.Now()
+	enabledInt := 0
+	if cfg.Enabled {
+		enabledInt = 1
+	}
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE notification_configs SET name=?, type=?, webhook_url=?, secret=?, events=?, enabled=?, updated_at=? WHERE id=?`,
+		cfg.Name, cfg.Type, cfg.WebhookURL, cfg.Secret, cfg.Events, enabledInt, cfg.UpdatedAt, cfg.ID)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteNotificationConfig(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM notification_configs WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// ── Batch operations ──────────────────────────────────────────────────────────
+
+func (s *SQLiteStore) DeleteRuns(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf("DELETE FROM diagnostic_runs WHERE id IN (%s)",
+		strings.Join(placeholders, ","))
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (s *SQLiteStore) BatchUpdateFixPhase(ctx context.Context, ids []string, phase store.FixPhase, msg string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := []interface{}{string(phase), msg, time.Now()}
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	query := fmt.Sprintf("UPDATE fixes SET phase=?, message=?, updated_at=? WHERE id IN (%s)",
+		strings.Join(placeholders, ","))
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
 }
