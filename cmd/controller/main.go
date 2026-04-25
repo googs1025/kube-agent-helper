@@ -178,6 +178,7 @@ func main() {
 		Registry:   clusterRegistry,
 		Metrics:    m,
 		Notifier:   notifier,
+		Clientset:  kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup reconciler", "error", err)
 		os.Exit(1)
