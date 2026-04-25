@@ -71,6 +71,8 @@ spec:
 
 ### 3. Helm 安装
 
+> 完整参数列表和部署场景请参阅 [Helm Values Reference](deploy/helm/VALUES.md)。
+
 ```bash
 helm install kah deploy/helm \
   --namespace kube-agent-helper
