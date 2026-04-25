@@ -23,6 +23,7 @@ import (
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
@@ -1144,6 +1145,119 @@ func TestAPIClusters_MethodNotAllowed(t *testing.T) {
 	srv.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// ── Prometheus metrics endpoint tests ──────────────────────────────────────────
+
+func TestMetricsEndpoint(t *testing.T) {
+	m := metrics.New()
+	m.RecordRunCompleted("default", "Succeeded", "local")
+
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "kah_diagnostic_runs_total")
+}
+
+func TestMetricsEndpoint_NotRegisteredWithoutOption(t *testing.T) {
+	// Without WithMetrics, /metrics should 404
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestLLMMetrics_Success(t *testing.T) {
+	m := metrics.New()
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"model":            "gpt-4",
+		"duration_ms":      1200.0,
+		"prompt_tokens":    500,
+		"completion_tokens": 100,
+		"status":           "ok",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/llm-metrics", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// Verify metrics were recorded
+	families, err := m.Registry().Gather()
+	require.NoError(t, err)
+	names := make(map[string]bool)
+	for _, f := range families {
+		names[f.GetName()] = true
+	}
+	assert.True(t, names["kah_llm_requests_total"])
+	assert.True(t, names["kah_llm_request_duration_seconds"])
+	assert.True(t, names["kah_llm_tokens_total"])
+}
+
+func TestLLMMetrics_WithoutMetrics(t *testing.T) {
+	// Without metrics configured, the handler should still succeed (nil-safe)
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"model": "gpt-4", "duration_ms": 100.0, "status": "ok",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/llm-metrics", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestLLMMetrics_MethodNotAllowed(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/llm-metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestPostFindings_RecordsMetric(t *testing.T) {
+	m := metrics.New()
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"dimension": "health", "severity": "critical",
+		"title": "Pod crash", "resource_kind": "Pod",
+		"resource_namespace": "default", "resource_name": "api-pod",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/runs/run-123/findings",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Verify findings metric was incremented
+	families, err := m.Registry().Gather()
+	require.NoError(t, err)
+	for _, f := range families {
+		if f.GetName() == "kah_findings_total" {
+			require.Len(t, f.GetMetric(), 1)
+			assert.Equal(t, 1.0, f.GetMetric()[0].GetCounter().GetValue())
+			return
+		}
+	}
+	t.Fatal("kah_findings_total metric not found after creating a finding")
 }
 
 // ── GET /api/clusters with existing ClusterConfig CRs ──────────────────
