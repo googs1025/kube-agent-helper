@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -31,11 +33,12 @@ type NotifyDispatcher interface {
 
 type DiagnosticRunReconciler struct {
 	client.Client
-	Store    store.Store
+	Store     store.Store
 	Translator *translator.Translator
 	Registry   *registry.ClusterClientRegistry // nil = local-only mode
 	Metrics    *metrics.Metrics                // nil-safe
 	Notifier   NotifyDispatcher                // nil-safe
+	Clientset  kubernetes.Interface            // nil-safe; used for pod log collection
 }
 
 func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -222,6 +225,9 @@ func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.
 		}
 	}
 
+	// Collect and persist pod logs
+	r.collectPodLogs(ctx, run)
+
 	logger.Info("run completed", "name", run.Name, "phase", phase, "findings", len(findings))
 
 	// Emit notifications
@@ -300,6 +306,76 @@ func (r *DiagnosticRunReconciler) podWaitingReason(ctx context.Context, jobName,
 		}
 	}
 	return ""
+}
+
+// collectPodLogs reads the agent pod's stdout log and persists structured JSON
+// entries to the run_logs table. Each valid JSON line is parsed and stored;
+// non-JSON lines are stored as "info" type entries.
+func (r *DiagnosticRunReconciler) collectPodLogs(ctx context.Context, run *k8saiV1.DiagnosticRun) {
+	if r.Clientset == nil {
+		return
+	}
+	logger := log.FromContext(ctx)
+	runID := string(run.UID)
+	jobName := fmt.Sprintf("agent-%s", run.Name)
+
+	// Find pod(s) belonging to the job
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(run.Namespace),
+		client.MatchingLabels{"job-name": jobName},
+	); err != nil {
+		logger.Error(err, "failed to list pods for log collection")
+		return
+	}
+
+	for _, pod := range podList.Items {
+		logReq := r.Clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{})
+		stream, err := logReq.Stream(ctx)
+		if err != nil {
+			logger.Error(err, "failed to stream pod logs", "pod", pod.Name)
+			continue
+		}
+
+		scanner := bufio.NewScanner(stream)
+		for scanner.Scan() {
+			line := scanner.Text()
+			var entry struct {
+				Timestamp string      `json:"timestamp"`
+				RunID     string      `json:"run_id"`
+				Type      string      `json:"type"`
+				Message   string      `json:"message"`
+				Data      interface{} `json:"data"`
+			}
+
+			logEntry := store.RunLog{RunID: runID}
+			if err := json.Unmarshal([]byte(line), &entry); err == nil && entry.Message != "" {
+				logEntry.Timestamp = entry.Timestamp
+				logEntry.Type = entry.Type
+				logEntry.Message = entry.Message
+				if entry.Data != nil {
+					dataBytes, _ := json.Marshal(entry.Data)
+					logEntry.Data = string(dataBytes)
+				}
+			} else {
+				// Non-JSON line — store as info
+				logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+				logEntry.Type = "info"
+				logEntry.Message = line
+			}
+			if logEntry.Type == "" {
+				logEntry.Type = "info"
+			}
+			if logEntry.Timestamp == "" {
+				logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+			}
+
+			if err := r.Store.AppendRunLog(ctx, logEntry); err != nil {
+				logger.Error(err, "failed to persist log entry")
+			}
+		}
+		stream.Close()
+	}
 }
 
 func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
