@@ -245,6 +245,7 @@ func main() {
 		httpserver.WithMetrics(m),
 		httpserver.WithNotifier(notifMgr),
 		httpserver.WithNotificationManager(notifMgr),
+		httpserver.WithClientset(kubeClient),
 	}
 	httpSrv := httpserver.New(st, mgr.GetClient(), fg, httpOpts...)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {

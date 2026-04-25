@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	sigsyaml "sigs.k8s.io/yaml"
 
@@ -58,11 +59,19 @@ type NotificationManager interface {
 type Server struct {
 	store        store.Store
 	k8sClient    client.Client
+	clientset    kubernetes.Interface
 	fixGenerator *translator.FixGenerator
 	metrics      *metrics.Metrics
 	notifier     NotifyDispatcher
 	notifMgr     NotificationManager
 	mux          *http.ServeMux
+}
+
+// WithClientset configures the server with a Kubernetes clientset for pod log streaming.
+func WithClientset(c kubernetes.Interface) Option {
+	return func(s *Server) {
+		s.clientset = c
+	}
 }
 
 // WithNotificationManager configures the server with a notification manager for config reload.

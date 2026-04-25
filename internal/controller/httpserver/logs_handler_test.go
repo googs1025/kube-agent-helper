@@ -12,7 +12,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+	ctrlfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
@@ -141,4 +148,82 @@ func TestGetRunLogs_Persistence_RoundTrip(t *testing.T) {
 // so the SSE loop can detect termination.
 type completedFakeStore struct {
 	fakeStore
+}
+
+func TestGetRunLogs_Running_StreamsFromPod(t *testing.T) {
+	const runUID = "run-running-uid"
+
+	// fakeStore reports the run as Running so the handler picks the pod path.
+	fs := &fakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: runUID, Status: store.PhaseRunning},
+	}
+
+	// Controller-runtime fake client carrying the matching DiagnosticRun CR
+	// and the agent pod (label job-name=agent-{name}).
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	cr := &v1alpha1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-run",
+			Namespace: "default",
+			UID:       types.UID(runUID),
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "agent-my-run-xyz",
+			Namespace: "default",
+			Labels:    map[string]string{"job-name": "agent-my-run"},
+		},
+	}
+	k8sClient := ctrlfake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(cr, pod).Build()
+
+	// kubernetes/fake clientset with the same pod so GetLogs(...).Stream works.
+	clientset := fake.NewSimpleClientset(pod)
+
+	srv := httpserver.New(fs, k8sClient, nil, httpserver.WithClientset(clientset))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/"+runUID+"/logs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var logs []store.RunLog
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&logs))
+	// The fake clientset returns "fake logs" as the pod log body.
+	require.NotEmpty(t, logs)
+	assert.Equal(t, runUID, logs[0].RunID)
+}
+
+func TestGetRunLogs_Running_FallsBackToDBWhenPodMissing(t *testing.T) {
+	const runUID = "run-missing-pod"
+
+	fs := &fakeStore{}
+	fs.runs = []*store.DiagnosticRun{
+		{ID: runUID, Status: store.PhaseRunning},
+	}
+	fs.runLogs = []store.RunLog{
+		{ID: 1, RunID: runUID, Timestamp: "2026-01-01T00:00:00Z", Type: "step", Message: "from-db"},
+	}
+
+	// k8s client with no CR/pod for this UID.
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	k8sClient := ctrlfake.NewClientBuilder().WithScheme(scheme).Build()
+	clientset := fake.NewSimpleClientset()
+
+	srv := httpserver.New(fs, k8sClient, nil, httpserver.WithClientset(clientset))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/"+runUID+"/logs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var logs []store.RunLog
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&logs))
+	require.Len(t, logs, 1)
+	assert.Equal(t, "from-db", logs[0].Message)
 }
