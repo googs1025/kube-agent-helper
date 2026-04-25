@@ -18,13 +18,15 @@ import (
 
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/notification"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
 type DiagnosticFixReconciler struct {
 	client.Client
-	Store   store.Store
-	Metrics *metrics.Metrics // nil-safe
+	Store    store.Store
+	Metrics  *metrics.Metrics    // nil-safe
+	Notifier NotifyDispatcher    // nil-safe
 }
 
 func (r *DiagnosticFixReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -88,6 +90,17 @@ func (r *DiagnosticFixReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseSucceeded, msg)
 		if r.Metrics != nil {
 			r.Metrics.RecordFixCompleted("Succeeded", fix.Spec.Target.Namespace, "")
+		}
+		if r.Notifier != nil {
+			_ = r.Notifier.Notify(ctx, notification.Event{
+				Type:      notification.EventFixApplied,
+				Severity:  "info",
+				Title:     fmt.Sprintf("Fix Applied: %s", fix.Name),
+				Message:   msg,
+				Resource:  fix.Name,
+				Namespace: fix.Spec.Target.Namespace,
+				Timestamp: time.Now(),
+			})
 		}
 		logger.Info("fix applied", "name", fix.Name, "strategy", fix.Spec.Strategy)
 		return ctrl.Result{}, nil
@@ -202,6 +215,17 @@ func (r *DiagnosticFixReconciler) failFix(ctx context.Context, fix *k8saiV1.Diag
 	_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseFailed, msg)
 	if r.Metrics != nil {
 		r.Metrics.RecordFixCompleted("Failed", fix.Spec.Target.Namespace, "")
+	}
+	if r.Notifier != nil {
+		_ = r.Notifier.Notify(ctx, notification.Event{
+			Type:      notification.EventFixFailed,
+			Severity:  "warning",
+			Title:     fmt.Sprintf("Fix Failed: %s", fix.Name),
+			Message:   msg,
+			Resource:  fix.Name,
+			Namespace: fix.Spec.Target.Namespace,
+			Timestamp: time.Now(),
+		})
 	}
 	return ctrl.Result{}, nil
 }

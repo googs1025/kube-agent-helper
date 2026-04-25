@@ -19,15 +19,23 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/notification"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
+// NotifyDispatcher is an interface to decouple reconcilers from the
+// notification package, avoiding import cycles.
+type NotifyDispatcher interface {
+	Notify(ctx context.Context, event notification.Event) error
+}
+
 type DiagnosticRunReconciler struct {
 	client.Client
-	Store      store.Store
+	Store    store.Store
 	Translator *translator.Translator
 	Registry   *registry.ClusterClientRegistry // nil = local-only mode
 	Metrics    *metrics.Metrics                // nil-safe
+	Notifier   NotifyDispatcher                // nil-safe
 }
 
 func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -215,6 +223,43 @@ func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.
 	}
 
 	logger.Info("run completed", "name", run.Name, "phase", phase, "findings", len(findings))
+
+	// Emit notifications
+	if r.Notifier != nil {
+		evtType := notification.EventRunCompleted
+		severity := "info"
+		if phase == store.PhaseFailed {
+			evtType = notification.EventRunFailed
+			severity = "warning"
+		}
+		_ = r.Notifier.Notify(ctx, notification.Event{
+			Type:      evtType,
+			Severity:  severity,
+			Title:     fmt.Sprintf("Diagnostic Run %s", phase),
+			Message:   msg,
+			Resource:  run.Name,
+			Namespace: run.Namespace,
+			Cluster:   run.Spec.ClusterRef,
+			Timestamp: time.Now(),
+		})
+
+		// Emit per-critical-finding notifications
+		for _, f := range findings {
+			if f.Severity == "critical" {
+				_ = r.Notifier.Notify(ctx, notification.Event{
+					Type:      notification.EventCriticalFinding,
+					Severity:  "critical",
+					Title:     fmt.Sprintf("Critical Finding: %s", f.Title),
+					Message:   f.Description,
+					Resource:  fmt.Sprintf("%s/%s/%s", f.ResourceKind, f.ResourceNamespace, f.ResourceName),
+					Namespace: f.ResourceNamespace,
+					Cluster:   run.Spec.ClusterRef,
+					Timestamp: time.Now(),
+				})
+			}
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
