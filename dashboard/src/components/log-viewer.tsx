@@ -59,8 +59,11 @@ export function LogViewer({ runId, isRunning }: LogViewerProps) {
     }
 
     // Running: use SSE for live streaming
-    setIsFollowing(true);
     const es = new EventSource(`/api/runs/${runId}/logs?follow=true`);
+
+    es.onopen = () => {
+      setIsFollowing(true);
+    };
 
     es.onmessage = (e) => {
       try {
