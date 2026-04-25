@@ -148,6 +148,40 @@ ingress:
   tls: []
 
 # =============================================================================
+# Notifications / Webhooks
+# =============================================================================
+notifications:
+  # -- Deduplication window. Events with the same (type, resource) within this
+  # window are sent only once.
+  dedupTTL: "5m"
+  webhook:
+    # -- Enable generic JSON webhook notifications.
+    enabled: false
+    # -- Webhook endpoint URL.
+    url: ""
+    # -- HMAC-SHA256 secret for signing payloads (X-Signature-256 header).
+    secret: ""
+  slack:
+    # -- Enable Slack incoming webhook notifications.
+    enabled: false
+    # -- Slack incoming webhook URL.
+    webhookURL: ""
+  dingtalk:
+    # -- Enable DingTalk robot webhook notifications.
+    enabled: false
+    # -- DingTalk robot webhook URL.
+    webhookURL: ""
+    # -- DingTalk signing secret (timestamp + HMAC-SHA256).
+    secret: ""
+  feishu:
+    # -- Enable Feishu (Lark) bot webhook notifications.
+    enabled: false
+    # -- Feishu bot webhook URL.
+    webhookURL: ""
+    # -- Feishu signing secret (timestamp + HMAC-SHA256).
+    secret: ""
+
+# =============================================================================
 # Grafana Dashboard
 # =============================================================================
 grafana:
