@@ -33,6 +33,7 @@ type fakeStore struct {
 	skills          []*store.Skill
 	fixes           []*store.Fix
 	events          []*store.Event
+	runLogs         []store.RunLog
 	lastListEvtsOpt store.ListEventsOpts
 }
 
@@ -117,6 +118,19 @@ func (f *fakeStore) InsertMetricSnapshot(_ context.Context, _ *store.MetricSnaps
 }
 func (f *fakeStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*store.MetricSnapshot, error) {
 	return nil, nil
+}
+func (f *fakeStore) AppendRunLog(_ context.Context, log store.RunLog) error {
+	f.runLogs = append(f.runLogs, log)
+	return nil
+}
+func (f *fakeStore) ListRunLogs(_ context.Context, runID string, afterID int64) ([]store.RunLog, error) {
+	var out []store.RunLog
+	for _, l := range f.runLogs {
+		if l.RunID == runID && l.ID > afterID {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 func (f *fakeStore) PurgeOldEvents(_ context.Context, _ time.Time) error  { return nil }
 func (f *fakeStore) PurgeOldMetrics(_ context.Context, _ time.Time) error { return nil }

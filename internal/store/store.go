@@ -131,6 +131,16 @@ type MetricSnapshot struct {
 	CreatedAt  time.Time
 }
 
+// RunLog represents a single structured log entry emitted by an agent pod.
+type RunLog struct {
+	ID        int64  `json:"id"`
+	RunID     string `json:"run_id"`
+	Timestamp string `json:"timestamp"`
+	Type      string `json:"type"`
+	Message   string `json:"message"`
+	Data      string `json:"data,omitempty"`
+}
+
 type ListOpts struct {
 	ClusterName string
 	Limit       int
@@ -171,6 +181,10 @@ type Store interface {
 	// Metric snapshots
 	InsertMetricSnapshot(ctx context.Context, s *MetricSnapshot) error
 	QueryMetricHistory(ctx context.Context, query string, sinceMinutes int) ([]*MetricSnapshot, error)
+
+	// Run logs (agent pod structured log entries)
+	AppendRunLog(ctx context.Context, log RunLog) error
+	ListRunLogs(ctx context.Context, runID string, afterID int64) ([]RunLog, error)
 
 	// TTL cleanup
 	PurgeOldEvents(ctx context.Context, before time.Time) error

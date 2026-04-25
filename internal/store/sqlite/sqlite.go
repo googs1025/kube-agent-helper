@@ -543,3 +543,32 @@ func (s *SQLiteStore) PurgeOldMetrics(ctx context.Context, before time.Time) err
 		`DELETE FROM metric_snapshots WHERE ts < ?`, before.Unix())
 	return err
 }
+
+// ── Run log methods ──────────────────────────────────────────────────────────
+
+func (s *SQLiteStore) AppendRunLog(ctx context.Context, log store.RunLog) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO run_logs (run_id, timestamp, type, message, data) VALUES (?, ?, ?, ?, ?)`,
+		log.RunID, log.Timestamp, log.Type, log.Message, log.Data,
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListRunLogs(ctx context.Context, runID string, afterID int64) ([]store.RunLog, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, timestamp, type, message, COALESCE(data,'')
+		 FROM run_logs WHERE run_id = ? AND id > ? ORDER BY id ASC`, runID, afterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []store.RunLog
+	for rows.Next() {
+		var l store.RunLog
+		if err := rows.Scan(&l.ID, &l.RunID, &l.Timestamp, &l.Type, &l.Message, &l.Data); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, rows.Err()
+}
