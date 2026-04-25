@@ -133,3 +133,15 @@ ingress:
   #         - kube-agent-helper.example.com
   #       secretName: kah-tls
   tls: []
+
+# =============================================================================
+# Grafana Dashboard
+# =============================================================================
+grafana:
+  dashboard:
+    # -- Create a ConfigMap with the Grafana dashboard JSON.
+    # The ConfigMap is labeled with grafana_dashboard: "1" so the Grafana
+    # sidecar (kube-prometheus-stack) auto-provisions it.
+    enabled: false
+    # -- Extra annotations on the dashboard ConfigMap.
+    annotations: {}

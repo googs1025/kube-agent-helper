@@ -1,0 +1,17 @@
+{{- if .Values.grafana.dashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Release.Name }}
+    grafana_dashboard: "1"
+  {{- with .Values.grafana.dashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  kube-agent-helper.json: |-
+    {{ .Files.Get "grafana/kube-agent-helper-dashboard.json" | nindent 4 }}
+{{- end }}
