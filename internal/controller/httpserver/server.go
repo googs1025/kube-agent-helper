@@ -368,6 +368,11 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 4 && parts[3] == "logs" {
+		s.handleRunLogs(w, r)
+		return
+	}
+
 	if len(parts) == 4 && parts[3] == "findings" {
 		findings, err := s.store.ListFindings(r.Context(), runID)
 		if err != nil {
