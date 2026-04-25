@@ -14,9 +14,24 @@ async function handler(req: NextRequest) {
     body: req.method !== "GET" && req.method !== "HEAD" ? await req.text() : undefined,
   });
 
+  const contentType = res.headers.get("Content-Type") || "application/json";
+
+  // SSE pass-through: stream the response body without buffering
+  if (contentType.includes("text/event-stream")) {
+    return new Response(res.body, {
+      status: res.status,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  }
+
   return new Response(res.body, {
     status: res.status,
-    headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
+    headers: { "Content-Type": contentType },
   });
 }
 
