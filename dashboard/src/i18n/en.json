@@ -8,7 +8,8 @@
     "events": "Events",
     "modelconfigs": "Models",
     "clusters": "Clusters",
-    "about": "About"
+    "about": "About",
+    "notifications": "Notifications"
   },
   "cluster": {
     "label": "Cluster",
@@ -149,6 +150,7 @@
     "findings.viewFix": "View Fix",
     "form.name": "Name",
     "form.namePlaceholder": "auto-generated if empty",
+    "form.optional": "optional",
     "form.namespace": "Namespace",
     "form.scope": "Scope",
     "form.scope.namespace": "namespace",
@@ -313,6 +315,31 @@
     "live": "Live",
     "empty": "No log entries yet."
   },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "showing": "Showing {start}-{end} of {total}"
+  },
+  "filter": {
+    "namespace": "Namespace",
+    "cluster": "Cluster",
+    "phase": "Phase",
+    "status": "Status",
+    "severity": "Severity",
+    "clear": "Clear Filters"
+  },
+  "batch": {
+    "selected": "{count} selected",
+    "approve": "Approve Selected",
+    "reject": "Reject Selected",
+    "delete": "Delete Selected",
+    "confirm": "Are you sure?"
+  },
+  "table": {
+    "empty": "No results found",
+    "sortAsc": "Sort ascending",
+    "sortDesc": "Sort descending"
+  },
   "diagnose": {
     "title": "Quick Diagnose",
     "namespace": "Namespace",
@@ -348,5 +375,34 @@
     "cronHelp.month": "month",
     "cronHelp.weekday": "weekday",
     "cronHelp.hint": "Tips: * = any, */2 = every 2, 1-5 = range, 1,3 = list"
+  },
+  "notifications": {
+    "title": "Notification Channels",
+    "empty": "No notification channels configured. Add one to receive alerts.",
+    "create.title": "Add Notification",
+    "edit.title": "Edit Notification",
+    "edit.button": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Are you sure you want to delete this notification channel?",
+    "test": "Test",
+    "testing": "Sending...",
+    "testSuccess": "Test notification sent successfully!",
+    "allEvents": "All events",
+    "col.name": "Name",
+    "col.type": "Type",
+    "col.webhookURL": "Webhook URL",
+    "col.events": "Events",
+    "col.enabled": "Enabled",
+    "col.actions": "Actions",
+    "form.name": "Name",
+    "form.type": "Channel Type",
+    "form.webhookURL": "Webhook URL",
+    "form.secret": "Secret (optional)",
+    "form.secretPlaceholder": "HMAC signing secret",
+    "form.events": "Event Types",
+    "form.eventsHint": "Select events to receive. Empty = all events.",
+    "form.enabled": "Enabled",
+    "form.create": "Create",
+    "form.save": "Save"
   }
 }

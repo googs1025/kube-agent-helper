@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix, KubeEvent, ModelConfig } from "./types";
+import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix, KubeEvent, ModelConfig, PaginatedResult, ListParams } from "./types";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -34,6 +34,14 @@ export async function createClusterConfig(body: {
 export function useRuns(opts?: { cluster?: string }) {
   const params = opts?.cluster ? `?cluster=${opts.cluster}` : "";
   return useSWR<DiagnosticRun[]>(`/api/runs${params}`, fetcher, { refreshInterval: 5000 });
+}
+
+export function useRunsPaginated(params: ListParams) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined) query.set(k, String(v));
+  });
+  return useSWR<PaginatedResult<DiagnosticRun>>(`/api/runs?${query.toString()}`, fetcher, { refreshInterval: 5000 });
 }
 
 export function useRun(id: string) {
@@ -121,6 +129,14 @@ export function useFixes(opts?: { cluster?: string }) {
   return useSWR<Fix[]>(`/api/fixes${params}`, fetcher, { refreshInterval: 5000 });
 }
 
+export function useFixesPaginated(params: ListParams) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined) query.set(k, String(v));
+  });
+  return useSWR<PaginatedResult<Fix>>(`/api/fixes?${query.toString()}`, fetcher, { refreshInterval: 5000 });
+}
+
 export function useFix(id: string) {
   return useSWR<Fix>(`/api/fixes/${id}`, fetcher, { refreshInterval: 5000 });
 }
@@ -172,6 +188,45 @@ export function useEvents(opts?: { namespace?: string; name?: string; since?: nu
   return useSWR<KubeEvent[]>(`/api/events${query ? `?${query}` : ""}`, fetcher, { refreshInterval: 15000 });
 }
 
+export function useEventsPaginated(opts: { namespace?: string; name?: string; since?: number; cluster?: string; page?: number; pageSize?: number }) {
+  const params = new URLSearchParams();
+  if (opts.namespace) params.set("namespace", opts.namespace);
+  if (opts.name) params.set("name", opts.name);
+  if (opts.since) params.set("since", String(opts.since));
+  if (opts.cluster) params.set("cluster", opts.cluster);
+  if (opts.page) params.set("page", String(opts.page));
+  if (opts.pageSize) params.set("pageSize", String(opts.pageSize));
+  const query = params.toString();
+  return useSWR<PaginatedResult<KubeEvent>>(`/api/events${query ? `?${query}` : ""}`, fetcher, { refreshInterval: 15000 });
+}
+
+export async function deleteRunsBatch(ids: string[]): Promise<void> {
+  const res = await fetch("/api/runs/batch", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function batchApproveFixes(ids: string[], approvedBy?: string): Promise<void> {
+  const res = await fetch("/api/fixes/batch-approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, approvedBy: approvedBy || "dashboard-user" }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function batchRejectFixes(ids: string[]): Promise<void> {
+  const res = await fetch("/api/fixes/batch-reject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export function useK8sNamespaces() {
   return useSWR<{ name: string }[]>("/api/k8s/resources?kind=Namespace", fetcher);
 }
@@ -193,6 +248,72 @@ export async function getK8sResourceDetail(
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+// ── Notification configs ──────────────────────────────────────────────────────
+
+export interface NotificationConfig {
+  ID: string;
+  Name: string;
+  Type: string;
+  WebhookURL: string;
+  Secret: string;
+  Events: string;
+  Enabled: boolean;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+export function useNotificationConfigs() {
+  return useSWR<NotificationConfig[]>("/api/notification-configs", fetcher, { refreshInterval: 10000 });
+}
+
+export async function createNotificationConfig(body: {
+  name: string;
+  type: string;
+  webhookURL: string;
+  secret?: string;
+  events?: string;
+  enabled: boolean;
+}): Promise<NotificationConfig> {
+  const res = await fetch("/api/notification-configs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateNotificationConfig(id: string, body: {
+  name: string;
+  type: string;
+  webhookURL: string;
+  secret?: string;
+  events?: string;
+  enabled: boolean;
+}): Promise<NotificationConfig> {
+  const res = await fetch(`/api/notification-configs/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteNotificationConfig(id: string): Promise<void> {
+  const res = await fetch(`/api/notification-configs/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+export async function testNotificationConfig(id: string): Promise<void> {
+  const res = await fetch(`/api/notification-configs/${id}/test`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 export function useModelConfigs() {

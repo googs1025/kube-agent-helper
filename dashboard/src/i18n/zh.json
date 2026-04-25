@@ -8,7 +8,8 @@
     "events": "事件",
     "modelconfigs": "模型配置",
     "clusters": "集群",
-    "about": "关于"
+    "about": "关于",
+    "notifications": "通知"
   },
   "cluster": {
     "label": "集群",
@@ -149,6 +150,7 @@
     "findings.viewFix": "查看修复建议",
     "form.name": "名称",
     "form.namePlaceholder": "留空自动生成",
+    "form.optional": "可选",
     "form.namespace": "命名空间",
     "form.scope": "范围",
     "form.scope.namespace": "命名空间",
@@ -313,6 +315,31 @@
     "live": "实时",
     "empty": "暂无日志记录"
   },
+  "pagination": {
+    "previous": "上一页",
+    "next": "下一页",
+    "showing": "显示 {start}-{end}，共 {total} 条"
+  },
+  "filter": {
+    "namespace": "命名空间",
+    "cluster": "集群",
+    "phase": "阶段",
+    "status": "状态",
+    "severity": "严重程度",
+    "clear": "清除筛选"
+  },
+  "batch": {
+    "selected": "已选 {count} 项",
+    "approve": "批量批准",
+    "reject": "批量拒绝",
+    "delete": "批量删除",
+    "confirm": "确定吗？"
+  },
+  "table": {
+    "empty": "暂无数据",
+    "sortAsc": "升序排列",
+    "sortDesc": "降序排列"
+  },
   "diagnose": {
     "title": "快速诊断",
     "namespace": "命名空间",
@@ -348,5 +375,34 @@
     "cronHelp.month": "月份",
     "cronHelp.weekday": "星期",
     "cronHelp.hint": "常用：* 表示任意，*/2 表示每隔 2，1-5 表示范围，1,3 表示枚举"
+  },
+  "notifications": {
+    "title": "通知渠道",
+    "empty": "暂未配置通知渠道。添加一个以接收告警通知。",
+    "create.title": "添加通知",
+    "edit.title": "编辑通知",
+    "edit.button": "编辑",
+    "delete": "删除",
+    "confirmDelete": "确定要删除此通知渠道吗？",
+    "test": "测试",
+    "testing": "发送中...",
+    "testSuccess": "测试通知发送成功！",
+    "allEvents": "所有事件",
+    "col.name": "名称",
+    "col.type": "类型",
+    "col.webhookURL": "Webhook 地址",
+    "col.events": "事件类型",
+    "col.enabled": "启用",
+    "col.actions": "操作",
+    "form.name": "名称",
+    "form.type": "渠道类型",
+    "form.webhookURL": "Webhook 地址",
+    "form.secret": "密钥（可选）",
+    "form.secretPlaceholder": "HMAC 签名密钥",
+    "form.events": "事件类型",
+    "form.eventsHint": "选择需要接收的事件类型，留空 = 所有事件。",
+    "form.enabled": "启用",
+    "form.create": "创建",
+    "form.save": "保存"
   }
 }
