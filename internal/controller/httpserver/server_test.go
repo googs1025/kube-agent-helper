@@ -120,6 +120,7 @@ func (f *fakeStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*s
 	return nil, nil
 }
 func (f *fakeStore) AppendRunLog(_ context.Context, log store.RunLog) error {
+	log.ID = int64(len(f.runLogs) + 1)
 	f.runLogs = append(f.runLogs, log)
 	return nil
 }

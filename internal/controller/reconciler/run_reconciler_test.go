@@ -87,6 +87,10 @@ func (m *memStore) InsertMetricSnapshot(_ context.Context, _ *store.MetricSnapsh
 func (m *memStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*store.MetricSnapshot, error) {
 	return nil, nil
 }
+func (m *memStore) AppendRunLog(_ context.Context, _ store.RunLog) error { return nil }
+func (m *memStore) ListRunLogs(_ context.Context, _ string, _ int64) ([]store.RunLog, error) {
+	return nil, nil
+}
 func (m *memStore) PurgeOldEvents(_ context.Context, _ time.Time) error  { return nil }
 func (m *memStore) PurgeOldMetrics(_ context.Context, _ time.Time) error { return nil }
 func (m *memStore) Close() error                                         { return nil }
