@@ -22,6 +22,7 @@ import (
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/notification"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
@@ -35,11 +36,24 @@ func WithMetrics(m *metrics.Metrics) Option {
 	}
 }
 
+// NotifyDispatcher is satisfied by notification.Manager.
+type NotifyDispatcher interface {
+	Notify(ctx context.Context, event notification.Event) error
+}
+
+// WithNotifier configures the server with a notification dispatcher.
+func WithNotifier(n NotifyDispatcher) Option {
+	return func(s *Server) {
+		s.notifier = n
+	}
+}
+
 type Server struct {
 	store        store.Store
 	k8sClient    client.Client
 	fixGenerator *translator.FixGenerator
 	metrics      *metrics.Metrics
+	notifier     NotifyDispatcher
 	mux          *http.ServeMux
 }
 
@@ -630,6 +644,16 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 					_ = s.k8sClient.Status().Update(r.Context(), fixCR)
 				}
 			}
+			if s.notifier != nil {
+				_ = s.notifier.Notify(r.Context(), notification.Event{
+					Type:      notification.EventFixApproved,
+					Severity:  "info",
+					Title:     fmt.Sprintf("Fix Approved: %s", fixID),
+					Message:   fmt.Sprintf("Fix %s approved by %s", fixID, body.ApprovedBy),
+					Resource:  fixID,
+					Timestamp: time.Now(),
+				})
+			}
 			w.WriteHeader(http.StatusOK)
 			return
 		case action == "reject" && r.Method == http.MethodPatch:
@@ -650,6 +674,16 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 					fixCR.Status.CompletedAt = &now
 					_ = s.k8sClient.Status().Update(r.Context(), fixCR)
 				}
+			}
+			if s.notifier != nil {
+				_ = s.notifier.Notify(r.Context(), notification.Event{
+					Type:      notification.EventFixRejected,
+					Severity:  "warning",
+					Title:     fmt.Sprintf("Fix Rejected: %s", fixID),
+					Message:   fmt.Sprintf("Fix %s rejected by user", fixID),
+					Resource:  fixID,
+					Timestamp: time.Now(),
+				})
 			}
 			w.WriteHeader(http.StatusOK)
 			return
