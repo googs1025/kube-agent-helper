@@ -111,6 +111,15 @@ export interface ModelConfig {
   apiKey: string; // always "****"
 }
 
+export interface RunLogEntry {
+  id: number;
+  run_id: string;
+  timestamp: string;
+  type: "step" | "finding" | "fix" | "error" | "info";
+  message: string;
+  data?: string;
+}
+
 export interface KubeEvent {
   ID: number;
   UID: string;

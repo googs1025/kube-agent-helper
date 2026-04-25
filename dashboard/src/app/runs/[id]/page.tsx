@@ -9,6 +9,7 @@ import { useI18n } from "@/i18n/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { SeverityBadge } from "@/components/severity-badge";
 import { CRDYamlBlock } from "@/components/crd-yaml-block";
+import { LogViewer } from "@/components/log-viewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -121,6 +122,9 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
           </div>
         )}
         <ScheduledRunInfo run={run} />
+        <div className="mt-4">
+          <LogViewer runId={id} isRunning={run.Status === "Running"} />
+        </div>
         {!crdLoading && (
           <div className="mt-4">
             {crdYAML ? (

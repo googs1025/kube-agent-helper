@@ -308,6 +308,11 @@
     "empty": "暂无事件",
     "loading": "加载事件..."
   },
+  "logs": {
+    "title": "Agent 日志",
+    "live": "实时",
+    "empty": "暂无日志记录"
+  },
   "diagnose": {
     "title": "快速诊断",
     "namespace": "命名空间",

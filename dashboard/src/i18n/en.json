@@ -308,6 +308,11 @@
     "empty": "No events found",
     "loading": "Loading events..."
   },
+  "logs": {
+    "title": "Agent Logs",
+    "live": "Live",
+    "empty": "No log entries yet."
+  },
   "diagnose": {
     "title": "Quick Diagnose",
     "namespace": "Namespace",
