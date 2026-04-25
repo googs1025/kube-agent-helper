@@ -23,6 +23,7 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/collector"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 	sqlitestore "github.com/kube-agent-helper/kube-agent-helper/internal/store/sqlite"
 )
@@ -126,11 +127,14 @@ func main() {
 
 	clusterRegistry := registry.NewClusterClientRegistry()
 
+	m := metrics.New()
+
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
 		Store:      st,
 		Translator: tr,
 		Registry:   clusterRegistry,
+		Metrics:    m,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup reconciler", "error", err)
 		os.Exit(1)
@@ -152,8 +156,9 @@ func main() {
 	}
 
 	if err := (&reconciler.DiagnosticFixReconciler{
-		Client: mgr.GetClient(),
-		Store:  st,
+		Client:  mgr.GetClient(),
+		Store:   st,
+		Metrics: m,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup fix reconciler", "error", err)
 		os.Exit(1)
@@ -175,7 +180,7 @@ func main() {
 	}
 
 	// HTTP server as manager Runnable
-	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
+	httpSrv := httpserver.New(st, mgr.GetClient(), fg, httpserver.WithMetrics(m))
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
 		slog.Error("add http server", "error", err)
 		os.Exit(1)
@@ -191,9 +196,10 @@ func main() {
 		}
 	}
 	col := &collector.Collector{
-		Config: collector.DefaultConfig(),
-		Store:  st,
-		Client: kubeClient,
+		Config:  collector.DefaultConfig(),
+		Store:   st,
+		Client:  kubeClient,
+		Metrics: m,
 	}
 	col.Config.PrometheusURL = prometheusURL
 	col.Config.MetricsQueries = queries

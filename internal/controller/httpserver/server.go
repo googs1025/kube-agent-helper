@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,18 +21,33 @@ import (
 
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
+
+// Option is a functional option for configuring the Server.
+type Option func(*Server)
+
+// WithMetrics configures the server with Prometheus metrics.
+func WithMetrics(m *metrics.Metrics) Option {
+	return func(s *Server) {
+		s.metrics = m
+	}
+}
 
 type Server struct {
 	store        store.Store
 	k8sClient    client.Client
 	fixGenerator *translator.FixGenerator
+	metrics      *metrics.Metrics
 	mux          *http.ServeMux
 }
 
-func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *Server {
+func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator, opts ...Option) *Server {
 	srv := &Server{store: s, k8sClient: k8sClient, fixGenerator: fg, mux: http.NewServeMux()}
+	for _, opt := range opts {
+		opt(srv)
+	}
 	srv.mux.HandleFunc("/internal/runs/", srv.handleInternal)
 	srv.mux.HandleFunc("/internal/fixes", srv.handleInternalFixCallback)
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
@@ -44,6 +60,10 @@ func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *S
 	srv.mux.HandleFunc("/api/modelconfigs", srv.handleAPIModelConfigs)
 	srv.mux.HandleFunc("/api/k8s/resources", srv.handleAPIK8sResources)
 	srv.mux.HandleFunc("/api/clusters", srv.handleAPIClusters)
+	srv.mux.HandleFunc("/internal/llm-metrics", srv.handleLLMMetrics)
+	if srv.metrics != nil {
+		srv.mux.Handle("/metrics", promhttp.HandlerFor(srv.metrics.Registry(), promhttp.HandlerOpts{}))
+	}
 	return srv
 }
 
@@ -100,6 +120,9 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.CreateFinding(r.Context(), f); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if s.metrics != nil {
+		s.metrics.RecordFinding(f.Severity, f.ResourceNamespace, "")
 	}
 	w.WriteHeader(http.StatusCreated)
 }

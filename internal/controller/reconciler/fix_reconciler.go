@@ -17,12 +17,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
 type DiagnosticFixReconciler struct {
 	client.Client
-	Store store.Store
+	Store   store.Store
+	Metrics *metrics.Metrics // nil-safe
 }
 
 func (r *DiagnosticFixReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -84,6 +86,9 @@ func (r *DiagnosticFixReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseSucceeded, msg)
+		if r.Metrics != nil {
+			r.Metrics.RecordFixCompleted("Succeeded", fix.Spec.Target.Namespace, "")
+		}
 		logger.Info("fix applied", "name", fix.Name, "strategy", fix.Spec.Strategy)
 		return ctrl.Result{}, nil
 
@@ -161,6 +166,9 @@ func (r *DiagnosticFixReconciler) rollback(ctx context.Context, fix *k8saiV1.Dia
 	fix.Status.CompletedAt = &now
 	_ = r.Status().Update(ctx, fix)
 	_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseRolledBack, "auto-rollback")
+	if r.Metrics != nil {
+		r.Metrics.RecordFixCompleted("RolledBack", fix.Spec.Target.Namespace, "")
+	}
 	logger.Info("fix rolled back", "name", fix.Name)
 	return nil
 }
@@ -192,6 +200,9 @@ func (r *DiagnosticFixReconciler) failFix(ctx context.Context, fix *k8saiV1.Diag
 		return ctrl.Result{}, err
 	}
 	_ = r.Store.UpdateFixPhase(ctx, string(fix.UID), store.FixPhaseFailed, msg)
+	if r.Metrics != nil {
+		r.Metrics.RecordFixCompleted("Failed", fix.Spec.Target.Namespace, "")
+	}
 	return ctrl.Result{}, nil
 }
 

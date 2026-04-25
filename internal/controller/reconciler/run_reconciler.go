@@ -18,6 +18,7 @@ import (
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
@@ -26,6 +27,7 @@ type DiagnosticRunReconciler struct {
 	Store      store.Store
 	Translator *translator.Translator
 	Registry   *registry.ClusterClientRegistry // nil = local-only mode
+	Metrics    *metrics.Metrics                // nil-safe
 }
 
 func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -104,6 +106,10 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Store.UpdateRunStatus(ctx, string(run.UID), store.PhaseRunning, ""); err != nil {
 			logger.Error(err, "store.UpdateRunStatus failed")
 			return ctrl.Result{Requeue: true}, nil
+		}
+		if r.Metrics != nil {
+			r.Metrics.RecordRunCompleted(run.Namespace, string(store.PhaseRunning), clusterName)
+			r.Metrics.IncActiveRuns()
 		}
 		logger.Info("run started", "name", run.Name)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
@@ -198,6 +204,15 @@ func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.
 		return ctrl.Result{}, fmt.Errorf("completeRun status update: %w", err)
 	}
 	_ = r.Store.UpdateRunStatus(ctx, runID, phase, msg)
+
+	if r.Metrics != nil {
+		r.Metrics.RecordRunCompleted(run.Namespace, string(phase), "")
+		r.Metrics.DecActiveRuns()
+		if run.Status.StartedAt != nil {
+			duration := run.Status.CompletedAt.Time.Sub(run.Status.StartedAt.Time).Seconds()
+			r.Metrics.ObserveRunDuration(run.Namespace, "", duration)
+		}
+	}
 
 	logger.Info("run completed", "name", run.Name, "phase", phase, "findings", len(findings))
 	return ctrl.Result{}, nil

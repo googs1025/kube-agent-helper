@@ -7,6 +7,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
@@ -31,9 +32,10 @@ func DefaultConfig() Config {
 
 // Collector implements manager.Runnable and coordinates event + metric collection.
 type Collector struct {
-	Config Config
-	Store  store.Store
-	Client kubernetes.Interface
+	Config  Config
+	Store   store.Store
+	Client  kubernetes.Interface
+	Metrics *metrics.Metrics // nil-safe
 }
 
 // NeedLeaderElection returns true so only the leader pod runs the collector.
