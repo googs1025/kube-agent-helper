@@ -1,15 +1,39 @@
+# =============================================================================
+# Kube Agent Helper Helm Chart Values
+# Full reference: VALUES.md
+# =============================================================================
+
+# -- Number of controller replicas.
+# Use 1 when backed by SQLite (no HA support). Increase only with an external DB.
 replicaCount: 1
 
+# =============================================================================
+# Container Images
+# =============================================================================
 image:
+  # -- Controller container image (repository:tag).
   controller: ghcr.io/kube-agent-helper/controller:latest
+  # -- Agent runtime image. The Translator spawns this image as a Job for each
+  # diagnostic run.
   agent: ghcr.io/kube-agent-helper/agent-runtime:latest
+  # -- Dashboard (Next.js) container image.
   dashboard: ghcr.io/kube-agent-helper/dashboard:latest
+  # -- Image pull policy applied to all containers.
+  # Valid values: Always, IfNotPresent, Never
   pullPolicy: IfNotPresent
 
+# =============================================================================
+# Dashboard Configuration
+# =============================================================================
 dashboard:
+  # -- Enable the Next.js dashboard deployment.
+  # Set to false on spoke clusters in a multi-cluster setup.
   enabled: true
+  # -- Number of dashboard replicas.
   replicas: 1
+  # -- Container port the dashboard listens on.
   port: 3000
+  # -- Resource requests and limits for the dashboard container.
   resources:
     requests:
       cpu: 50m
@@ -17,11 +41,23 @@ dashboard:
     limits:
       memory: 256Mi
 
+# =============================================================================
+# Controller Configuration
+# =============================================================================
 controller:
+  # -- Listen address for the controller HTTP API (host:port).
   httpAddr: ":8080"
+  # -- Path to the SQLite database file inside the container.
+  # Must reside on a persistent volume when persistence.enabled=true.
   dbPath: "/data/kube-agent-helper.db"
-  controllerURL: ""  # if empty, defaults to http://<release>.<namespace>.svc.cluster.local:8080
+  # -- Base URL that agent Pods use to call back to the controller API.
+  # If empty, defaults to http://<release>.<namespace>.svc.cluster.local:8080
+  controllerURL: ""
 
+# =============================================================================
+# Controller Resources
+# =============================================================================
+# -- Resource requests and limits for the controller container.
 resources:
   requests:
     cpu: 100m
@@ -29,25 +65,71 @@ resources:
   limits:
     memory: 256Mi
 
+# =============================================================================
+# Database Persistence
+# =============================================================================
 persistence:
+  # -- Create a PersistentVolumeClaim for the SQLite database.
+  # When false, an emptyDir volume is used (data is lost on pod restart).
   enabled: true
+  # -- Requested storage size for the PVC.
   size: 1Gi
+  # -- StorageClass name. Empty string uses the cluster default StorageClass.
+  # Examples: gp3 (AWS), premium-rwo (GKE), managed-premium (AKS)
   storageClass: ""
 
+# =============================================================================
+# Anthropic / LLM Provider
+# =============================================================================
 anthropic:
+  # -- Name of the Kubernetes Secret containing the Anthropic API key.
+  # Create it with: kubectl create secret generic anthropic-credentials \
+  #   --from-literal=apiKey=sk-ant-...
   secretName: "anthropic-credentials"
+  # -- Key within the Secret that holds the API key value.
   secretKey: "apiKey"
+  # -- Custom API endpoint for Anthropic or a compatible proxy.
+  # Leave empty to use the default Anthropic API URL.
+  # Example: https://internal-llm-proxy.corp.example.com
   baseURL: ""
+  # -- Model name override. Empty uses the controller built-in default.
+  # Example: claude-3-5-sonnet-20241022
   model: ""
 
+# =============================================================================
+# Prometheus Integration
+# =============================================================================
 prometheus:
-  url: ""              # Prometheus URL for background metric scraping (e.g. http://prometheus:9090)
-  agentURL: ""         # Prometheus URL injected into agent pods (defaults to url if empty)
-  metricsQueries: ""   # Comma-separated PromQL queries to scrape
+  # -- Prometheus server URL for background metric scraping by EventCollector.
+  # Example: http://prometheus-server.monitoring:9090
+  url: ""
+  # -- Prometheus URL injected into agent Pods. Defaults to prometheus.url if
+  # empty. Useful when agents need a different network path to Prometheus.
+  agentURL: ""
+  # -- Comma-separated PromQL queries for the EventCollector to scrape.
+  # Example: "up,node_cpu_seconds_total,container_memory_usage_bytes"
+  metricsQueries: ""
 
+# =============================================================================
+# Ingress
+# =============================================================================
 ingress:
+  # -- Create an Ingress resource for the dashboard.
   enabled: false
+  # -- Ingress class name (e.g. nginx, alb, traefik).
   className: ""
+  # -- Hostname for the Ingress rule.
   host: "kube-agent-helper.local"
+  # -- Extra annotations on the Ingress resource.
+  # Example:
+  #   annotations:
+  #     cert-manager.io/cluster-issuer: letsencrypt
+  #     nginx.ingress.kubernetes.io/ssl-redirect: "true"
   annotations: {}
+  # -- TLS configuration. Each entry needs hosts (list) and secretName.
+  # Example:
+  #   tls:
+  #     - hosts:
+  #         - kube-agent-helper.example.com
+  #       secretName: kah-tls
   tls: []
