@@ -1,3 +1,17 @@
+/**
+ * 全站根 layout（Next.js App Router）。
+ *
+ * 提供：
+ *   - <ClientProviders>  ─ 包裹 I18nProvider / ThemeProvider / SWRConfig
+ *   - <ClusterProvider>  ─ 多集群上下文
+ *   - 顶部导航 + ClusterToggle + LanguageToggle + ThemeToggle
+ *   - <ErrorBoundary>    ─ 业务页面崩溃时降级展示
+ *
+ * 路由表见下方 links 数组（运行 / 诊断 / 技能 / 修复 / 事件 / LLM 配置 /
+ * 通知 / 集群 / 关于）。
+ *
+ * preHydrationScript 在 <html> 渲染前注入主题，防止深浅模式闪烁。
+ */
 "use client";
 
 import Link from "next/link";

@@ -1,3 +1,19 @@
+/**
+ * 实时日志查看器（用在 /runs/[id] 详情页）。
+ *
+ * 数据源切换：
+ *   - 运行中：EventSource('/api/runs/{id}/logs?follow=true') ── SSE 流
+ *     后端从 Pod stdout 直读，每行一个 JSON 推送
+ *   - 已完成：fetch('/api/runs/{id}/logs')                  ── 一次性 JSON 数组
+ *     后端从 SQLite run_logs 表读取（reconciler 在 Pod 退出时已采集）
+ *
+ * 切换时机：phase ∈ {Pending, Running} 用 SSE，否则用 fetch。
+ *
+ * UI 行为：
+ *   - 默认自动滚动到底部
+ *   - 鼠标悬停时暂停滚动（避免阅读时跳走）
+ *   - 按 type 着色：step/finding/fix/error/info 用不同颜色
+ */
 "use client";
 
 import { useEffect, useRef, useState } from "react";

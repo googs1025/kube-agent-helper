@@ -1,3 +1,22 @@
+// Package store 定义系统的持久化抽象层。
+//
+// 架构角色：
+//   - 整个系统的"数据库门面"。Reconciler / HTTP Server / Collector 全部
+//     通过 Store 接口读写数据，不直接依赖 SQL。
+//   - 内置的 sqlite 子包是默认实现，未来可扩展 Postgres 而上层无感知。
+//
+// 数据模型：
+//   - DiagnosticRun  一次诊断任务（与 K8s CR 一一对应，UID 作为 ID）
+//   - Finding        诊断产出（一次 Run 多条 Finding）
+//   - Skill          诊断能力（来自 builtin .md 或 DiagnosticSkill CR）
+//   - Fix            修复建议（findings 衍生，可批准/应用）
+//   - Event          K8s Warning 事件（7 天保留）
+//   - MetricSnapshot Prometheus 指标采样
+//   - RunLog         Agent Pod 结构化日志
+//   - NotificationConfig 通知通道配置
+//
+// 多集群：所有列表查询都支持 ClusterName 过滤，配合 ClusterClientRegistry
+// 实现"一份控制器、多个目标集群"的视图。
 package store
 
 import (

@@ -1,4 +1,27 @@
-"""Builds the orchestrator prompt and runs the agentic loop."""
+"""LLM 多轮编排核心。
+
+run_agent() 的循环：
+
+    [discover_tools] ── MCP 启动子进程，列出 15+ 个诊断工具
+            ↓
+    [build_prompt]   ── 拼出系统 prompt：诊断目标、技能列表、输出格式
+            ↓
+    ┌─ for turn in 0..MAX_TURNS:
+    │     ┌─ Claude 流式 API 推理
+    │     │     ├─ 收到 text 块 → 扫 JSON finding，加入 findings[]
+    │     │     ├─ 收到 tool_use 块 → 转 call_mcp_tool() 拿结果
+    │     │     └─ 把工具结果回喂给 LLM 作为 user 消息
+    │     └─ stop_reason == "end_turn" → break
+    └────────────────────────────────────────────
+            ↓
+    return findings  ── reporter 逐条 POST 给 controller
+
+特殊处理：
+    - 用 _stream_message() 直接走 SSE，绕开 Anthropic SDK 在某些代理上的累加 bug
+    - thinking 块（extended thinking）丢弃不送给下一轮（防 token 浪费）
+    - OUTPUT_LANGUAGE=zh 时 LLM 用中文写 title/desc/suggestion，
+      枚举字段（dimension/severity）保持英文
+"""
 import json
 import os
 from typing import List

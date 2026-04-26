@@ -1,3 +1,22 @@
+// Package reconciler 包含所有 CRD 的 controller-runtime Reconciler。
+//
+// 一个文件 = 一种 CRD：
+//
+//	run_reconciler.go            DiagnosticRun（核心，本文件）
+//	skill_reconciler.go          DiagnosticSkill ─ 同步 CR → store.Skill
+//	fix_reconciler.go            DiagnosticFix   ─ 应用补丁 + 健康检查 + 回滚
+//	modelconfig_reconciler.go    ModelConfig     ─ 仅校验，无副作用
+//	scheduled_run_reconciler.go  cron 模板 Run    ─ 周期性创建子 Run
+//	clusterconfig_reconciler.go  ClusterConfig   ─ 写入 ClusterClientRegistry
+//
+// DiagnosticRun 状态机：
+//
+//	  ""/Pending ──translate──▶ Running ──Job 完成──▶ Succeeded
+//	                              │                       │
+//	                              ├──Job 失败/超时──▶ Failed
+//	                              └──pod 异常──▶ 写 status.message（仍 Running）
+//
+// 每次进入终态时：写 findings 到 CR.Status / 收集 pod 日志 / 发通知 / 记 metric。
 package reconciler
 
 import (

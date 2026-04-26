@@ -14,6 +14,14 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
+// DiagnosticSkillReconciler 把 DiagnosticSkill CR 同步到 Store。
+//
+// 双源 Skill 模型：
+//   - source="builtin"  启动时 main.go 从 /skills/*.md 加载（可被同名 CR 覆盖）
+//   - source="cr"       这里写入，用户通过 kubectl apply 管理
+//
+// CR 删除时只清理 source="cr" 的记录，避免误删 builtin。
+// Translator 调用 SkillRegistry.ListEnabled 时会按 priority 合并两类来源。
 type DiagnosticSkillReconciler struct {
 	client.Client
 	Store store.Store

@@ -1,4 +1,16 @@
-"""Entry point for the Agent Pod."""
+"""Agent Pod 主入口。
+
+整体流程：
+    1. 从环境变量读 RUN_ID / SKILL_NAMES（由 Controller 翻译 CR 时注入）
+    2. skill_loader 解析 /workspace/skills/*.md（ConfigMap 挂载进来）
+    3. orchestrator.run_agent() 跑 LLM + MCP 工具调用循环
+    4. reporter.post_findings() 把 findings 回报给 controller HTTP API
+    5. 全程 logger 用结构化 JSON 写 stderr，controller 端 collectPodLogs 解析
+
+异常处理：
+    - 任何阶段失败都 sys.exit(1)，让 K8s Job 进入 Failed
+    - Reconciler 监到 Job.status.Failed 就把 DiagnosticRun 标 Failed 并发通知
+"""
 import os
 import sys
 

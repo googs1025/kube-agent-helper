@@ -1,3 +1,17 @@
+// Package audit 给 MCP 工具调用包一层"审计中间件"。
+//
+// 包装方式：
+//
+//	audit.Wrap(toolSpec, originalHandler) → newHandler
+//
+// 每次调用时：
+//   1. 生成 ULID 作为 invocation ID
+//   2. 用 argmask 把 Secret 名/值等敏感参数 redact 掉
+//   3. 记录开始日志（tool, args, ulid, ts）
+//   4. 执行原始 handler，捕获结果或错误
+//   5. 记录结束日志（ulid, status, duration_ms）
+//
+// 输出：结构化 JSON 行 → controller stderr → 接入 ELK / Loki 即可查询。
 package audit
 
 import (

@@ -1,3 +1,27 @@
+// Package mcptools 实现 K8s MCP Server 暴露给 Agent 的全部诊断工具。
+//
+// 调用链：
+//
+//	Agent (Python orchestrator)
+//	   │ stdio JSON-RPC（mcp-go 协议）
+//	   ▼
+//	k8s-mcp-server 二进制（cmd/...）
+//	   │
+//	   ▼
+//	mcptools.RegisterCore + RegisterExtension
+//	   │（每个工具一个 Handler，封装 kubectl / Prometheus / 内建逻辑）
+//	   ▼
+//	K8s API Server / Prometheus
+//
+// 工具分类：
+//   - 核心（Core，4 个）：kubectl_get / describe / logs + events_list
+//   - 扩展（Extension，11 个）：top_pods / top_nodes / prometheus_query /
+//     prometheus_alerts / network_policy_check / node_status / pvc_status /
+//     rollout_status / list_api_resources / kubectl_explain /
+//     events_history / metric_history
+//
+// 安全：所有工具的入参经 internal/audit 包做参数脱敏后才记录日志，
+// 防止 Secret 内容泄露。
 package mcptools
 
 import (

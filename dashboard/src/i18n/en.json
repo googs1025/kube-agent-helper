@@ -87,6 +87,8 @@
     "reject": "Reject",
     "loading": "Loading...",
     "loadFailed": "Failed to load",
+    "deleteFailed": "Delete failed",
+    "actionFailed": "Action failed",
     "notFound": "Not found",
     "back": "Back",
     "yes": "Yes",

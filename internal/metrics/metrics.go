@@ -1,3 +1,26 @@
+// Package metrics 定义并暴露控制器自身的 Prometheus 指标。
+//
+// 指标清单（命名前缀 kah_）：
+//
+//	┌────────────────────────────────────┬──────────┬─────────────────────────┐
+//	│ 名称                                │ 类型      │ 含义                     │
+//	├────────────────────────────────────┼──────────┼─────────────────────────┤
+//	│ kah_diagnostic_runs_total          │ Counter  │ 诊断任务计数（按 phase）  │
+//	│ kah_diagnostic_run_duration_seconds│ Histogram│ 诊断耗时                 │
+//	│ kah_findings_total                 │ Counter  │ 发现条数（按 severity）   │
+//	│ kah_fixes_total                    │ Counter  │ 修复任务（按 phase）      │
+//	│ kah_llm_requests_total             │ Counter  │ LLM 调用数                │
+//	│ kah_llm_request_duration_seconds   │ Histogram│ LLM 单次耗时              │
+//	│ kah_llm_tokens_total               │ Counter  │ Token 用量                │
+//	│ kah_event_collector_events_total   │ Counter  │ 采集到的 K8s 事件         │
+//	│ kah_active_runs                    │ Gauge    │ 当前运行中的任务数         │
+//	└────────────────────────────────────┴──────────┴─────────────────────────┘
+//
+// 暴露方式：HTTP server 在 /metrics 注册 promhttp.HandlerFor(m.Registry())。
+// Helm chart 提供可选的 ServiceMonitor 让 Prometheus Operator 自动发现。
+//
+// 实例化注意：使用独立的 prometheus.Registry（非 default），避免和 controller-runtime
+// 自带 metrics 混在一起，便于隔离测试。
 package metrics
 
 import (

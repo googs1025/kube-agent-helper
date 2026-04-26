@@ -1,8 +1,20 @@
-"""Fix generator entry point — single LLM call to propose a patch for one finding.
+"""修复补丁生成器入口（与 main.py 平级，被 FixGenerator Job 启动）。
 
-Called as: python -m runtime.fix_main
-Reads env var FIX_INPUT_JSON (finding + target), fetches current target YAML
-via MCP, asks the LLM for a patch JSON, POSTs the result to the controller.
+整体流程：
+    1. 从环境变量 FIX_INPUT_JSON 读取待修复的 finding（含 target 资源）
+    2. MCP 调用 kubectl_get 拉取目标资源当前 YAML
+    3. 判断"补丁已有资源" vs "创建新资源"两种场景
+    4. 调 Claude 单次推理（非循环）让其输出 strategic-merge / json-patch
+    5. POST /internal/fixes/{id}/patch 把结果回报给 controller
+
+与 main.py 的区别：
+    - main.py 是诊断（多轮、产出 findings）
+    - fix_main.py 是修复（单轮、产出一个 patch）
+
+被谁调用：
+    - DiagnosticFixReconciler 把 phase 推到 Approved 后
+    - FixGenerator.Compile 翻译出一个临时 Job 跑这个脚本
+    - Job 完成后 reconciler 切到 Applying 阶段把 patch 真正打到目标资源
 """
 import base64
 import json

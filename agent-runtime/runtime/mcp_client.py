@@ -1,7 +1,16 @@
-"""MCP stdio client for the in-cluster k8s-mcp-server.
+"""MCP stdio 客户端，封装与同 Pod 内 k8s-mcp-server 二进制的 JSON-RPC 通信。
 
-Extracted from orchestrator.py so fix_main.py can reuse the same helpers
-without circular imports.
+为什么用 subprocess+stdio 而不是 HTTP/socket：
+    - MCP 协议官方推荐 stdio 传输（mcp-go 的 server.NewStdioServer）
+    - Pod 内进程间通信最简单，无端口、无证书、无超时配置
+    - 每次调用都是"启动 → 三次 JSON-RPC（initialize / initialized / call）→ 退出"
+      短生命周期 + 隔离，进程崩溃不影响其它工具
+
+两个核心函数：
+    - discover_tools()：tools/list，用于 LLM 工具清单（Anthropic schema 格式）
+    - call_mcp_tool(name, args)：tools/call，返回工具的 text 输出
+
+被 orchestrator.py 和 fix_main.py 共用，所以单独抽出来。
 """
 import json
 import os
