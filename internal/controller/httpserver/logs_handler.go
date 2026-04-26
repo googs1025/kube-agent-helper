@@ -11,7 +11,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
@@ -197,14 +197,10 @@ func (s *Server) findAgentPod(ctx context.Context, runID string) (*corev1.Pod, b
 	}
 
 	jobName := fmt.Sprintf("agent-%s", cr.Name)
-	var podList corev1.PodList
-	if err := s.k8sClient.List(ctx, &podList,
-		client.InNamespace(cr.Namespace),
-		client.MatchingLabels{"job-name": jobName},
-	); err != nil {
-		return nil, false
-	}
-	if len(podList.Items) == 0 {
+	podList, err := s.clientset.CoreV1().Pods(cr.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "job-name=" + jobName,
+	})
+	if err != nil || len(podList.Items) == 0 {
 		return nil, false
 	}
 
