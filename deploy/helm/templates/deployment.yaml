@@ -39,6 +39,30 @@ spec:
         {{- if .Values.prometheus.metricsQueries }}
         - --metrics-queries={{ .Values.prometheus.metricsQueries }}
         {{- end }}
+        {{- if .Values.notifications.dedupTTL }}
+        - --notify-dedup-ttl={{ .Values.notifications.dedupTTL }}
+        {{- end }}
+        {{- if .Values.notifications.webhook.enabled }}
+        - --notify-webhook-url={{ .Values.notifications.webhook.url }}
+        {{- if .Values.notifications.webhook.secret }}
+        - --notify-webhook-secret={{ .Values.notifications.webhook.secret }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.notifications.slack.enabled }}
+        - --notify-slack-url={{ .Values.notifications.slack.webhookURL }}
+        {{- end }}
+        {{- if .Values.notifications.dingtalk.enabled }}
+        - --notify-dingtalk-url={{ .Values.notifications.dingtalk.webhookURL }}
+        {{- if .Values.notifications.dingtalk.secret }}
+        - --notify-dingtalk-secret={{ .Values.notifications.dingtalk.secret }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.notifications.feishu.enabled }}
+        - --notify-feishu-url={{ .Values.notifications.feishu.webhookURL }}
+        {{- if .Values.notifications.feishu.secret }}
+        - --notify-feishu-secret={{ .Values.notifications.feishu.secret }}
+        {{- end }}
+        {{- end }}
         ports:
         - containerPort: 8080
           name: http

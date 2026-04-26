@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRuns } from "@/lib/api";
+import { useRunsPaginated } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { useCluster } from "@/cluster/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { CreateRunDialog } from "@/components/create-run-dialog";
+import { Pagination } from "@/components/Pagination";
+import { FilterBar, type FilterField } from "@/components/FilterBar";
+import { useTableState } from "@/hooks/useTableState";
 import { Activity, Cpu, Wrench } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -25,17 +28,32 @@ function duration(start: string | null, end: string | null): string {
   return `${Math.floor(sec / 60)}m ${sec % 60}s`;
 }
 
+const RUN_FILTER_FIELDS: FilterField[] = [
+  {
+    key: "phase",
+    labelKey: "filter.phase",
+    type: "select",
+    options: [
+      { value: "Pending", labelKey: "phase.Pending" },
+      { value: "Running", labelKey: "phase.Running" },
+      { value: "Succeeded", labelKey: "phase.Succeeded" },
+      { value: "Failed", labelKey: "phase.Failed" },
+      { value: "Scheduled", labelKey: "phase.Scheduled" },
+    ],
+  },
+];
+
 export default function RunsPage() {
   const { t } = useI18n();
   const { cluster } = useCluster();
-  const { data: runs, error, isLoading, mutate } = useRuns({ cluster });
-  if (isLoading) return <p className="text-muted-foreground">{t("common.loading")}</p>;
-  if (error) return <p className="text-destructive">{t("common.loadFailed")}</p>;
+  const table = useTableState({ pageSize: 20 });
+  const { data, error, isLoading, mutate } = useRunsPaginated({
+    ...table.params,
+    cluster,
+  });
 
-  const total = runs?.length ?? 0;
-  const running = runs?.filter((r) => r.Status === "Running").length ?? 0;
-  const succeeded = runs?.filter((r) => r.Status === "Succeeded").length ?? 0;
-  const failed = runs?.filter((r) => r.Status === "Failed").length ?? 0;
+  const runs = data?.items;
+  const total = data?.total ?? 0;
 
   const featureCards = [
     { icon: Activity, title: t("overview.card.runs.title"), desc: t("overview.card.runs.desc"), href: "#runs", color: "text-primary" },
@@ -69,64 +87,72 @@ export default function RunsPage() {
         </h2>
         <CreateRunDialog onCreated={() => mutate()} />
       </div>
-      <div className="mb-6 grid grid-cols-4 gap-4">
-        {[
-          { label: t("runs.stat.total"), value: total, color: "text-foreground", trend: null },
-          { label: t("runs.stat.running"), value: running, color: "text-sky-400", trend: null },
-          { label: t("runs.stat.succeeded"), value: succeeded, color: "text-green-400", trend: total > 0 ? `${Math.round(succeeded / total * 100)}%` : null },
-          { label: t("runs.stat.failed"), value: failed, color: "text-red-400", trend: null },
-        ].map(({ label, value, color, trend }) => (
-          <div key={label} className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className={`mt-1 text-3xl font-bold ${color}`}>{value}</p>
-            {trend && <p className="mt-1 text-xs text-muted-foreground">{trend}</p>}
-          </div>
-        ))}
-      </div>
-      {runs && runs.length === 0 ? (
+
+      <FilterBar
+        fields={RUN_FILTER_FIELDS}
+        values={table.filters}
+        onChange={table.setFilter}
+        onClear={table.clearFilters}
+      />
+
+      {isLoading && <p className="text-muted-foreground">{t("common.loading")}</p>}
+      {error && <p className="text-destructive">{t("common.loadFailed")}</p>}
+
+      {!isLoading && !error && runs && runs.length === 0 ? (
         <p className="text-muted-foreground">{t("runs.empty")}</p>
-      ) : (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("runs.col.id")}</TableHead>
-                <TableHead>{t("runs.col.phase")}</TableHead>
-                <TableHead>{t("runs.col.created")}</TableHead>
-                <TableHead>{t("runs.col.duration")}</TableHead>
-                <TableHead>{t("runs.col.target")}</TableHead>
-                <TableHead>{t("runs.col.message")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runs?.map((run) => {
-                let target = "-";
-                try {
-                  const tgt = JSON.parse(run.TargetJSON);
-                  target = tgt.namespaces?.join(", ") || tgt.scope || "-";
-                } catch {
-                  /* ignore */
-                }
-                return (
-                  <TableRow key={run.ID}>
-                    <TableCell>
-                      <Link href={`/runs/${run.ID}`} className="font-mono text-sm text-primary hover:underline">
-                        {run.Name || run.ID.slice(0, 8)}
-                      </Link>
-                    </TableCell>
-                    <TableCell><PhaseBadge phase={run.Status} /></TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatTime(run.CreatedAt)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{duration(run.StartedAt, run.CompletedAt)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{target}</TableCell>
-                    <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={run.Message || ""}>
-                      {run.Message || "-"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+      ) : null}
+
+      {!isLoading && !error && runs && runs.length > 0 && (
+        <>
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("runs.col.id")}</TableHead>
+                  <TableHead>{t("runs.col.phase")}</TableHead>
+                  <TableHead>{t("runs.col.created")}</TableHead>
+                  <TableHead>{t("runs.col.duration")}</TableHead>
+                  <TableHead>{t("runs.col.target")}</TableHead>
+                  <TableHead>{t("runs.col.message")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {runs.map((run) => {
+                  let target = "-";
+                  try {
+                    const tgt = JSON.parse(run.TargetJSON);
+                    target = tgt.namespaces?.join(", ") || tgt.scope || "-";
+                  } catch {
+                    /* ignore */
+                  }
+                  return (
+                    <TableRow key={run.ID}>
+                      <TableCell>
+                        <Link href={`/runs/${run.ID}`} className="font-mono text-sm text-primary hover:underline">
+                          {run.Name || run.ID.slice(0, 8)}
+                        </Link>
+                      </TableCell>
+                      <TableCell><PhaseBadge phase={run.Status} /></TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatTime(run.CreatedAt)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{duration(run.StartedAt, run.CompletedAt)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{target}</TableCell>
+                      <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={run.Message || ""}>
+                        {run.Message || "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <Pagination
+            page={table.page}
+            pageSize={table.pageSize}
+            total={total}
+            onPageChange={table.setPage}
+            onPageSizeChange={table.setPageSize}
+          />
+        </>
       )}
     </div>
   );

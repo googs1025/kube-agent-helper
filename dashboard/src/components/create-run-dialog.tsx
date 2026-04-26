@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DialogRoot, DialogTrigger, DialogPortal, DialogBackdrop, DialogPopup, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -30,11 +30,6 @@ export function CreateRunDialog({ onCreated }: Props) {
   const [outputLanguage, setOutputLanguage] = useState<"zh" | "en">(lang);
   const [schedule, setSchedule] = useState("");
   const [historyLimit, setHistoryLimit] = useState<string>("");
-
-  // Keep outputLanguage in sync with UI language until the user opens the dialog
-  useEffect(() => {
-    if (!open) setOutputLanguage(lang);
-  }, [lang, open]);
 
   function parseLabelSelector(tags: string[]): Record<string, string> {
     const result: Record<string, string> = {};
@@ -98,8 +93,8 @@ export function CreateRunDialog({ onCreated }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <label className={labelClass}>{t("runs.form.namespace")} *</label>
-              <input required value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="kube-agent-helper"
+              <label className={labelClass}>{t("runs.form.namespace")} <span className={hintClass}>（{t("runs.form.optional")}）</span></label>
+              <input value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="kube-agent-helper"
                 className={inputClass} />
             </div>
 

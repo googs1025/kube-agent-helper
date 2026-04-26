@@ -10,33 +10,90 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	sigsyaml "sigs.k8s.io/yaml"
 
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/notification"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
+
+// Option is a functional option for configuring the Server.
+type Option func(*Server)
+
+// WithMetrics configures the server with Prometheus metrics.
+func WithMetrics(m *metrics.Metrics) Option {
+	return func(s *Server) {
+		s.metrics = m
+	}
+}
+
+// NotifyDispatcher is satisfied by notification.Manager.
+type NotifyDispatcher interface {
+	Notify(ctx context.Context, event notification.Event) error
+}
+
+// WithNotifier configures the server with a notification dispatcher.
+func WithNotifier(n NotifyDispatcher) Option {
+	return func(s *Server) {
+		s.notifier = n
+	}
+}
+
+// NotificationManager extends NotifyDispatcher with config reload and test capabilities.
+type NotificationManager interface {
+	NotifyDispatcher
+	ReloadFromConfigs(configs []*notification.NotificationConfig)
+	SendTest(ctx context.Context, cfg *notification.NotificationConfig) error
+}
 
 type Server struct {
 	store        store.Store
 	k8sClient    client.Client
+	clientset    kubernetes.Interface
 	fixGenerator *translator.FixGenerator
+	metrics      *metrics.Metrics
+	notifier     NotifyDispatcher
+	notifMgr     NotificationManager
 	mux          *http.ServeMux
 }
 
-func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *Server {
+// WithClientset configures the server with a Kubernetes clientset for pod log streaming.
+func WithClientset(c kubernetes.Interface) Option {
+	return func(s *Server) {
+		s.clientset = c
+	}
+}
+
+// WithNotificationManager configures the server with a notification manager for config reload.
+func WithNotificationManager(nm NotificationManager) Option {
+	return func(s *Server) {
+		s.notifMgr = nm
+	}
+}
+
+func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator, opts ...Option) *Server {
 	srv := &Server{store: s, k8sClient: k8sClient, fixGenerator: fg, mux: http.NewServeMux()}
+	for _, opt := range opts {
+		opt(srv)
+	}
 	srv.mux.HandleFunc("/internal/runs/", srv.handleInternal)
 	srv.mux.HandleFunc("/internal/fixes", srv.handleInternalFixCallback)
+	srv.mux.HandleFunc("/api/runs/batch", srv.handleAPIRunsBatch)
 	srv.mux.HandleFunc("/api/runs", srv.handleAPIRuns)
 	srv.mux.HandleFunc("/api/runs/", srv.handleAPIRunDetail)
 	srv.mux.HandleFunc("/api/skills", srv.handleAPISkills)
+	srv.mux.HandleFunc("/api/fixes/batch-approve", srv.handleAPIFixesBatchApprove)
+	srv.mux.HandleFunc("/api/fixes/batch-reject", srv.handleAPIFixesBatchReject)
 	srv.mux.HandleFunc("/api/fixes", srv.handleAPIFixes)
 	srv.mux.HandleFunc("/api/fixes/", srv.handleAPIFixDetail)
 	srv.mux.HandleFunc("/api/findings/", srv.handleAPIFindingAction)
@@ -44,6 +101,12 @@ func New(s store.Store, k8sClient client.Client, fg *translator.FixGenerator) *S
 	srv.mux.HandleFunc("/api/modelconfigs", srv.handleAPIModelConfigs)
 	srv.mux.HandleFunc("/api/k8s/resources", srv.handleAPIK8sResources)
 	srv.mux.HandleFunc("/api/clusters", srv.handleAPIClusters)
+	srv.mux.HandleFunc("/api/notification-configs/", srv.handleAPINotificationConfigDetail)
+	srv.mux.HandleFunc("/api/notification-configs", srv.handleAPINotificationConfigs)
+	srv.mux.HandleFunc("/internal/llm-metrics", srv.handleLLMMetrics)
+	if srv.metrics != nil {
+		srv.mux.Handle("/metrics", promhttp.HandlerFor(srv.metrics.Registry(), promhttp.HandlerOpts{}))
+	}
 	return srv
 }
 
@@ -100,6 +163,9 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.CreateFinding(r.Context(), f); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if s.metrics != nil {
+		s.metrics.RecordFinding(f.Severity, f.ResourceNamespace, "")
 	}
 	w.WriteHeader(http.StatusCreated)
 }
@@ -205,8 +271,26 @@ func (s *Server) handleInternalFixCallback(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleAPIRuns(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		q := r.URL.Query()
+		// Paginated mode when "page" param is set
+		if q.Get("page") != "" {
+			opts := parsePaginatedOpts(r)
+			opts.ClusterName = q.Get("cluster")
+			result, err := s.store.ListRunsPaginated(r.Context(), opts)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if result.Items == nil {
+				result.Items = make([]*store.DiagnosticRun, 0)
+			}
+			result.Items = s.enrichWithK8sNames(r.Context(), result.Items)
+			writeJSON(w, result)
+			return
+		}
+		// Legacy mode (no pagination envelope)
 		opts := parsePagination(r)
-		opts.ClusterName = r.URL.Query().Get("cluster")
+		opts.ClusterName = q.Get("cluster")
 		runs, err := s.store.ListRuns(r.Context(), opts)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -328,6 +412,11 @@ func (s *Server) handleAPIRunDetail(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 4 && parts[3] == "crd" {
 		s.handleAPIRunCRD(w, r, runID)
+		return
+	}
+
+	if len(parts) == 4 && parts[3] == "logs" {
+		s.handleRunLogs(w, r)
 		return
 	}
 
@@ -533,8 +622,26 @@ func (s *Server) handleAPIFixes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	q := r.URL.Query()
+	// Paginated mode when "page" param is set
+	if q.Get("page") != "" {
+		opts := parsePaginatedOpts(r)
+		opts.ClusterName = q.Get("cluster")
+		result, err := s.store.ListFixesPaginated(r.Context(), opts)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if result.Items == nil {
+			result.Items = make([]*store.Fix, 0)
+		}
+		s.enrichFixesWithK8sNames(r.Context(), result.Items)
+		writeJSON(w, result)
+		return
+	}
+	// Legacy mode
 	fixOpts := parsePagination(r)
-	fixOpts.ClusterName = r.URL.Query().Get("cluster")
+	fixOpts.ClusterName = q.Get("cluster")
 	fixes, err := s.store.ListFixes(r.Context(), fixOpts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -607,6 +714,16 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 					_ = s.k8sClient.Status().Update(r.Context(), fixCR)
 				}
 			}
+			if s.notifier != nil {
+				_ = s.notifier.Notify(r.Context(), notification.Event{
+					Type:      notification.EventFixApproved,
+					Severity:  "info",
+					Title:     fmt.Sprintf("Fix Approved: %s", fixID),
+					Message:   fmt.Sprintf("Fix %s approved by %s", fixID, body.ApprovedBy),
+					Resource:  fixID,
+					Timestamp: time.Now(),
+				})
+			}
 			w.WriteHeader(http.StatusOK)
 			return
 		case action == "reject" && r.Method == http.MethodPatch:
@@ -627,6 +744,16 @@ func (s *Server) handleAPIFixDetail(w http.ResponseWriter, r *http.Request) {
 					fixCR.Status.CompletedAt = &now
 					_ = s.k8sClient.Status().Update(r.Context(), fixCR)
 				}
+			}
+			if s.notifier != nil {
+				_ = s.notifier.Notify(r.Context(), notification.Event{
+					Type:      notification.EventFixRejected,
+					Severity:  "warning",
+					Title:     fmt.Sprintf("Fix Rejected: %s", fixID),
+					Message:   fmt.Sprintf("Fix %s rejected by user", fixID),
+					Resource:  fixID,
+					Timestamp: time.Now(),
+				})
 			}
 			w.WriteHeader(http.StatusOK)
 			return
@@ -878,6 +1005,43 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		since = n
 	}
 
+	evtsOpts := store.ListEventsOpts{
+		Namespace:    namespace,
+		Name:         name,
+		SinceMinutes: since,
+		ClusterName:  q.Get("cluster"),
+	}
+
+	// Paginated mode when "page" param is set
+	if q.Get("page") != "" {
+		page := 1
+		if v := q.Get("page"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				page = n
+			}
+		}
+		pageSize := 20
+		if v := q.Get("pageSize"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				if n > 100 {
+					n = 100
+				}
+				pageSize = n
+			}
+		}
+		result, err := s.store.ListEventsPaginated(r.Context(), evtsOpts, page, pageSize)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if result.Items == nil {
+			result.Items = make([]*store.Event, 0)
+		}
+		writeJSON(w, result)
+		return
+	}
+
+	// Legacy mode
 	limit := 100
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -887,15 +1051,8 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-
-	opts := store.ListEventsOpts{
-		Namespace:    namespace,
-		Name:         name,
-		SinceMinutes: since,
-		Limit:        limit,
-		ClusterName:  q.Get("cluster"),
-	}
-	events, err := s.store.ListEvents(r.Context(), opts)
+	evtsOpts.Limit = limit
+	events, err := s.store.ListEvents(r.Context(), evtsOpts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1184,6 +1341,173 @@ func (s *Server) handleAPIClustersPost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"name": cc.Name, "namespace": cc.Namespace})
 }
 
+// GET|POST /api/notification-configs
+func (s *Server) handleAPINotificationConfigs(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		configs, err := s.store.ListNotificationConfigs(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if configs == nil {
+			configs = make([]*store.NotificationConfig, 0)
+		}
+		writeJSON(w, configs)
+	case http.MethodPost:
+		var req struct {
+			Name       string `json:"name"`
+			Type       string `json:"type"`
+			WebhookURL string `json:"webhookURL"`
+			Secret     string `json:"secret"`
+			Events     string `json:"events"`
+			Enabled    bool   `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" || req.Type == "" || req.WebhookURL == "" {
+			http.Error(w, "name, type, and webhookURL are required", http.StatusBadRequest)
+			return
+		}
+		validTypes := map[string]bool{"webhook": true, "slack": true, "dingtalk": true, "feishu": true}
+		if !validTypes[req.Type] {
+			http.Error(w, "type must be webhook, slack, dingtalk, or feishu", http.StatusBadRequest)
+			return
+		}
+		cfg := &store.NotificationConfig{
+			Name:       req.Name,
+			Type:       req.Type,
+			WebhookURL: req.WebhookURL,
+			Secret:     req.Secret,
+			Events:     req.Events,
+			Enabled:    req.Enabled,
+		}
+		if err := s.store.CreateNotificationConfig(r.Context(), cfg); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.reloadNotificationChannels(r.Context())
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, cfg)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// PUT|DELETE /api/notification-configs/{id}  and  POST /api/notification-configs/{id}/test
+func (s *Server) handleAPINotificationConfigDetail(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// parts: ["api","notification-configs","{id}"] or ["api","notification-configs","{id}","test"]
+	if len(parts) < 3 {
+		http.NotFound(w, r)
+		return
+	}
+	id := parts[2]
+
+	// POST /api/notification-configs/{id}/test
+	if len(parts) == 4 && parts[3] == "test" && r.Method == http.MethodPost {
+		cfg, err := s.store.GetNotificationConfig(r.Context(), id)
+		if err != nil {
+			if err == store.ErrNotFound {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if s.notifMgr == nil {
+			http.Error(w, "notification manager not configured", http.StatusInternalServerError)
+			return
+		}
+		ncfg := &notification.NotificationConfig{
+			ID: cfg.ID, Name: cfg.Name, Type: cfg.Type,
+			WebhookURL: cfg.WebhookURL, Secret: cfg.Secret,
+			Events: cfg.Events, Enabled: cfg.Enabled,
+		}
+		if err := s.notifMgr.SendTest(r.Context(), ncfg); err != nil {
+			http.Error(w, "test failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "sent"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		var req struct {
+			Name       string `json:"name"`
+			Type       string `json:"type"`
+			WebhookURL string `json:"webhookURL"`
+			Secret     string `json:"secret"`
+			Events     string `json:"events"`
+			Enabled    bool   `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" || req.Type == "" || req.WebhookURL == "" {
+			http.Error(w, "name, type, and webhookURL are required", http.StatusBadRequest)
+			return
+		}
+		cfg := &store.NotificationConfig{
+			ID:         id,
+			Name:       req.Name,
+			Type:       req.Type,
+			WebhookURL: req.WebhookURL,
+			Secret:     req.Secret,
+			Events:     req.Events,
+			Enabled:    req.Enabled,
+		}
+		if err := s.store.UpdateNotificationConfig(r.Context(), cfg); err != nil {
+			if err == store.ErrNotFound {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.reloadNotificationChannels(r.Context())
+		writeJSON(w, cfg)
+	case http.MethodDelete:
+		if err := s.store.DeleteNotificationConfig(r.Context(), id); err != nil {
+			if err == store.ErrNotFound {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.reloadNotificationChannels(r.Context())
+		w.WriteHeader(http.StatusOK)
+		writeJSON(w, map[string]string{"deleted": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// reloadNotificationChannels reads configs from DB and reloads the notification manager.
+func (s *Server) reloadNotificationChannels(ctx context.Context) {
+	if s.notifMgr == nil {
+		return
+	}
+	configs, err := s.store.ListNotificationConfigs(ctx)
+	if err != nil {
+		return
+	}
+	ncfgs := make([]*notification.NotificationConfig, len(configs))
+	for i, c := range configs {
+		ncfgs[i] = &notification.NotificationConfig{
+			ID: c.ID, Name: c.Name, Type: c.Type,
+			WebhookURL: c.WebhookURL, Secret: c.Secret,
+			Events: c.Events, Enabled: c.Enabled,
+		}
+	}
+	s.notifMgr.ReloadFromConfigs(ncfgs)
+}
+
 func randSuffix(n int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)
@@ -1191,6 +1515,116 @@ func randSuffix(n int) string {
 		b[i] = chars[rand.Intn(len(chars))]
 	}
 	return string(b)
+}
+
+// parsePaginatedOpts reads ?page=&pageSize=&sortBy=&sortOrder= and filter params.
+func parsePaginatedOpts(r *http.Request) store.ListOpts {
+	q := r.URL.Query()
+	opts := store.DefaultListOpts()
+	if p := q.Get("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			opts.Page = n
+		}
+	}
+	if ps := q.Get("pageSize"); ps != "" {
+		if n, err := strconv.Atoi(ps); err == nil && n > 0 {
+			if n > 100 {
+				n = 100
+			}
+			opts.PageSize = n
+		}
+	}
+	if sb := q.Get("sortBy"); sb != "" {
+		opts.SortBy = sb
+	}
+	if so := q.Get("sortOrder"); so != "" {
+		opts.SortOrder = so
+	}
+	opts.Filters = map[string]string{}
+	for _, key := range []string{"namespace", "phase", "severity", "status"} {
+		if v := q.Get(key); v != "" {
+			opts.Filters[key] = v
+		}
+	}
+	return opts
+}
+
+// DELETE /api/runs/batch
+func (s *Server) handleAPIRunsBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		http.Error(w, "ids required", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.DeleteRuns(r.Context(), body.IDs); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, map[string]int{"deleted": len(body.IDs)})
+}
+
+// POST /api/fixes/batch-approve
+func (s *Server) handleAPIFixesBatchApprove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		IDs        []string `json:"ids"`
+		ApprovedBy string   `json:"approvedBy"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		http.Error(w, "ids required", http.StatusBadRequest)
+		return
+	}
+	if body.ApprovedBy == "" {
+		body.ApprovedBy = "dashboard-user"
+	}
+	for _, id := range body.IDs {
+		_ = s.store.UpdateFixApproval(r.Context(), id, body.ApprovedBy)
+	}
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, map[string]int{"approved": len(body.IDs)})
+}
+
+// POST /api/fixes/batch-reject
+func (s *Server) handleAPIFixesBatchReject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		http.Error(w, "ids required", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.BatchUpdateFixPhase(r.Context(), body.IDs, store.FixPhaseFailed, "rejected by user"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, map[string]int{"rejected": len(body.IDs)})
 }
 
 // parsePagination reads ?limit= and ?offset= from the request query string.

@@ -20,6 +20,8 @@ func (c *Collector) runEventCollector(ctx context.Context) {
 		for _, e := range batch {
 			if err := c.Store.UpsertEvent(ctx, e); err != nil {
 				logger.Error(err, "upsert event failed", "uid", e.UID)
+			} else if c.Metrics != nil {
+				c.Metrics.RecordEvent(e.Reason, "")
 			}
 		}
 	})

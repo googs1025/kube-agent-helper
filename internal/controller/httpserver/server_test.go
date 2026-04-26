@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	v1alpha1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
@@ -32,6 +34,8 @@ type fakeStore struct {
 	skills          []*store.Skill
 	fixes           []*store.Fix
 	events          []*store.Event
+	runLogs         []store.RunLog
+	notifConfigs    []*store.NotificationConfig
 	lastListEvtsOpt store.ListEventsOpts
 }
 
@@ -116,6 +120,199 @@ func (f *fakeStore) InsertMetricSnapshot(_ context.Context, _ *store.MetricSnaps
 }
 func (f *fakeStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*store.MetricSnapshot, error) {
 	return nil, nil
+}
+func (f *fakeStore) AppendRunLog(_ context.Context, log store.RunLog) error {
+	log.ID = int64(len(f.runLogs) + 1)
+	f.runLogs = append(f.runLogs, log)
+	return nil
+}
+func (f *fakeStore) ListRunLogs(_ context.Context, runID string, afterID int64) ([]store.RunLog, error) {
+	var out []store.RunLog
+	for _, l := range f.runLogs {
+		if l.RunID == runID && l.ID > afterID {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+func (f *fakeStore) ListRunsPaginated(_ context.Context, opts store.ListOpts) (store.PaginatedResult[*store.DiagnosticRun], error) {
+	filtered := f.runs
+	if opts.ClusterName != "" {
+		var out []*store.DiagnosticRun
+		for _, r := range filtered {
+			if r.ClusterName == opts.ClusterName {
+				out = append(out, r)
+			}
+		}
+		filtered = out
+	}
+	if f := opts.Filters; f != nil {
+		if v, ok := f["phase"]; ok && v != "" {
+			var out []*store.DiagnosticRun
+			for _, r := range filtered {
+				if string(r.Status) == v {
+					out = append(out, r)
+				}
+			}
+			filtered = out
+		}
+	}
+	total := len(filtered)
+	page := opts.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := opts.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	start := (page - 1) * pageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return store.PaginatedResult[*store.DiagnosticRun]{
+		Items: filtered[start:end], Total: total, Page: page, PageSize: pageSize,
+	}, nil
+}
+func (f *fakeStore) ListFixesPaginated(_ context.Context, opts store.ListOpts) (store.PaginatedResult[*store.Fix], error) {
+	filtered := f.fixes
+	if opts.ClusterName != "" {
+		var out []*store.Fix
+		for _, fx := range filtered {
+			if fx.ClusterName == opts.ClusterName {
+				out = append(out, fx)
+			}
+		}
+		filtered = out
+	}
+	if fil := opts.Filters; fil != nil {
+		if v, ok := fil["phase"]; ok && v != "" {
+			var out []*store.Fix
+			for _, fx := range filtered {
+				if string(fx.Phase) == v {
+					out = append(out, fx)
+				}
+			}
+			filtered = out
+		}
+	}
+	total := len(filtered)
+	page := opts.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := opts.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	start := (page - 1) * pageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return store.PaginatedResult[*store.Fix]{
+		Items: filtered[start:end], Total: total, Page: page, PageSize: pageSize,
+	}, nil
+}
+func (f *fakeStore) ListEventsPaginated(_ context.Context, opts store.ListEventsOpts, page, pageSize int) (store.PaginatedResult[*store.Event], error) {
+	filtered := f.events
+	if opts.ClusterName != "" {
+		var out []*store.Event
+		for _, ev := range filtered {
+			if ev.ClusterName == opts.ClusterName {
+				out = append(out, ev)
+			}
+		}
+		filtered = out
+	}
+	total := len(filtered)
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	start := (page - 1) * pageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return store.PaginatedResult[*store.Event]{
+		Items: filtered[start:end], Total: total, Page: page, PageSize: pageSize,
+	}, nil
+}
+func (f *fakeStore) DeleteRuns(_ context.Context, ids []string) error {
+	idSet := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		idSet[id] = true
+	}
+	var remaining []*store.DiagnosticRun
+	for _, r := range f.runs {
+		if !idSet[r.ID] {
+			remaining = append(remaining, r)
+		}
+	}
+	f.runs = remaining
+	return nil
+}
+func (f *fakeStore) BatchUpdateFixPhase(_ context.Context, ids []string, phase store.FixPhase, msg string) error {
+	idSet := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		idSet[id] = true
+	}
+	for _, fx := range f.fixes {
+		if idSet[fx.ID] {
+			fx.Phase = phase
+			fx.Message = msg
+		}
+	}
+	return nil
+}
+func (f *fakeStore) ListNotificationConfigs(_ context.Context) ([]*store.NotificationConfig, error) {
+	return f.notifConfigs, nil
+}
+func (f *fakeStore) GetNotificationConfig(_ context.Context, id string) (*store.NotificationConfig, error) {
+	for _, c := range f.notifConfigs {
+		if c.ID == id {
+			return c, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+func (f *fakeStore) CreateNotificationConfig(_ context.Context, cfg *store.NotificationConfig) error {
+	if cfg.ID == "" {
+		cfg.ID = fmt.Sprintf("nc-%d", len(f.notifConfigs)+1)
+	}
+	f.notifConfigs = append(f.notifConfigs, cfg)
+	return nil
+}
+func (f *fakeStore) UpdateNotificationConfig(_ context.Context, cfg *store.NotificationConfig) error {
+	for i, c := range f.notifConfigs {
+		if c.ID == cfg.ID {
+			f.notifConfigs[i] = cfg
+			return nil
+		}
+	}
+	return store.ErrNotFound
+}
+func (f *fakeStore) DeleteNotificationConfig(_ context.Context, id string) error {
+	for i, c := range f.notifConfigs {
+		if c.ID == id {
+			f.notifConfigs = append(f.notifConfigs[:i], f.notifConfigs[i+1:]...)
+			return nil
+		}
+	}
+	return store.ErrNotFound
 }
 func (f *fakeStore) PurgeOldEvents(_ context.Context, _ time.Time) error  { return nil }
 func (f *fakeStore) PurgeOldMetrics(_ context.Context, _ time.Time) error { return nil }
@@ -1146,6 +1343,119 @@ func TestAPIClusters_MethodNotAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 }
 
+// ── Prometheus metrics endpoint tests ──────────────────────────────────────────
+
+func TestMetricsEndpoint(t *testing.T) {
+	m := metrics.New()
+	m.RecordRunCompleted("default", "Succeeded", "local")
+
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "kah_diagnostic_runs_total")
+}
+
+func TestMetricsEndpoint_NotRegisteredWithoutOption(t *testing.T) {
+	// Without WithMetrics, /metrics should 404
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestLLMMetrics_Success(t *testing.T) {
+	m := metrics.New()
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"model":            "gpt-4",
+		"duration_ms":      1200.0,
+		"prompt_tokens":    500,
+		"completion_tokens": 100,
+		"status":           "ok",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/llm-metrics", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// Verify metrics were recorded
+	families, err := m.Registry().Gather()
+	require.NoError(t, err)
+	names := make(map[string]bool)
+	for _, f := range families {
+		names[f.GetName()] = true
+	}
+	assert.True(t, names["kah_llm_requests_total"])
+	assert.True(t, names["kah_llm_request_duration_seconds"])
+	assert.True(t, names["kah_llm_tokens_total"])
+}
+
+func TestLLMMetrics_WithoutMetrics(t *testing.T) {
+	// Without metrics configured, the handler should still succeed (nil-safe)
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"model": "gpt-4", "duration_ms": 100.0, "status": "ok",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/llm-metrics", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestLLMMetrics_MethodNotAllowed(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/llm-metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestPostFindings_RecordsMetric(t *testing.T) {
+	m := metrics.New()
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"dimension": "health", "severity": "critical",
+		"title": "Pod crash", "resource_kind": "Pod",
+		"resource_namespace": "default", "resource_name": "api-pod",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/runs/run-123/findings",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Verify findings metric was incremented
+	families, err := m.Registry().Gather()
+	require.NoError(t, err)
+	for _, f := range families {
+		if f.GetName() == "kah_findings_total" {
+			require.Len(t, f.GetMetric(), 1)
+			assert.Equal(t, 1.0, f.GetMetric()[0].GetCounter().GetValue())
+			return
+		}
+	}
+	t.Fatal("kah_findings_total metric not found after creating a finding")
+}
+
 // ── GET /api/clusters with existing ClusterConfig CRs ──────────────────
 
 func TestAPIClustersGet_WithClusterConfigs(t *testing.T) {
@@ -1182,4 +1492,257 @@ func TestAPIClustersGet_WithClusterConfigs(t *testing.T) {
 	assert.Equal(t, "Connected", clusters[1]["phase"])
 	assert.Equal(t, "http://prom:9090", clusters[1]["prometheusURL"])
 	assert.Equal(t, "Production", clusters[1]["description"])
+}
+
+// ── Pagination, Filtering, and Batch Operation Tests ───────────────────
+
+func TestPaginatedRunsList(t *testing.T) {
+	fs := &fakeStore{}
+	for i := 0; i < 25; i++ {
+		fs.runs = append(fs.runs, &store.DiagnosticRun{
+			ID:          fmt.Sprintf("run-%d", i),
+			ClusterName: "local",
+			TargetJSON:  "{}",
+			SkillsJSON:  "[]",
+			Status:      store.PhaseSucceeded,
+		})
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Page 1, size 10
+	req := httptest.NewRequest(http.MethodGet, "/api/runs?page=1&pageSize=10", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result store.PaginatedResult[map[string]interface{}]
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 25, result.Total)
+	assert.Equal(t, 1, result.Page)
+	assert.Equal(t, 10, result.PageSize)
+	assert.Len(t, result.Items, 10)
+
+	// Page 3, size 10 — should get 5 items
+	req = httptest.NewRequest(http.MethodGet, "/api/runs?page=3&pageSize=10", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 25, result.Total)
+	assert.Equal(t, 3, result.Page)
+	assert.Len(t, result.Items, 5)
+}
+
+func TestPaginatedRunsFilter(t *testing.T) {
+	fs := &fakeStore{}
+	for i := 0; i < 10; i++ {
+		status := store.PhaseSucceeded
+		if i%2 == 0 {
+			status = store.PhaseFailed
+		}
+		fs.runs = append(fs.runs, &store.DiagnosticRun{
+			ID:          fmt.Sprintf("run-%d", i),
+			ClusterName: "local",
+			TargetJSON:  "{}",
+			SkillsJSON:  "[]",
+			Status:      status,
+		})
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Filter by phase=Failed
+	req := httptest.NewRequest(http.MethodGet, "/api/runs?page=1&pageSize=20&phase=Failed", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result store.PaginatedResult[map[string]interface{}]
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 5, result.Total)
+	assert.Len(t, result.Items, 5)
+}
+
+func TestPaginatedFixesList(t *testing.T) {
+	fs := &fakeStore{}
+	for i := 0; i < 15; i++ {
+		fs.fixes = append(fs.fixes, &store.Fix{
+			ID:          fmt.Sprintf("fix-%d", i),
+			ClusterName: "local",
+			RunID:       "run-1",
+			Phase:       store.FixPhasePendingApproval,
+		})
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes?page=1&pageSize=10", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result store.PaginatedResult[map[string]interface{}]
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 15, result.Total)
+	assert.Len(t, result.Items, 10)
+	assert.Equal(t, 1, result.Page)
+}
+
+func TestPaginatedEventsList(t *testing.T) {
+	fs := &fakeStore{}
+	for i := 0; i < 30; i++ {
+		fs.events = append(fs.events, &store.Event{
+			UID:         fmt.Sprintf("ev-%d", i),
+			ClusterName: "local",
+			Namespace:   "default",
+			Kind:        "Pod",
+			Name:        fmt.Sprintf("pod-%d", i),
+			Reason:      "OOMKilled",
+			Message:     "out of memory",
+			Type:        "Warning",
+			Count:       1,
+		})
+	}
+	srv := httpserver.New(fs, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/events?page=2&pageSize=10", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result store.PaginatedResult[map[string]interface{}]
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	assert.Equal(t, 30, result.Total)
+	assert.Equal(t, 2, result.Page)
+	assert.Len(t, result.Items, 10)
+}
+
+func TestDeleteRunsBatch(t *testing.T) {
+	fs := &fakeStore{
+		runs: []*store.DiagnosticRun{
+			{ID: "r1", ClusterName: "local", Status: store.PhaseSucceeded},
+			{ID: "r2", ClusterName: "local", Status: store.PhaseSucceeded},
+			{ID: "r3", ClusterName: "local", Status: store.PhaseFailed},
+		},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	body, _ := json.Marshal(map[string]interface{}{"ids": []string{"r1", "r3"}})
+	req := httptest.NewRequest(http.MethodDelete, "/api/runs/batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, fs.runs, 1)
+	assert.Equal(t, "r2", fs.runs[0].ID)
+}
+
+func TestBatchApproveFixes(t *testing.T) {
+	fs := &fakeStore{
+		fixes: []*store.Fix{
+			{ID: "f1", Phase: store.FixPhasePendingApproval},
+			{ID: "f2", Phase: store.FixPhasePendingApproval},
+			{ID: "f3", Phase: store.FixPhasePendingApproval},
+		},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"ids":        []string{"f1", "f2"},
+		"approvedBy": "admin",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/fixes/batch-approve", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, float64(2), resp["approved"])
+}
+
+func TestBatchRejectFixes(t *testing.T) {
+	fs := &fakeStore{
+		fixes: []*store.Fix{
+			{ID: "f1", Phase: store.FixPhasePendingApproval},
+			{ID: "f2", Phase: store.FixPhasePendingApproval},
+		},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"ids": []string{"f1", "f2"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/fixes/batch-reject", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Verify both fixes were updated
+	assert.Equal(t, store.FixPhaseFailed, fs.fixes[0].Phase)
+	assert.Equal(t, store.FixPhaseFailed, fs.fixes[1].Phase)
+}
+
+func TestDeleteRunsBatch_EmptyIDs(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	body, _ := json.Marshal(map[string]interface{}{"ids": []string{}})
+	req := httptest.NewRequest(http.MethodDelete, "/api/runs/batch", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestBatchApprove_MethodNotAllowed(t *testing.T) {
+	srv := httpserver.New(&fakeStore{}, newFakeK8sClient(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/fixes/batch-approve", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestPaginatedRunsPageSizeCapped(t *testing.T) {
+	fs := &fakeStore{}
+	for i := 0; i < 5; i++ {
+		fs.runs = append(fs.runs, &store.DiagnosticRun{
+			ID: fmt.Sprintf("r%d", i), ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending,
+		})
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// pageSize > 100 should be capped
+	req := httptest.NewRequest(http.MethodGet, "/api/runs?page=1&pageSize=200", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result store.PaginatedResult[map[string]interface{}]
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
+	// fakeStore caps at 100 in its impl
+	assert.LessOrEqual(t, result.PageSize, 100)
+}
+
+func TestLegacyRunsEndpoint_StillWorks(t *testing.T) {
+	fs := &fakeStore{
+		runs: []*store.DiagnosticRun{
+			{ID: "r1", ClusterName: "local", TargetJSON: "{}", SkillsJSON: "[]", Status: store.PhasePending},
+		},
+	}
+	srv := httpserver.New(fs, newFakeK8sClient(), nil)
+
+	// Without page= param, should return legacy array response
+	req := httptest.NewRequest(http.MethodGet, "/api/runs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Should decode as an array, not a paginated envelope
+	var runs []map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&runs))
+	assert.Len(t, runs, 1)
 }

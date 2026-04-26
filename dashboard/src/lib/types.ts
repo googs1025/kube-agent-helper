@@ -111,6 +111,15 @@ export interface ModelConfig {
   apiKey: string; // always "****"
 }
 
+export interface RunLogEntry {
+  id: number;
+  run_id: string;
+  timestamp: string;
+  type: "step" | "finding" | "fix" | "error" | "info";
+  message: string;
+  data?: string;
+}
+
 export interface KubeEvent {
   ID: number;
   UID: string;
@@ -124,4 +133,20 @@ export interface KubeEvent {
   FirstTime: string;
   LastTime: string;
   CreatedAt: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ListParams {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  cluster?: string;
+  [key: string]: string | number | undefined;
 }

@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,14 +20,25 @@ import (
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/notification"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
+// NotifyDispatcher is an interface to decouple reconcilers from the
+// notification package, avoiding import cycles.
+type NotifyDispatcher interface {
+	Notify(ctx context.Context, event notification.Event) error
+}
+
 type DiagnosticRunReconciler struct {
 	client.Client
-	Store      store.Store
+	Store     store.Store
 	Translator *translator.Translator
 	Registry   *registry.ClusterClientRegistry // nil = local-only mode
+	Metrics    *metrics.Metrics                // nil-safe
+	Notifier   NotifyDispatcher                // nil-safe
+	Clientset  kubernetes.Interface            // nil-safe; used for pod log collection
 }
 
 func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -105,6 +118,10 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			logger.Error(err, "store.UpdateRunStatus failed")
 			return ctrl.Result{Requeue: true}, nil
 		}
+		if r.Metrics != nil {
+			r.Metrics.RecordRunCompleted(run.Namespace, string(store.PhaseRunning), clusterName)
+			r.Metrics.IncActiveRuns()
+		}
 		logger.Info("run started", "name", run.Name)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
@@ -146,7 +163,10 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 		// Still running — check Pod health for early error signals
 		msg := r.podWaitingReason(ctx, job.Name, run.Namespace)
-		if msg != "" && msg != run.Status.Message {
+		if msg == "" {
+			msg = "agent pod running"
+		}
+		if msg != run.Status.Message {
 			run.Status.Message = msg
 			if err := r.Status().Update(ctx, &run); err != nil {
 				logger.Error(err, "failed to update run message")
@@ -199,7 +219,56 @@ func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.
 	}
 	_ = r.Store.UpdateRunStatus(ctx, runID, phase, msg)
 
+	if r.Metrics != nil {
+		r.Metrics.RecordRunCompleted(run.Namespace, string(phase), "")
+		r.Metrics.DecActiveRuns()
+		if run.Status.StartedAt != nil {
+			duration := run.Status.CompletedAt.Time.Sub(run.Status.StartedAt.Time).Seconds()
+			r.Metrics.ObserveRunDuration(run.Namespace, "", duration)
+		}
+	}
+
+	// Collect and persist pod logs
+	r.collectPodLogs(ctx, run)
+
 	logger.Info("run completed", "name", run.Name, "phase", phase, "findings", len(findings))
+
+	// Emit notifications
+	if r.Notifier != nil {
+		evtType := notification.EventRunCompleted
+		severity := "info"
+		if phase == store.PhaseFailed {
+			evtType = notification.EventRunFailed
+			severity = "warning"
+		}
+		_ = r.Notifier.Notify(ctx, notification.Event{
+			Type:      evtType,
+			Severity:  severity,
+			Title:     fmt.Sprintf("Diagnostic Run %s", phase),
+			Message:   msg,
+			Resource:  run.Name,
+			Namespace: run.Namespace,
+			Cluster:   run.Spec.ClusterRef,
+			Timestamp: time.Now(),
+		})
+
+		// Emit per-critical-finding notifications
+		for _, f := range findings {
+			if f.Severity == "critical" {
+				_ = r.Notifier.Notify(ctx, notification.Event{
+					Type:      notification.EventCriticalFinding,
+					Severity:  "critical",
+					Title:     fmt.Sprintf("Critical Finding: %s", f.Title),
+					Message:   f.Description,
+					Resource:  fmt.Sprintf("%s/%s/%s", f.ResourceKind, f.ResourceNamespace, f.ResourceName),
+					Namespace: f.ResourceNamespace,
+					Cluster:   run.Spec.ClusterRef,
+					Timestamp: time.Now(),
+				})
+			}
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -240,6 +309,76 @@ func (r *DiagnosticRunReconciler) podWaitingReason(ctx context.Context, jobName,
 		}
 	}
 	return ""
+}
+
+// collectPodLogs reads the agent pod's stdout log and persists structured JSON
+// entries to the run_logs table. Each valid JSON line is parsed and stored;
+// non-JSON lines are stored as "info" type entries.
+func (r *DiagnosticRunReconciler) collectPodLogs(ctx context.Context, run *k8saiV1.DiagnosticRun) {
+	if r.Clientset == nil {
+		return
+	}
+	logger := log.FromContext(ctx)
+	runID := string(run.UID)
+	jobName := fmt.Sprintf("agent-%s", run.Name)
+
+	// Find pod(s) belonging to the job
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(run.Namespace),
+		client.MatchingLabels{"job-name": jobName},
+	); err != nil {
+		logger.Error(err, "failed to list pods for log collection")
+		return
+	}
+
+	for _, pod := range podList.Items {
+		logReq := r.Clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{})
+		stream, err := logReq.Stream(ctx)
+		if err != nil {
+			logger.Error(err, "failed to stream pod logs", "pod", pod.Name)
+			continue
+		}
+
+		scanner := bufio.NewScanner(stream)
+		for scanner.Scan() {
+			line := scanner.Text()
+			var entry struct {
+				Timestamp string      `json:"timestamp"`
+				RunID     string      `json:"run_id"`
+				Type      string      `json:"type"`
+				Message   string      `json:"message"`
+				Data      interface{} `json:"data"`
+			}
+
+			logEntry := store.RunLog{RunID: runID}
+			if err := json.Unmarshal([]byte(line), &entry); err == nil && entry.Message != "" {
+				logEntry.Timestamp = entry.Timestamp
+				logEntry.Type = entry.Type
+				logEntry.Message = entry.Message
+				if entry.Data != nil {
+					dataBytes, _ := json.Marshal(entry.Data)
+					logEntry.Data = string(dataBytes)
+				}
+			} else {
+				// Non-JSON line — store as info
+				logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+				logEntry.Type = "info"
+				logEntry.Message = line
+			}
+			if logEntry.Type == "" {
+				logEntry.Type = "info"
+			}
+			if logEntry.Timestamp == "" {
+				logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+			}
+
+			if err := r.Store.AppendRunLog(ctx, logEntry); err != nil {
+				logger.Error(err, "failed to persist log entry")
+			}
+		}
+		stream.Close()
+	}
 }
 
 func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {

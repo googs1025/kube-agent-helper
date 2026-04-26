@@ -23,6 +23,7 @@ function Nav() {
     { href: "/fixes", label: t("nav.fixes") },
     { href: "/events", label: t("nav.events") },
     { href: "/modelconfigs", label: t("nav.modelconfigs") },
+    { href: "/notifications", label: t("nav.notifications") },
     { href: "/clusters", label: t("nav.clusters") },
     { href: "/about", label: t("nav.about") },
   ];

@@ -87,6 +87,26 @@ func (m *memStore) InsertMetricSnapshot(_ context.Context, _ *store.MetricSnapsh
 func (m *memStore) QueryMetricHistory(_ context.Context, _ string, _ int) ([]*store.MetricSnapshot, error) {
 	return nil, nil
 }
+func (m *memStore) AppendRunLog(_ context.Context, _ store.RunLog) error { return nil }
+func (m *memStore) ListRunLogs(_ context.Context, _ string, _ int64) ([]store.RunLog, error) {
+	return nil, nil
+}
+func (m *memStore) ListRunsPaginated(_ context.Context, _ store.ListOpts) (store.PaginatedResult[*store.DiagnosticRun], error) {
+	return store.PaginatedResult[*store.DiagnosticRun]{}, nil
+}
+func (m *memStore) ListFixesPaginated(_ context.Context, _ store.ListOpts) (store.PaginatedResult[*store.Fix], error) {
+	return store.PaginatedResult[*store.Fix]{}, nil
+}
+func (m *memStore) ListEventsPaginated(_ context.Context, _ store.ListEventsOpts, _, _ int) (store.PaginatedResult[*store.Event], error) {
+	return store.PaginatedResult[*store.Event]{}, nil
+}
+func (m *memStore) DeleteRuns(_ context.Context, _ []string) error                              { return nil }
+func (m *memStore) BatchUpdateFixPhase(_ context.Context, _ []string, _ store.FixPhase, _ string) error { return nil }
+func (m *memStore) ListNotificationConfigs(_ context.Context) ([]*store.NotificationConfig, error) { return nil, nil }
+func (m *memStore) GetNotificationConfig(_ context.Context, _ string) (*store.NotificationConfig, error) { return nil, store.ErrNotFound }
+func (m *memStore) CreateNotificationConfig(_ context.Context, _ *store.NotificationConfig) error { return nil }
+func (m *memStore) UpdateNotificationConfig(_ context.Context, _ *store.NotificationConfig) error { return nil }
+func (m *memStore) DeleteNotificationConfig(_ context.Context, _ string) error { return nil }
 func (m *memStore) PurgeOldEvents(_ context.Context, _ time.Time) error  { return nil }
 func (m *memStore) PurgeOldMetrics(_ context.Context, _ time.Time) error { return nil }
 func (m *memStore) Close() error                                         { return nil }

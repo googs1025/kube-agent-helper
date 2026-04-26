@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -18,11 +19,13 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/collector"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/httpserver"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/reconciler"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/translator"
-	"github.com/kube-agent-helper/kube-agent-helper/internal/collector"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/metrics"
+	"github.com/kube-agent-helper/kube-agent-helper/internal/notification"
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 	sqlitestore "github.com/kube-agent-helper/kube-agent-helper/internal/store/sqlite"
 )
@@ -38,6 +41,16 @@ var (
 	prometheusURL      string
 	agentPrometheusURL string
 	metricsQueries     string
+
+	// Notification flags
+	notifyDedupTTL       string
+	notifyWebhookURL     string
+	notifyWebhookSecret  string
+	notifySlackURL       string
+	notifyDingTalkURL    string
+	notifyDingTalkSecret string
+	notifyFeishuURL      string
+	notifyFeishuSecret   string
 )
 
 func main() {
@@ -51,6 +64,14 @@ func main() {
 	flag.StringVar(&prometheusURL, "prometheus-url", "", "Prometheus API base URL for metric scraping (optional)")
 	flag.StringVar(&agentPrometheusURL, "agent-prometheus-url", "", "Prometheus URL injected into agent pods (defaults to --prometheus-url)")
 	flag.StringVar(&metricsQueries, "metrics-queries", "", "Comma-separated PromQL queries to scrape (optional)")
+	flag.StringVar(&notifyDedupTTL, "notify-dedup-ttl", "5m", "Notification deduplication window (e.g. 5m)")
+	flag.StringVar(&notifyWebhookURL, "notify-webhook-url", "", "Generic webhook URL for notifications")
+	flag.StringVar(&notifyWebhookSecret, "notify-webhook-secret", "", "HMAC secret for webhook signing")
+	flag.StringVar(&notifySlackURL, "notify-slack-url", "", "Slack incoming webhook URL")
+	flag.StringVar(&notifyDingTalkURL, "notify-dingtalk-url", "", "DingTalk robot webhook URL")
+	flag.StringVar(&notifyDingTalkSecret, "notify-dingtalk-secret", "", "DingTalk robot signing secret")
+	flag.StringVar(&notifyFeishuURL, "notify-feishu-url", "", "Feishu bot webhook URL")
+	flag.StringVar(&notifyFeishuSecret, "notify-feishu-secret", "", "Feishu bot signing secret")
 	flag.Parse()
 
 	// Fall back to environment variable if flag not set
@@ -126,11 +147,54 @@ func main() {
 
 	clusterRegistry := registry.NewClusterClientRegistry()
 
+	m := metrics.New()
+
+	// Notification manager
+	dedupTTL, _ := time.ParseDuration(notifyDedupTTL)
+	notifMgr := notification.NewManager(logger, dedupTTL)
+
+	// Try to load notification configs from DB first
+	dbConfigs, _ := st.ListNotificationConfigs(context.Background())
+	if len(dbConfigs) > 0 {
+		ncfgs := make([]*notification.NotificationConfig, len(dbConfigs))
+		for i, c := range dbConfigs {
+			ncfgs[i] = &notification.NotificationConfig{
+				ID: c.ID, Name: c.Name, Type: c.Type,
+				WebhookURL: c.WebhookURL, Secret: c.Secret,
+				Events: c.Events, Enabled: c.Enabled,
+			}
+		}
+		notifMgr.ReloadFromConfigs(ncfgs)
+		slog.Info("notification channels loaded from DB", "count", notifMgr.ChannelCount())
+	} else {
+		// Fall back to CLI flags
+		if notifyWebhookURL != "" {
+			notifMgr.Register(notification.NewWebhookChannel(notifyWebhookURL, notifyWebhookSecret))
+		}
+		if notifySlackURL != "" {
+			notifMgr.Register(notification.NewSlackChannel(notifySlackURL))
+		}
+		if notifyDingTalkURL != "" {
+			notifMgr.Register(notification.NewDingTalkChannel(notifyDingTalkURL, notifyDingTalkSecret))
+		}
+		if notifyFeishuURL != "" {
+			notifMgr.Register(notification.NewFeishuChannel(notifyFeishuURL, notifyFeishuSecret))
+		}
+		if notifMgr.ChannelCount() > 0 {
+			slog.Info("notification channels configured from CLI flags", "count", notifMgr.ChannelCount())
+		}
+	}
+	// Always inject notifier (DB-backed configs can be added later via API)
+	var notifier reconciler.NotifyDispatcher = notifMgr
+
 	if err := (&reconciler.DiagnosticRunReconciler{
 		Client:     mgr.GetClient(),
 		Store:      st,
 		Translator: tr,
 		Registry:   clusterRegistry,
+		Metrics:    m,
+		Notifier:   notifier,
+		Clientset:  kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup reconciler", "error", err)
 		os.Exit(1)
@@ -152,8 +216,10 @@ func main() {
 	}
 
 	if err := (&reconciler.DiagnosticFixReconciler{
-		Client: mgr.GetClient(),
-		Store:  st,
+		Client:   mgr.GetClient(),
+		Store:    st,
+		Metrics:  m,
+		Notifier: notifier,
 	}).SetupWithManager(mgr); err != nil {
 		slog.Error("setup fix reconciler", "error", err)
 		os.Exit(1)
@@ -175,7 +241,13 @@ func main() {
 	}
 
 	// HTTP server as manager Runnable
-	httpSrv := httpserver.New(st, mgr.GetClient(), fg)
+	httpOpts := []httpserver.Option{
+		httpserver.WithMetrics(m),
+		httpserver.WithNotifier(notifMgr),
+		httpserver.WithNotificationManager(notifMgr),
+		httpserver.WithClientset(kubeClient),
+	}
+	httpSrv := httpserver.New(st, mgr.GetClient(), fg, httpOpts...)
 	if err := mgr.Add(&runnableHTTP{srv: httpSrv, addr: httpAddr}); err != nil {
 		slog.Error("add http server", "error", err)
 		os.Exit(1)
@@ -191,9 +263,10 @@ func main() {
 		}
 	}
 	col := &collector.Collector{
-		Config: collector.DefaultConfig(),
-		Store:  st,
-		Client: kubeClient,
+		Config:  collector.DefaultConfig(),
+		Store:   st,
+		Client:  kubeClient,
+		Metrics: m,
 	}
 	col.Config.PrometheusURL = prometheusURL
 	col.Config.MetricsQueries = queries
