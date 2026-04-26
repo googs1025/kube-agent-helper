@@ -22,6 +22,23 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
+// DiagnosticFixReconciler 处理一次修复任务的完整生命周期。
+//
+// 状态机：
+//
+//	""  ──┬─[strategy=dry-run]─▶ DryRunComplete
+//	      ├─[approvalRequired]─▶ PendingApproval ──批准──▶ Approved
+//	      └─[autoApprove]──────▶ Approved
+//	   Approved ──snapshot──▶ Applying ──健康检查──▶ Succeeded
+//	                                  │
+//	                                  └─失败/超时──▶ Failed
+//	                                                  │
+//	                                                  └─autoRollback──▶ RolledBack
+//
+// 设计要点：
+//   - 应用前先抓快照（spec.rollback.snapshotBefore）存到 status，便于回滚
+//   - 健康检查用 Deployment.status.availableReplicas 等内建字段
+//   - 失败时按 spec.rollback.autoRollbackOnFailure 决定是否自动回滚
 type DiagnosticFixReconciler struct {
 	client.Client
 	Store    store.Store

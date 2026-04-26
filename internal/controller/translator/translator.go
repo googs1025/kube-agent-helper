@@ -1,3 +1,23 @@
+// Package translator 把 DiagnosticRun CR 翻译成 K8s 原生资源。
+//
+// 核心方法 Compile() 一次产出 4 个对象（按顺序 apply）：
+//
+//	┌──────────────────┐
+//	│ ServiceAccount    │ ─ Agent Pod 的身份
+//	│ ClusterRoleBind   │ ─ 绑定到内置 "view" ClusterRole（最小只读）
+//	│ ConfigMap         │ ─ 把选中的 Skill .md 文件挂到 /workspace/skills/
+//	│ Job               │ ─ 启动 Agent Pod，注入环境变量、挂卷
+//	└──────────────────┘
+//
+// 设计要点：
+//   - SkillProvider 接口（duck-typed）— 不直接依赖 registry 包；
+//     测试时可注入静态 skills 列表
+//   - ModelConfig 解析顺序：run.Spec.ModelConfigRef → ModelConfig CR →
+//     全局 flag fallback；任意一级缺失都能正确降级
+//   - 多集群：Compile 只生成对象、不 Create；调用方（Reconciler）自己
+//     选 client（本地或 ClusterClientRegistry.Get）做 Apply
+//
+// 配套：FixGenerator（fix_generator.go）专门为 DiagnosticFix 翻译 Job。
 package translator
 
 import (

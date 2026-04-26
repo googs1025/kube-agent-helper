@@ -12,7 +12,14 @@ import (
 	k8saiV1 "github.com/kube-agent-helper/kube-agent-helper/internal/controller/api/v1alpha1"
 )
 
-// ModelConfigReconciler validates ModelConfig resources and their Secret refs.
+// ModelConfigReconciler 仅做 ModelConfig 的合法性校验（Secret 是否存在等）。
+//
+// 设计上这是一个"只观察、不副作用"的 Reconciler：
+//   - 不写 Store
+//   - 不改其它 CR
+//   - 只在 status 上记 Ready/Error 信息供 UI 展示
+//
+// 真正消费 ModelConfig 的是 Translator.resolveModelConfig（运行时按 ref 取）。
 type ModelConfigReconciler struct {
 	client.Client
 }

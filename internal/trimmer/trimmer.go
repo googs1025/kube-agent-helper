@@ -1,3 +1,16 @@
+// Package trimmer 把 K8s 资源对象投影成"列表精简版"，节省 LLM token。
+//
+// 工作场景：MCP 工具 kubectl_get 在 list 模式返回大量资源时，
+// 完整对象一项动辄几十 KB，会很快撑爆 LLM 上下文。
+// 这里按 Kind（Pod/Deployment/Service/Node/Event）只保留诊断必需字段：
+//
+//   Pod      → name + status.phase + containerStatuses(reason/restartCount)
+//   Deploy   → name + replicas + available/updated + condition reasons
+//   Service  → name + type + clusterIP + ports
+//   Node     → name + addresses + conditions(Ready/Memory/Disk Pressure)
+//   Event    → reason + message + count + lastTimestamp
+//
+// 不在清单中的 Kind 走通用投影（保留 metadata + status 顶层字段）。
 package trimmer
 
 import (

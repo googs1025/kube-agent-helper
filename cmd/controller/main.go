@@ -1,3 +1,30 @@
+// Command controller — kube-agent-helper 的主进程入口。
+//
+// 启动顺序（按 main 函数）：
+//
+//	[1] 解析 flag（--db / --agent-image / --notify-* …）
+//	[2] 初始化 SQLite Store
+//	[3] 加载 builtin 技能（/skills/*.md → store）
+//	[4] 创建 controller-runtime Manager（监听本地 K8s）
+//	[5] 装配子组件并依赖注入：
+//	       SkillRegistry、ClusterClientRegistry、Translator、FixGenerator、
+//	       Metrics、NotificationManager（DB 优先，flag 兜底）
+//	[6] 注册 6 个 Reconciler：
+//	       DiagnosticRun / Skill / ModelConfig / Fix / ScheduledRun / ClusterConfig
+//	[7] 注册 HTTP Server 与 Collector 为 manager.Runnable，
+//	       与 Reconciler 共享生命周期、退出信号
+//	[8] mgr.Start(ctx) 阻塞直到 SIGTERM/SIGINT
+//
+// 关键 flag：
+//
+//	--db                       SQLite 文件路径
+//	--http-addr                HTTP API 监听地址
+//	--agent-image              注入到 Job 的 Agent Pod 镜像
+//	--controller-url           Agent Pod 回调 controller 的 URL
+//	--prometheus-url           Collector 抓取指标的 Prometheus 地址
+//	--agent-prometheus-url     Agent Pod 内可用的 Prometheus 地址（默认沿用上一个）
+//	--anthropic-base-url/--model  全局 LLM 配置（可被 ModelConfig CR 覆盖）
+//	--notify-{webhook,slack,dingtalk,feishu}-url[/secret]  通知通道（兜底）
 package main
 
 import (

@@ -1,3 +1,16 @@
+/**
+ * 双语 i18n 上下文（中文 / English）。
+ *
+ * 字典文件：zh.json / en.json，结构是嵌套 JSON（runs.form.name 之类的点路径）。
+ * 也支持半扁平 key（runs.stat.total 既可以是 dict.runs.stat.total，也可以
+ * 是 dict.runs["stat.total"]）— 这是为了兼容渐进迁移。
+ *
+ * 用法：
+ *   const { t, lang, setLang } = useI18n();
+ *   t("runs.form.name")     // "Run name" 或 "运行名称"
+ *
+ * 切换语言会写 localStorage["kah-lang"]，并通过 storage 事件跨标签页同步。
+ */
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";

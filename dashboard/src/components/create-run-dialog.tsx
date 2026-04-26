@@ -1,3 +1,19 @@
+/**
+ * 新建诊断任务弹窗。
+ *
+ * 提交流程：
+ *   表单 → POST /api/runs → 后端 HTTP server 创建 DiagnosticRun CR
+ *   → DiagnosticRunReconciler 接管，翻译成 Job 启动 Agent Pod
+ *
+ * 字段：
+ *   - name             K8s CR name（用户输入或自动生成）
+ *   - namespace        CR 所在命名空间
+ *   - scope            namespace（指定 namespaces 列表）/ cluster（全集群）
+ *   - skills           可选；为空则用所有启用的技能
+ *   - clusterRef       目标集群名（来自 ClusterToggle 的当前值）
+ *   - timeoutSeconds   超时（0 = 不超时）
+ *   - outputLanguage   findings 输出语言（zh/en，跟随当前 i18n）
+ */
 "use client";
 
 import { useState } from "react";

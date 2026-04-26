@@ -1,3 +1,17 @@
+/**
+ * 后端 API 客户端集合（基于 SWR + fetch）。
+ *
+ * 设计约定：
+ *   - 所有读取用 SWR hook（useXxx），自带 revalidate / 缓存
+ *   - 所有写入用 async function，返回 Promise<T>
+ *   - URL 都走相对路径 /api/...，由 [...proxy] 转发到后端
+ *   - useXxx 接受可选的 { cluster } 参数，附加 ?cluster= 用于多集群过滤
+ *
+ * 刷新频率：
+ *   - useRuns / useRun     5 秒（运行中状态变化频繁）
+ *   - useClusterConfigs    30 秒（集群配置不常变）
+ *   - 列表分页类（useRunsPaginated）跟随表格状态变更触发，不固定轮询
+ */
 import useSWR from "swr";
 import type { DiagnosticRun, Finding, Skill, CreateRunRequest, CreateSkillRequest, Fix, KubeEvent, ModelConfig, PaginatedResult, ListParams } from "./types";
 

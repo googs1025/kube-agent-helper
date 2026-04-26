@@ -1,3 +1,19 @@
+// Package notification 实现事件通知扇出与多通道集成。
+//
+// 架构角色：
+//   - Manager 维护一组 Notifier（Webhook / Slack / DingTalk / Feishu），
+//     接收来自 Reconciler 的 Event 后并行投递到所有匹配的通道。
+//   - 通过 NotifyDispatcher 接口（在 reconciler 包定义）反向暴露给 Reconciler，
+//     避免 reconciler ↔ notification 包形成循环依赖。
+//
+// 关键能力：
+//   - 去重：按 (Type, Resource) 组合做 dedup，默认 5 分钟窗口。
+//   - 事件过滤：每个通道可配置只接收某些 EventType，未配置 = 全收。
+//   - 热重载：ReloadFromConfigs 可被 HTTP API 调用，DB 配置变更后立即生效。
+//
+// 配置来源（启动时按优先级）：
+//  1. SQLite notification_configs 表（HTTP API 增删改）— 推荐
+//  2. controller 启动 flag（--notify-slack-url 等）— 备选
 package notification
 
 import (

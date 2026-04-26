@@ -1,4 +1,17 @@
-"""POSTs findings back to the Controller with exponential backoff retry."""
+"""把 findings 回报给 controller，带指数退避重试。
+
+调用关系：
+    Agent Pod ──POST── /internal/runs/{run_id}/findings ──▶ controller HTTP server
+                                                              └─▶ Store.CreateFinding
+
+为什么逐条 POST 而不是批量：
+    - 一旦其中一条失败也只丢这一条，其它仍可写入
+    - controller 端 finding 写入是幂等的（按 RunID+Title 去重）
+
+CONTROLLER_URL 默认指 cluster-internal Service：
+    http://controller.kube-agent-helper.svc:8080
+跨集群场景下，远端 Pod 通过 NodePort/Ingress/双向 VPC 回到 controller。
+"""
 import os
 import time
 

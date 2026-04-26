@@ -1,3 +1,14 @@
+// Package k8sclient 集中构造给 MCP 工具用的所有客户端。
+//
+// 一个 Clients 结构封装：
+//   - kubernetes.Interface (typed)  ─ 标准 Pod/Deployment 等
+//   - dynamic.Interface              ─ 任意 GVR (CRD 也能用)
+//   - metricsv.Interface             ─ metrics.k8s.io（top_pods/top_nodes 用）
+//   - prometheus.API                 ─ 历史指标（PromQL 查询）
+//   - Mapper（mapper.go）             ─ Kind ↔ GVR 解析
+//
+// 工厂在 cmd/kah 和 cmd/...mcp-server 启动时调用一次，
+// 注入到所有 ToolHandler。Metrics / Prometheus 为 nil 安全 — 工具内做能力降级。
 package k8sclient
 
 import (

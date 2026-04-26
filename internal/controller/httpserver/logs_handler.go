@@ -1,3 +1,24 @@
+// logs_handler.go ─ /api/runs/{id}/logs[?follow=true] 端点实现。
+//
+// 数据源选择策略：
+//
+//	┌──────────────┐  非终态 + clientset 可用   ┌───────────────────┐
+//	│ Run 状态判定 │ ───────────────────────▶  │ 直读 Pod 日志      │
+//	└──────┬───────┘                            │ (clientset Stream) │
+//	       │                                    └─────────┬──────────┘
+//	       │ 终态 / pod 找不到                            │ 找不到 pod
+//	       ▼                                              │
+//	┌──────────────┐                                      │
+//	│ 读 SQLite    │ ◀───────────────────────────────────┘ fallback
+//	│ run_logs 表   │
+//	└──────────────┘
+//
+// 两种响应格式：
+//   - follow=false → JSON 数组（一次性返回当前所有日志）
+//   - follow=true  → SSE 流（"data: {...}\n\n" 推送，结束发 "event: done"）
+//
+// findAgentPod 必须用 typed clientset 而非 controller-runtime cache，
+// 因为后者只缓存通过 For()/Owns() 注册的资源，Pod 不在其中。
 package httpserver
 
 import (

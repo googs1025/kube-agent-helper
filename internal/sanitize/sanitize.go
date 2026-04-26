@@ -1,3 +1,16 @@
+// Package sanitize 在 K8s 资源对象返回给 LLM 前做敏感字段脱敏。
+//
+// 用途：MCP 工具（kubectl_get / describe）返回 Pod / Secret / ConfigMap 时，
+// 用 Clean(obj, opts) 去掉以下内容防止泄漏给 LLM 或日志：
+//   - Secret.data 全部置空
+//   - ConfigMap.data 中匹配 ConfigMapKeyMask 的 key 置空
+//   - Pod env / volumeMounts / serviceAccountToken 中的密文字段
+//   - managedFields / lastAppliedConfiguration 等噪声字段
+//
+// 设计要点：
+//   - 输入对象不修改（DeepCopy 后操作）
+//   - 幂等：Clean(Clean(x)) == Clean(x)
+//   - 配合 trimmer 一起用，先 trim 再 sanitize
 package sanitize
 
 import (

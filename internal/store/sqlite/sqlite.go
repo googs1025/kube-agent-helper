@@ -883,6 +883,11 @@ func (s *SQLiteStore) DeleteNotificationConfig(ctx context.Context, id string) e
 
 // ── Batch operations ──────────────────────────────────────────────────────────
 
+// DeleteRuns 级联删除一批 run。
+//
+// 子表（findings / run_logs / fixes）通过 run_id FK 引用 diagnostic_runs，
+// 直接删主表会触发 FOREIGN KEY constraint failed。这里在事务内先清子表再删主表，
+// 保证幂等：任何 ID 不存在都不报错。
 func (s *SQLiteStore) DeleteRuns(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -893,10 +898,25 @@ func (s *SQLiteStore) DeleteRuns(ctx context.Context, ids []string) error {
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	query := fmt.Sprintf("DELETE FROM diagnostic_runs WHERE id IN (%s)",
-		strings.Join(placeholders, ","))
-	_, err := s.db.ExecContext(ctx, query, args...)
-	return err
+	in := strings.Join(placeholders, ",")
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, table := range []string{"findings", "run_logs", "fixes"} {
+		q := fmt.Sprintf("DELETE FROM %s WHERE run_id IN (%s)", table, in)
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			return fmt.Errorf("delete %s: %w", table, err)
+		}
+	}
+	q := fmt.Sprintf("DELETE FROM diagnostic_runs WHERE id IN (%s)", in)
+	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+		return fmt.Errorf("delete diagnostic_runs: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) BatchUpdateFixPhase(ctx context.Context, ids []string, phase store.FixPhase, msg string) error {

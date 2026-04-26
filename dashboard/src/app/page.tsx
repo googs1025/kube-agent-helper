@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRunsPaginated } from "@/lib/api";
+import { useRunsPaginated, deleteRunsBatch } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import { useCluster } from "@/cluster/context";
 import { PhaseBadge } from "@/components/phase-badge";
 import { CreateRunDialog } from "@/components/create-run-dialog";
 import { Pagination } from "@/components/Pagination";
 import { FilterBar, type FilterField } from "@/components/FilterBar";
+import { BatchToolbar } from "@/components/BatchToolbar";
 import { useTableState } from "@/hooks/useTableState";
 import { Activity, Cpu, Wrench } from "lucide-react";
 import {
@@ -46,7 +47,7 @@ const RUN_FILTER_FIELDS: FilterField[] = [
 export default function RunsPage() {
   const { t } = useI18n();
   const { cluster } = useCluster();
-  const table = useTableState({ pageSize: 20 });
+  const table = useTableState({ pageSize: 20 }, { syncURL: true, urlPrefix: "runs" });
   const { data, error, isLoading, mutate } = useRunsPaginated({
     ...table.params,
     cluster,
@@ -54,6 +55,18 @@ export default function RunsPage() {
 
   const runs = data?.items;
   const total = data?.total ?? 0;
+
+  const handleBatchDelete = async () => {
+    if (table.selected.size === 0) return;
+    if (!window.confirm(t("batch.confirm"))) return;
+    try {
+      await deleteRunsBatch(Array.from(table.selected));
+      table.clearSelection();
+      mutate();
+    } catch (e) {
+      window.alert(`${t("common.deleteFailed")}: ${(e as Error).message}`);
+    }
+  };
 
   const featureCards = [
     { icon: Activity, title: t("overview.card.runs.title"), desc: t("overview.card.runs.desc"), href: "#runs", color: "text-primary" },
@@ -108,6 +121,15 @@ export default function RunsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={runs.length > 0 && table.selected.size === runs.length}
+                      onChange={() => table.selectAll(runs.map((r) => r.ID))}
+                      className="rounded border-border"
+                      aria-label="select all"
+                    />
+                  </TableHead>
                   <TableHead>{t("runs.col.id")}</TableHead>
                   <TableHead>{t("runs.col.phase")}</TableHead>
                   <TableHead>{t("runs.col.created")}</TableHead>
@@ -126,7 +148,16 @@ export default function RunsPage() {
                     /* ignore */
                   }
                   return (
-                    <TableRow key={run.ID}>
+                    <TableRow key={run.ID} data-selected={table.selected.has(run.ID) || undefined}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={table.selected.has(run.ID)}
+                          onChange={() => table.toggleSelect(run.ID)}
+                          className="rounded border-border"
+                          aria-label={`select ${run.ID}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Link href={`/runs/${run.ID}`} className="font-mono text-sm text-primary hover:underline">
                           {run.Name || run.ID.slice(0, 8)}
@@ -154,6 +185,14 @@ export default function RunsPage() {
           />
         </>
       )}
+
+      <BatchToolbar
+        count={table.selected.size}
+        actions={[
+          { labelKey: "batch.delete", variant: "destructive", onClick: handleBatchDelete },
+        ]}
+        onClear={table.clearSelection}
+      />
     </div>
   );
 }

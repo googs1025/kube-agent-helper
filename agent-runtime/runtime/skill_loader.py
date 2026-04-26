@@ -1,4 +1,19 @@
-"""Loads SKILL.md files from /workspace/skills/"""
+"""加载 /workspace/skills/*.md 技能文件。
+
+Skill 文件格式（与 controller-side parseSkillMD 保持一致）：
+
+    ---
+    name: pod-health
+    dimension: health
+    tools: ["kubectl_get", "kubectl_describe", "events_list"]
+    requires_data: []
+    ---
+
+    <这里是 prompt 主体，会拼接到 system prompt 的 skill 列表中>
+
+来源：Controller Translator 把启用的 Skills 写入 ConfigMap，挂到
+/workspace/skills/<name>.md，所以这里读到的是 controller 选定的子集。
+"""
 import os
 import re
 from dataclasses import dataclass, field

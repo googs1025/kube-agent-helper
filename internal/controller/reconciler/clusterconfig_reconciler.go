@@ -15,6 +15,16 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/controller/registry"
 )
 
+// ClusterConfigReconciler 把 ClusterConfig CR 转换为可用的远程集群 client。
+//
+// 流程：
+//   1. 监听 ClusterConfig CR 变更
+//   2. 读取 spec.kubeConfigRef 引用的 Secret，取出 kubeconfig
+//   3. 用 clientcmd 解析 → rest.Config → 构建 controller-runtime client
+//   4. 调用 Registry.Set(name, client)，DiagnosticRunReconciler 通过 Get(name) 使用
+//   5. CR 删除时 Registry.Delete(name)，回收资源
+//
+// 是多集群方案的"外部世界 → 内存 client 表"的桥梁。
 type ClusterConfigReconciler struct {
 	client.Client
 	Registry *registry.ClusterClientRegistry

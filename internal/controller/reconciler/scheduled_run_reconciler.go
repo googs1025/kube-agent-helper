@@ -23,6 +23,16 @@ const (
 
 var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
+// ScheduledRunReconciler 处理"诊断模板"（spec.schedule 不为空的 DiagnosticRun）。
+//
+// 工作方式：
+//   - 模板自身永不变成 Running，只用 cron 表达式调度子 Run
+//   - 每次到点：克隆模板 spec（除 schedule 字段），创建一个新的 DiagnosticRun
+//     子任务（带 scheduledByLabel 标签指向模板）
+//   - HistoryLimit（默认 10）控制保留多少条历史子任务，超出按时间排序删除
+//   - status.nextRunAt 写下次触发时间，供 UI 展示
+//
+// 普通 Run（无 schedule）走 DiagnosticRunReconciler；模板 Run 走这里。
 type ScheduledRunReconciler struct {
 	client.Client
 }

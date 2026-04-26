@@ -53,7 +53,7 @@ const FIX_FILTER_FIELDS: FilterField[] = [
 export default function FixesPage() {
   const { t } = useI18n();
   const { cluster } = useCluster();
-  const table = useTableState({ pageSize: 20 });
+  const table = useTableState({ pageSize: 20 }, { syncURL: true, urlPrefix: "fixes" });
   const { data, error, isLoading, mutate } = useFixesPaginated({
     ...table.params,
     cluster,
@@ -68,8 +68,8 @@ export default function FixesPage() {
       await batchApproveFixes(Array.from(table.selected));
       table.clearSelection();
       mutate();
-    } catch {
-      // ignore
+    } catch (e) {
+      window.alert(`${t("common.actionFailed")}: ${(e as Error).message}`);
     }
   };
 
@@ -79,8 +79,8 @@ export default function FixesPage() {
       await batchRejectFixes(Array.from(table.selected));
       table.clearSelection();
       mutate();
-    } catch {
-      // ignore
+    } catch (e) {
+      window.alert(`${t("common.actionFailed")}: ${(e as Error).message}`);
     }
   };
 

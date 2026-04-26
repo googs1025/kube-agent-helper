@@ -1,3 +1,26 @@
+// Package httpserver 实现控制器对外的 REST API（默认监听 :8080）。
+//
+// 端点分组：
+//
+//	/api/runs          诊断任务的 CRUD（POST 创建会同时创建 DiagnosticRun CR）
+//	/api/runs/{id}/logs       SSE 实时日志流（运行中读 Pod，完成读 DB）
+//	/api/runs/{id}/findings   单次诊断的 Findings 列表
+//	/api/findings      跨任务查询 Findings
+//	/api/skills        技能管理（builtin + DiagnosticSkill CR）
+//	/api/fixes         修复任务（POST 批准/拒绝）
+//	/api/clusters      多集群配置（联动 ClusterConfig CR）
+//	/api/modelconfigs  LLM 配置
+//	/api/notifications 通知配置（changes 自动 reload Manager）
+//	/api/events        K8s 事件查询
+//	/internal/runs/{id}/findings  Agent 回调，写入 finding（仅集群内访问）
+//	/metrics           Prometheus 指标
+//
+// 关键设计：
+//   - Server 通过 functional Option（WithMetrics / WithNotifier / WithClientset…）
+//     可选注入依赖，便于测试。
+//   - SSE 端点直接调用 clientset.GetLogs Stream() 透传 Pod 日志，
+//     完成后切换到 SQLite run_logs 表。详见 logs_handler.go。
+//   - 所有 list 端点支持 ?cluster= 过滤，配合多集群 UI。
 package httpserver
 
 import (
@@ -1550,6 +1573,14 @@ func parsePaginatedOpts(r *http.Request) store.ListOpts {
 }
 
 // DELETE /api/runs/batch
+//
+// 完整删除链路：
+//  1. 找到每个 ID 对应的 DiagnosticRun CR（按 .metadata.uid 匹配 store ID）
+//  2. 删 CR — Kubernetes GC 会顺带回收 OwnerReferences 指向它的 Job/Pod
+//  3. 删 SQLite 行 — 否则 reconciler 不会再看到这条记录而漏清
+//
+// 关键：必须先删 CR 再删 store。否则 Pending/Running 阶段的 reconciler 会把
+// store 行重新写回（CreateRun 调用），看起来"删不掉"。
 func (s *Server) handleAPIRunsBatch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1566,6 +1597,27 @@ func (s *Server) handleAPIRunsBatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ids required", http.StatusBadRequest)
 		return
 	}
+
+	// Try to delete the K8s CR for each ID. Look up by UID across all namespaces.
+	idSet := make(map[string]bool, len(body.IDs))
+	for _, id := range body.IDs {
+		idSet[id] = true
+	}
+	if s.k8sClient != nil {
+		var crList v1alpha1.DiagnosticRunList
+		if err := s.k8sClient.List(r.Context(), &crList); err == nil {
+			for i := range crList.Items {
+				cr := &crList.Items[i]
+				if idSet[string(cr.UID)] {
+					if err := s.k8sClient.Delete(r.Context(), cr); err != nil && !errors.IsNotFound(err) {
+						http.Error(w, fmt.Sprintf("delete CR %s: %s", cr.Name, err), http.StatusInternalServerError)
+						return
+					}
+				}
+			}
+		}
+	}
+
 	if err := s.store.DeleteRuns(r.Context(), body.IDs); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

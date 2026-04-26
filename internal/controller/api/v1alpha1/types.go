@@ -1,3 +1,26 @@
+// Package v1alpha1 定义系统全部 CRD 类型。
+//
+// 资源关系：
+//
+//	ClusterConfig（远程集群配置） ◀──┐
+//	                                │ spec.clusterRef
+//	                                │
+//	DiagnosticSkill ◀── DiagnosticRun ──▶ ModelConfig
+//	  (诊断能力)         (一次诊断任务)      (LLM 配置)
+//	                       │
+//	                       │ 产出
+//	                       ▼
+//	                    Findings ──▶ DiagnosticFix
+//	                                 (修复建议，可批准/应用)
+//
+//	ScheduledRun（cron 模板，由 spec.schedule 启用）
+//	   └─▶ 周期性创建子 DiagnosticRun
+//
+// 这些类型的 Reconciler 在 internal/controller/reconciler 包，每种 CRD 一个。
+// 其中 DiagnosticRunReconciler 是核心 — 它负责把 CR 翻译成 K8s Job 并跟踪生命周期。
+//
+// kubebuilder marker（// +kubebuilder:...）用于 controller-gen 生成 deepcopy
+// 函数和 CRD YAML（输出到 deploy/helm/templates/crds/）。
 package v1alpha1
 
 import (
