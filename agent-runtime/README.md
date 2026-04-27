@@ -51,10 +51,10 @@ The Go binary (`k8s-mcp-server`) exposes the following tools:
 
 | Tool | Description |
 |---|---|
-| `kubectl_get` | List Kubernetes resources (max 50 items) |
+| `kubectl_get` | List Kubernetes resources (max 200 items) |
 | `kubectl_describe` | Describe a specific resource |
 | `kubectl_logs` | Fetch pod logs |
-| `events_list` | List cluster events (max 50, newest first) |
+| `events_list` | List cluster events (max 200, newest first) |
 | `prometheus_alerts` | Query firing Prometheus alerts |
 | `prometheus_query` | Run a PromQL query |
 | `node_status_summary` | Summarize node conditions |
