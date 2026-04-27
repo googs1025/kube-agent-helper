@@ -69,6 +69,8 @@ var (
 	agentPrometheusURL string
 	metricsQueries     string
 
+	langfuseSecret string
+
 	// Notification flags
 	notifyDedupTTL       string
 	notifyWebhookURL     string
@@ -91,6 +93,7 @@ func main() {
 	flag.StringVar(&prometheusURL, "prometheus-url", "", "Prometheus API base URL for metric scraping (optional)")
 	flag.StringVar(&agentPrometheusURL, "agent-prometheus-url", "", "Prometheus URL injected into agent pods (defaults to --prometheus-url)")
 	flag.StringVar(&metricsQueries, "metrics-queries", "", "Comma-separated PromQL queries to scrape (optional)")
+	flag.StringVar(&langfuseSecret, "langfuse-secret", "", "K8s Secret name containing Langfuse credentials (publicKey/secretKey/host)")
 	flag.StringVar(&notifyDedupTTL, "notify-dedup-ttl", "5m", "Notification deduplication window (e.g. 5m)")
 	flag.StringVar(&notifyWebhookURL, "notify-webhook-url", "", "Generic webhook URL for notifications")
 	flag.StringVar(&notifyWebhookSecret, "notify-webhook-secret", "", "HMAC secret for webhook signing")
@@ -158,18 +161,20 @@ func main() {
 		effectiveAgentPrometheusURL = prometheusURL
 	}
 	tr := translator.NewWithClient(translator.Config{
-		AgentImage:       agentImage,
-		ControllerURL:    controllerURL,
-		AnthropicBaseURL: anthropicBaseURL,
-		Model:            model,
-		PrometheusURL:    effectiveAgentPrometheusURL,
+		AgentImage:         agentImage,
+		ControllerURL:      controllerURL,
+		AnthropicBaseURL:   anthropicBaseURL,
+		Model:              model,
+		PrometheusURL:      effectiveAgentPrometheusURL,
+		LangfuseSecretName: langfuseSecret,
 	}, reg, mgr.GetClient())
 
 	fg := translator.NewFixGenerator(translator.FixGeneratorConfig{
-		AgentImage:       agentImage,
-		ControllerURL:    controllerURL,
-		AnthropicBaseURL: anthropicBaseURL,
-		Model:            model,
+		AgentImage:         agentImage,
+		ControllerURL:      controllerURL,
+		AnthropicBaseURL:   anthropicBaseURL,
+		Model:              model,
+		LangfuseSecretName: langfuseSecret,
 	})
 
 	clusterRegistry := registry.NewClusterClientRegistry()

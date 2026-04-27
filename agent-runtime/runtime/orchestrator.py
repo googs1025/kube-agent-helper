@@ -31,6 +31,7 @@ import anthropic
 from . import logger
 from .mcp_client import discover_tools, call_mcp_tool
 from .skill_loader import Skill
+from . import tracer as _tracer_mod
 
 
 TARGET_NAMESPACES = os.environ.get("TARGET_NAMESPACES", "default")
@@ -72,9 +73,13 @@ Instructions:
 """
 
 
-def run_agent(skills: List[Skill]) -> List[dict]:
+def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
     """Run the agentic loop using streaming API and return a list of findings."""
+    if tracer is None:
+        tracer = _tracer_mod._NoOp()
+
     client = anthropic.Anthropic()
+    model = os.environ.get("MODEL", "claude-sonnet-4-6")
 
     tools = discover_tools()
     logger.info("discovered MCP tools", count=len(tools))
@@ -93,6 +98,19 @@ def run_agent(skills: List[Skill]) -> List[dict]:
         # Use streaming to work with proxies that only support stream mode
         response = _stream_message(client, tools, messages)
         logger.info("response", stop_reason=response['stop_reason'], blocks=len(response['content']))
+
+        # Record LLM turn as Langfuse generation.
+        # sanitize_messages strips raw tool_result payloads before sending to
+        # an external service to prevent sensitive cluster data leakage.
+        text_output = next((b["text"] for b in response["content"] if b["type"] == "text"), "")
+        tracer.generation(
+            name=f"turn-{turn + 1}",
+            model=model,
+            input=_tracer_mod.sanitize_messages(messages),
+            output=text_output,
+            usage={"input": response.get("input_tokens", 0), "output": response.get("output_tokens", 0)},
+            metadata={"stop_reason": response["stop_reason"], "turn": turn + 1},
+        )
 
         # Build assistant message content for conversation history
         assistant_content = []
@@ -176,6 +194,8 @@ def _stream_message(client, tools, messages) -> dict:
 
     content_blocks = {}  # index -> block dict
     stop_reason = "end_turn"
+    input_tokens = 0
+    output_tokens = 0
 
     with httpx.stream("POST", url, headers=headers, json=payload, timeout=120) as resp:
         resp.raise_for_status()
@@ -193,7 +213,11 @@ def _stream_message(client, tools, messages) -> dict:
 
             etype = event.get("type", "")
 
-            if etype == "content_block_start":
+            if etype == "message_start":
+                usage = event.get("message", {}).get("usage", {})
+                input_tokens = usage.get("input_tokens", 0)
+
+            elif etype == "content_block_start":
                 idx = event.get("index", 0)
                 block = event.get("content_block", {})
                 btype = block.get("type", "")
@@ -225,6 +249,7 @@ def _stream_message(client, tools, messages) -> dict:
                 delta = event.get("delta", {})
                 if delta.get("stop_reason"):
                     stop_reason = delta["stop_reason"]
+                output_tokens = event.get("usage", {}).get("output_tokens", output_tokens)
 
     # Post-process: parse tool_use input JSON, drop thinking blocks
     result_blocks = []
@@ -239,4 +264,5 @@ def _stream_message(client, tools, messages) -> dict:
                 block["input"] = {}
         result_blocks.append(block)
 
-    return {"content": result_blocks, "stop_reason": stop_reason}
+    return {"content": result_blocks, "stop_reason": stop_reason,
+            "input_tokens": input_tokens, "output_tokens": output_tokens}

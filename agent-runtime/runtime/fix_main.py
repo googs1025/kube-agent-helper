@@ -24,6 +24,7 @@ import sys
 import httpx
 
 from .mcp_client import call_mcp_tool
+from . import tracer as _tracer
 
 
 CONTROLLER_URL = os.environ["CONTROLLER_URL"]
@@ -33,6 +34,7 @@ MODEL = os.environ.get("MODEL", "claude-sonnet-4-6")
 
 def main() -> int:
     finding = json.loads(os.environ["FIX_INPUT_JSON"])
+    tr = _tracer.init_fix(finding["findingID"], finding["runID"])
 
     target = finding["target"]
     print(f"[info] generating fix for finding {finding['findingID']} on "
@@ -66,10 +68,21 @@ def main() -> int:
     else:
         prompt = build_create_prompt(finding, OUTPUT_LANG)
     try:
-        text = _stream_llm_call(prompt)
+        text, input_tokens, output_tokens = _stream_llm_call(prompt)
     except Exception as e:
         print(f"[error] LLM call failed: {e}", file=sys.stderr)
+        tr.flush()
         return 2
+
+    tr.generation(
+        name="fix-generation",
+        model=MODEL,
+        input=[{"role": "user", "content": prompt}],
+        output=text,
+        usage={"input": input_tokens, "output": output_tokens},
+        metadata={"finding_id": finding["findingID"], "strategy": "patch" if resource_exists else "create"},
+    )
+    tr.flush()
     try:
         parsed = parse_patch_json(text)
     except (json.JSONDecodeError, ValueError) as e:
@@ -205,13 +218,8 @@ def _api_version_for_kind(kind: str) -> str:
     }.get(kind, "")
 
 
-def _stream_llm_call(prompt: str) -> str:
-    """Call Anthropic via raw SSE streaming, accumulate text, return it.
-
-    Uses httpx directly instead of the Anthropic SDK's non-streaming call to
-    match the behavior of proxies like myphxtwo.reborn.tk that only respond
-    correctly on the streaming endpoint.
-    """
+def _stream_llm_call(prompt: str) -> tuple[str, int, int]:
+    """Call Anthropic via raw SSE streaming, return (text, input_tokens, output_tokens)."""
     api_key = os.environ["ANTHROPIC_API_KEY"]
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
     if base_url.endswith("/v1/messages"):
@@ -233,6 +241,8 @@ def _stream_llm_call(prompt: str) -> str:
     }
 
     text_buf = ""
+    input_tokens = 0
+    output_tokens = 0
     with httpx.stream("POST", url, headers=headers, json=payload, timeout=60) as resp:
         resp.raise_for_status()
         for raw_line in resp.iter_lines():
@@ -246,11 +256,16 @@ def _stream_llm_call(prompt: str) -> str:
                 event = json.loads(data_str)
             except json.JSONDecodeError:
                 continue
-            if event.get("type") == "content_block_delta":
+            etype = event.get("type", "")
+            if etype == "message_start":
+                input_tokens = event.get("message", {}).get("usage", {}).get("input_tokens", 0)
+            elif etype == "content_block_delta":
                 delta = event.get("delta", {})
                 if delta.get("type") == "text_delta":
                     text_buf += delta.get("text", "")
-    return text_buf
+            elif etype == "message_delta":
+                output_tokens = event.get("usage", {}).get("output_tokens", output_tokens)
+    return text_buf, input_tokens, output_tokens
 
 
 if __name__ == "__main__":

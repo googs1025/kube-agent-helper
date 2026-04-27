@@ -16,10 +16,11 @@ import (
 // FixGeneratorConfig configures the short-lived Job that asks the LLM
 // to propose a patch for a single finding.
 type FixGeneratorConfig struct {
-	AgentImage       string
-	ControllerURL    string
-	AnthropicBaseURL string
-	Model            string
+	AgentImage          string
+	ControllerURL       string
+	AnthropicBaseURL    string
+	Model               string
+	LangfuseSecretName  string // optional; if set, injects LANGFUSE_* env vars
 }
 
 type FixGenerator struct {
@@ -91,7 +92,7 @@ func (g *FixGenerator) Compile(run *k8saiV1.DiagnosticRun, finding *store.Findin
 						Name:    "fix-generator",
 						Image:   g.cfg.AgentImage,
 						Command: []string{"python", "-m", "runtime.fix_main"},
-						Env: []corev1.EnvVar{
+						Env: append([]corev1.EnvVar{
 							{Name: "FIX_INPUT_JSON", Value: string(inputJSON)},
 							{Name: "CONTROLLER_URL", Value: g.cfg.ControllerURL},
 							{Name: "MCP_SERVER_PATH", Value: "/usr/local/bin/k8s-mcp-server"},
@@ -109,7 +110,7 @@ func (g *FixGenerator) Compile(run *k8saiV1.DiagnosticRun, finding *store.Findin
 									},
 								},
 							},
-						},
+						}, langfuseEnvVars(g.cfg.LangfuseSecretName)...),
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("50m"),

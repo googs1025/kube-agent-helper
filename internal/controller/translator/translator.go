@@ -37,11 +37,12 @@ import (
 )
 
 type Config struct {
-	AgentImage       string
-	ControllerURL    string
-	AnthropicBaseURL string
-	Model            string
-	PrometheusURL    string
+	AgentImage          string
+	ControllerURL       string
+	AnthropicBaseURL    string
+	Model               string
+	PrometheusURL       string
+	LangfuseSecretName  string // optional; if set, injects LANGFUSE_* env vars
 }
 
 // SkillProvider is the interface Translator uses to fetch enabled skills.
@@ -202,7 +203,7 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 						Name:    "agent",
 						Image:   t.cfg.AgentImage,
 						Command: []string{"python", "-m", "runtime.main"},
-						Env: []corev1.EnvVar{
+						Env: append([]corev1.EnvVar{
 							{Name: "RUN_ID", Value: runID},
 							{Name: "TARGET_NAMESPACES", Value: strings.Join(run.Spec.Target.Namespaces, ",")},
 							{Name: "CONTROLLER_URL", Value: t.cfg.ControllerURL},
@@ -218,7 +219,7 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 								return "en"
 							}()},
 							apiKeyEnv,
-						},
+						}, langfuseEnvVars(t.cfg.LangfuseSecretName)...),
 						VolumeMounts: []corev1.VolumeMount{{
 							Name:      "skills",
 							MountPath: "/workspace/skills",
@@ -245,6 +246,39 @@ func truncateName(s string, max int) string {
 		return s
 	}
 	return s[len(s)-max:]
+}
+
+// langfuseEnvVars returns LANGFUSE_* env vars sourced from secretName.
+// Returns nil when secretName is empty (Langfuse not configured).
+// LANGFUSE_HOST is optional — if the "host" key is absent the SDK defaults to
+// https://cloud.langfuse.com, so the Pod must not fail on a missing key.
+func langfuseEnvVars(secretName string) []corev1.EnvVar {
+	if secretName == "" {
+		return nil
+	}
+	required := func(key string) *corev1.EnvVarSource {
+		return &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+				Key:                  key,
+			},
+		}
+	}
+	hostOptional := true
+	return []corev1.EnvVar{
+		{Name: "LANGFUSE_PUBLIC_KEY", ValueFrom: required("publicKey")},
+		{Name: "LANGFUSE_SECRET_KEY", ValueFrom: required("secretKey")},
+		{
+			Name: "LANGFUSE_HOST",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+					Key:                  "host",
+					Optional:             &hostOptional,
+				},
+			},
+		},
+	}
 }
 
 // resolveModelConfig looks up the ModelConfig CR by name in the run's namespace.
