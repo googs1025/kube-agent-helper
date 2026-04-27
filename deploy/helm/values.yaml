@@ -213,7 +213,7 @@ langfuse:
   # Self-hosted Langfuse deployment (PostgreSQL + Langfuse Server)
   selfHosted:
     enabled: false
-    image: langfuse/langfuse:2
+    image: langfuse/langfuse:3
 
     # Fill in after creating a project in the Langfuse UI (step 2 above).
     credentials:
