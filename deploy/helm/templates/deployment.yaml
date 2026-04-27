@@ -63,6 +63,17 @@ spec:
         - --notify-feishu-secret={{ .Values.notifications.feishu.secret }}
         {{- end }}
         {{- end }}
+        {{- $langfuseSecret := "" }}
+        {{- with .Values.langfuse }}
+          {{- if and .selfHosted .selfHosted.enabled }}
+            {{- $langfuseSecret = printf "%s-langfuse-credentials" $.Release.Name }}
+          {{- else if .secretName }}
+            {{- $langfuseSecret = .secretName }}
+          {{- end }}
+        {{- end }}
+        {{- if $langfuseSecret }}
+        - --langfuse-secret={{ $langfuseSecret }}
+        {{- end }}
         ports:
         - containerPort: 8080
           name: http

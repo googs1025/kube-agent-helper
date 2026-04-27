@@ -1,0 +1,223 @@
+{{- $langfuseEnabled := false }}
+{{- with .Values.langfuse }}{{- with .selfHosted }}{{- if .enabled }}{{- $langfuseEnabled = true }}{{- end }}{{- end }}{{- end }}
+{{- if $langfuseEnabled }}
+# ── Langfuse self-hosted (PostgreSQL + Langfuse Server) ──────────────────────
+# Provides LLM observability dashboard within the cluster.
+#
+# First-time setup:
+#   1. Deploy with selfHosted.enabled=true (credentials can be empty initially)
+#   2. Port-forward: kubectl port-forward svc/{{ .Release.Name }}-langfuse 3000:3000 -n {{ .Release.Namespace }}
+#   3. Create an account and a project at http://localhost:3000
+#   4. Copy the project API keys into values.langfuse.selfHosted.credentials
+#   5. Upgrade the release — the credentials Secret will be populated
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Langfuse internal secrets (Postgres + NextAuth) ──
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-langfuse-server-secrets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: {{ .Values.langfuse.selfHosted.postgresPassword | quote }}
+  NEXTAUTH_SECRET: {{ .Values.langfuse.selfHosted.nextauthSecret | quote }}
+  SALT: {{ .Values.langfuse.selfHosted.salt | quote }}
+
+---
+# ── Langfuse API credentials for agent pods ──
+# Populated after creating a project in the Langfuse UI.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-langfuse-credentials
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+type: Opaque
+stringData:
+  publicKey: {{ .Values.langfuse.selfHosted.credentials.publicKey | quote }}
+  secretKey: {{ .Values.langfuse.selfHosted.credentials.secretKey | quote }}
+  host: {{ printf "http://%s-langfuse.%s.svc.cluster.local:3000" .Release.Name .Release.Namespace | quote }}
+
+---
+# ── PostgreSQL PVC ──
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-langfuse-postgres-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse-postgres
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.langfuse.selfHosted.persistence.size }}
+  {{- if .Values.langfuse.selfHosted.persistence.storageClass }}
+  storageClassName: {{ .Values.langfuse.selfHosted.persistence.storageClass }}
+  {{- end }}
+
+---
+# ── PostgreSQL Deployment ──
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-langfuse-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse-postgres
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-langfuse-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}-langfuse-postgres
+        app.kubernetes.io/part-of: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: langfuse
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-langfuse-server-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: langfuse
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            {{- toYaml .Values.langfuse.selfHosted.resources.postgres | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "langfuse"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "langfuse"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-langfuse-postgres-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-langfuse-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse-postgres
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-langfuse-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+# ── Langfuse Server Deployment ──
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-langfuse
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-langfuse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}-langfuse
+        app.kubernetes.io/part-of: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: langfuse
+          image: {{ .Values.langfuse.selfHosted.image }}
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-langfuse-server-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://langfuse:$(POSTGRES_PASSWORD)@{{ .Release.Name }}-langfuse-postgres:5432/langfuse"
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-langfuse-server-secrets
+                  key: NEXTAUTH_SECRET
+            - name: NEXTAUTH_URL
+              value: "http://{{ .Release.Name }}-langfuse.{{ .Release.Namespace }}.svc.cluster.local:3000"
+            - name: SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-langfuse-server-secrets
+                  key: SALT
+            - name: TELEMETRY_ENABLED
+              value: "false"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+          resources:
+            {{- toYaml .Values.langfuse.selfHosted.resources.server | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /api/public/health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/public/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-langfuse
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: langfuse
+    app.kubernetes.io/part-of: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-langfuse
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+
+{{- end }}

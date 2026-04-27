@@ -192,3 +192,55 @@ grafana:
     enabled: false
     # -- Extra annotations on the dashboard ConfigMap.
     annotations: {}
+
+# ── Langfuse LLM Observability ─────────────────────────────────────────────
+# Langfuse traces every LLM turn (input/output tokens, tool calls, latency).
+#
+# Two usage patterns:
+#   A) Cloud / external Langfuse: create a Secret manually with keys
+#      publicKey / secretKey / host, then set secretName to that Secret name.
+#   B) Self-hosted: set selfHosted.enabled=true to deploy Langfuse + Postgres
+#      in-cluster. After first deploy, visit the Langfuse UI, create a project,
+#      copy the API keys, then fill in selfHosted.credentials and re-deploy.
+#
+# Leave secretName empty to disable tracing entirely.
+langfuse:
+  # Name of the K8s Secret containing Langfuse API keys (publicKey / secretKey).
+  # The optional "host" key overrides the default https://cloud.langfuse.com.
+  # When selfHosted.enabled=true this is set automatically to the generated Secret.
+  secretName: ""
+
+  # Self-hosted Langfuse deployment (PostgreSQL + Langfuse Server)
+  selfHosted:
+    enabled: false
+    image: langfuse/langfuse:2
+
+    # Fill in after creating a project in the Langfuse UI (step 2 above).
+    credentials:
+      publicKey: ""   # pk-lf-...
+      secretKey: ""   # sk-lf-...
+
+    # Internal Postgres secrets — CHANGE ALL THREE before first deploy.
+    postgresPassword: "langfuse-pg-password"
+    nextauthSecret: "change-me-nextauth-secret"
+    salt: "change-me-salt-value"
+
+    persistence:
+      size: 2Gi
+      storageClass: ""
+
+    resources:
+      server:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      postgres:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi

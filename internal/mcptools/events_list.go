@@ -20,8 +20,8 @@ func NewEventsListHandler(d *Deps) func(context.Context, mcp.CallToolRequest) (*
 		if v, ok := args["limit"].(float64); ok {
 			limit = int(v)
 		}
-		if limit <= 0 || limit > 500 {
-			return mcp.NewToolResultError("limit must be between 1 and 500"), nil
+		if limit <= 0 || limit > 200 {
+			return mcp.NewToolResultError("limit must be between 1 and 200"), nil
 		}
 
 		typeFilter := map[string]bool{}

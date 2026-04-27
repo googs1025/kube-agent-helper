@@ -15,6 +15,7 @@ import os
 import sys
 
 from . import logger
+from . import tracer as _tracer
 from .orchestrator import run_agent
 from .reporter import post_findings
 from .skill_loader import load_skills
@@ -30,17 +31,22 @@ def main() -> None:
 
     logger.info("agent starting", run_id=run_id, skills=skill_names)
 
+    tr = _tracer.init(run_id, skill_names)
+
     skills = load_skills(skill_names)
     if not skills:
         logger.error("no skills loaded, exiting")
         sys.exit(1)
 
     try:
-        findings = run_agent(skills)
+        findings = run_agent(skills, tracer=tr)
     except Exception as e:
         import traceback
         logger.error("agent failed", error=str(e), traceback=traceback.format_exc())
         sys.exit(1)
+    finally:
+        tr.flush()
+
     logger.info("agent completed", findings=len(findings))
 
     post_findings(run_id, findings)

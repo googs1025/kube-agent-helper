@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultListLimit = 100
-	maxListLimit     = 500
+	maxListLimit     = 200
 )
 
 // NewKubectlGetHandler returns an mcp-go handler implementing kubectl_get.
