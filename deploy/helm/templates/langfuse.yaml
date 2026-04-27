@@ -1,4 +1,6 @@
-{{- if .Values.langfuse.selfHosted.enabled }}
+{{- $langfuseEnabled := false }}
+{{- with .Values.langfuse }}{{- with .selfHosted }}{{- if .enabled }}{{- $langfuseEnabled = true }}{{- end }}{{- end }}{{- end }}
+{{- if $langfuseEnabled }}
 # ── Langfuse self-hosted (PostgreSQL + Langfuse Server) ──────────────────────
 # Provides LLM observability dashboard within the cluster.
 #
