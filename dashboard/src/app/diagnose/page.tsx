@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/i18n/context";
-import { useK8sNamespaces, useK8sResources, getK8sResourceDetail, createRun, useRuns } from "@/lib/api";
+import { useK8sNamespaces, useK8sResources, getK8sResourceDetail, createRun, useRuns, useModelConfigs } from "@/lib/api";
 import { SYMPTOM_PRESETS, symptomsToSkills } from "@/lib/symptoms";
 import { PhaseBadge } from "@/components/phase-badge";
 import Link from "next/link";
@@ -21,12 +21,14 @@ export default function DiagnosePage() {
   const [outputLang, setOutputLang] = useState<"zh" | "en">("zh");
   const [schedule, setSchedule] = useState("");
   const [customSchedule, setCustomSchedule] = useState(false);
+  const [modelConfigRef, setModelConfigRef] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [createdYAML, setCreatedYAML] = useState<string | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
 
   const { data: namespaces } = useK8sNamespaces();
+  const { data: modelConfigs } = useModelConfigs();
   const { data: resources } = useK8sResources(resourceType, namespace);
   const { data: runs } = useRuns();
 
@@ -81,7 +83,7 @@ export default function DiagnosePage() {
           labelSelector,
         },
         skills: symptomsToSkills(symptoms),
-        modelConfigRef: "anthropic-credentials",
+        modelConfigRef: modelConfigRef || (modelConfigs?.[0]?.name ?? "anthropic-credentials"),
         outputLanguage: outputLang,
         ...(schedule ? { schedule } : {}),
       });
@@ -230,6 +232,24 @@ export default function DiagnosePage() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t("runs.form.modelConfigRef")}</label>
+          <select
+            value={modelConfigRef}
+            onChange={(e) => setModelConfigRef(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            {(modelConfigs || []).map((mc) => (
+              <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
+                {mc.name} ({mc.model})
+              </option>
+            ))}
+            {(!modelConfigs || modelConfigs.length === 0) && (
+              <option value="anthropic-credentials">anthropic-credentials</option>
+            )}
+          </select>
         </div>
 
         <div>

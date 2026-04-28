@@ -142,7 +142,7 @@ func (s *Server) streamStoredLogs(w http.ResponseWriter, r *http.Request, runID 
 			flusher.Flush()
 
 			if run, err := s.store.GetRun(r.Context(), runID); err == nil && run != nil {
-				if (run.Status == store.PhaseSucceeded || run.Status == store.PhaseFailed) && len(logs) == 0 {
+				if run.Status == store.PhaseSucceeded || run.Status == store.PhaseFailed {
 					fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 					flusher.Flush()
 					return
