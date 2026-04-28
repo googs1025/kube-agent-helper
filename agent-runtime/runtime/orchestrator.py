@@ -249,7 +249,10 @@ def _stream_message(client, tools, messages) -> dict:
                 delta = event.get("delta", {})
                 if delta.get("stop_reason"):
                     stop_reason = delta["stop_reason"]
-                output_tokens = event.get("usage", {}).get("output_tokens", output_tokens)
+                usage = event.get("usage", {})
+                output_tokens = usage.get("output_tokens", output_tokens)
+                if input_tokens == 0:
+                    input_tokens = usage.get("input_tokens", 0)
 
     # Post-process: parse tool_use input JSON, drop thinking blocks
     result_blocks = []
