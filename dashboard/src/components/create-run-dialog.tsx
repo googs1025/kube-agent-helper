@@ -21,7 +21,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DialogRoot, DialogTrigger, DialogPortal, DialogBackdrop, DialogPopup, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { TagInput } from "@/components/tag-input";
-import { createRun } from "@/lib/api";
+import { createRun, useModelConfigs } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import type { CreateRunRequest } from "@/lib/types";
 
@@ -31,6 +31,7 @@ interface Props {
 
 export function CreateRunDialog({ onCreated }: Props) {
   const { t, lang } = useI18n();
+  const { data: modelConfigs } = useModelConfigs();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -150,8 +151,16 @@ export function CreateRunDialog({ onCreated }: Props) {
 
             <div className="space-y-1.5">
               <label className={labelClass}>{t("runs.form.modelConfigRef")} *</label>
-              <input required value={modelConfigRef} onChange={(e) => setModelConfigRef(e.target.value)} placeholder="anthropic-credentials"
-                className={inputClass} />
+              <select required value={modelConfigRef} onChange={(e) => setModelConfigRef(e.target.value)} className={inputClass}>
+                {(modelConfigs || []).filter((mc) => mc.namespace === namespace).map((mc) => (
+                  <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
+                    {mc.name} ({mc.model})
+                  </option>
+                ))}
+                {(modelConfigs || []).filter((mc) => mc.namespace === namespace).length === 0 && (
+                  <option value="anthropic-credentials">anthropic-credentials</option>
+                )}
+              </select>
               <p className="text-xs text-gray-400 dark:text-gray-500">{t("runs.form.modelConfigRefHint")}</p>
             </div>
 

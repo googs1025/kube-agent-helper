@@ -35,6 +35,7 @@ vi.mock("@/lib/api", () => ({
   useK8sNamespaces: () => ({ data: [{ name: "default" }, { name: "kube-system" }] }),
   useK8sResources: () => ({ data: [{ name: "nginx", namespace: "default" }] }),
   useRuns: () => ({ data: [] }),
+  useModelConfigs: () => ({ data: [{ name: "anthropic-credentials", namespace: "kube-agent-helper", model: "claude-sonnet-4-6" }] }),
   createRun: vi.fn().mockResolvedValue("uuid-123"),
   getK8sResourceDetail: vi.fn().mockResolvedValue({}),
 }));
