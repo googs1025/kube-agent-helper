@@ -152,12 +152,12 @@ export function CreateRunDialog({ onCreated }: Props) {
             <div className="space-y-1.5">
               <label className={labelClass}>{t("runs.form.modelConfigRef")} *</label>
               <select required value={modelConfigRef} onChange={(e) => setModelConfigRef(e.target.value)} className={inputClass}>
-                {(modelConfigs || []).map((mc) => (
+                {(modelConfigs || []).filter((mc) => mc.namespace === namespace).map((mc) => (
                   <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
                     {mc.name} ({mc.model})
                   </option>
                 ))}
-                {(!modelConfigs || modelConfigs.length === 0) && (
+                {(modelConfigs || []).filter((mc) => mc.namespace === namespace).length === 0 && (
                   <option value="anthropic-credentials">anthropic-credentials</option>
                 )}
               </select>

@@ -236,20 +236,26 @@ export default function DiagnosePage() {
 
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t("runs.form.modelConfigRef")}</label>
-          <select
-            value={modelConfigRef}
-            onChange={(e) => setModelConfigRef(e.target.value)}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            {(modelConfigs || []).map((mc) => (
-              <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
-                {mc.name} ({mc.model})
-              </option>
-            ))}
-            {(!modelConfigs || modelConfigs.length === 0) && (
-              <option value="anthropic-credentials">anthropic-credentials</option>
-            )}
-          </select>
+          {(() => {
+            const filtered = (modelConfigs || []).filter((mc) => mc.namespace === "kube-agent-helper");
+            const displayValue = modelConfigRef || filtered[0]?.name || "";
+            return (
+              <select
+                value={displayValue}
+                onChange={(e) => setModelConfigRef(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                {filtered.map((mc) => (
+                  <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
+                    {mc.name} ({mc.model})
+                  </option>
+                ))}
+                {filtered.length === 0 && (
+                  <option value="anthropic-credentials">anthropic-credentials</option>
+                )}
+              </select>
+            );
+          })()}
         </div>
 
         <div>
