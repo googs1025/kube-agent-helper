@@ -63,11 +63,12 @@ spec:
                 - anthropic
                 type: string
               retries:
-                type: integer
-                minimum: 0
+                description: |-
+                  Retries 是单模型瞬时错误的重试次数。0 = 不重试（默认）。
+                  仅 5xx / 429 / 网络超时 / connection error 触发；4xx 永不重试。
                 maximum: 10
-                default: 0
-                description: "Single-model retry count for transient errors (5xx/429/timeout). 0 = no retry."
+                minimum: 0
+                type: integer
             required:
             - apiKeyRef
             - model
