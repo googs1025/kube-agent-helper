@@ -8,8 +8,12 @@ SSE 中段直接切下一端点（避免 token 重复消费）。
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
+from typing import Any
+
+import httpx
 
 
 _BACKOFF_SCHEDULE = [1, 2, 4]  # 秒，指数；超过封顶 4s
@@ -35,6 +39,126 @@ class ModelEndpoint:
 
 class ModelChainExhausted(Exception):
     """所有 endpoint + 重试用尽后抛出。"""
+
+
+class _SSEStreamBroken(Exception):
+    """SSE 流提前 EOF 且未收到 [DONE] / message_stop。私有：仅在 invoke
+    内部捕获，转化为 fallback 决策（不重试同模型，避免 token 重复消费）。"""
+
+
+def _stream_one(endpoint: ModelEndpoint, tools, messages) -> dict:
+    """对单个 endpoint 发一次 Anthropic SSE 请求并重组完整响应。
+
+    返回字典与 orchestrator 既有 _stream_message 完全一致：
+        {"content": [...], "stop_reason": str,
+         "input_tokens": int, "output_tokens": int}
+
+    抛出：
+      _SSEStreamBroken — 流提前 EOF（无 [DONE]/message_stop）
+      httpx.HTTPStatusError — 4xx/5xx；ModelChain.invoke 决定重试还是 raise
+      httpx.TimeoutException / ConnectError / RemoteProtocolError — 网络层
+    """
+    headers = {
+        "x-api-key": endpoint.api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "accept": "text/event-stream",
+    }
+    base_url = (endpoint.base_url or "https://api.anthropic.com").rstrip("/")
+    url = base_url if base_url.endswith("/v1/messages") else base_url + "/v1/messages"
+
+    payload: dict[str, Any] = {
+        "model": endpoint.model,
+        "max_tokens": int(os.environ.get("MAX_TOKENS", "4096")),
+        "messages": messages,
+        "stream": True,
+    }
+    if tools:
+        payload["tools"] = tools
+
+    content_blocks: dict[int, dict] = {}
+    stop_reason = "end_turn"
+    input_tokens = 0
+    output_tokens = 0
+    stream_complete = False
+
+    with httpx.stream("POST", url, headers=headers, json=payload, timeout=120) as resp:
+        resp.raise_for_status()
+        for raw_line in resp.iter_lines():
+            raw_line = raw_line.strip()
+            if not raw_line or not raw_line.startswith("data:"):
+                continue
+            data_str = raw_line[len("data:"):].strip()
+            if data_str == "[DONE]":
+                stream_complete = True
+                break
+            try:
+                event = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+
+            etype = event.get("type", "")
+            if etype == "message_start":
+                usage = event.get("message", {}).get("usage", {})
+                input_tokens = usage.get("input_tokens", 0)
+            elif etype == "content_block_start":
+                idx = event.get("index", 0)
+                block = event.get("content_block", {})
+                btype = block.get("type", "")
+                if btype == "text":
+                    content_blocks[idx] = {"type": "text", "text": ""}
+                elif btype == "tool_use":
+                    content_blocks[idx] = {
+                        "type": "tool_use",
+                        "id": block.get("id", ""),
+                        "name": block.get("name", ""),
+                        "input": "",
+                    }
+                elif btype == "thinking":
+                    content_blocks[idx] = {"type": "thinking", "text": ""}
+            elif etype == "content_block_delta":
+                idx = event.get("index", 0)
+                delta = event.get("delta", {})
+                dtype = delta.get("type", "")
+                if idx in content_blocks:
+                    if dtype == "text_delta":
+                        content_blocks[idx]["text"] += delta.get("text", "")
+                    elif dtype == "input_json_delta":
+                        content_blocks[idx]["input"] += delta.get("partial_json", "")
+                    elif dtype == "thinking_delta":
+                        content_blocks[idx]["text"] += delta.get("thinking", "")
+            elif etype == "message_delta":
+                delta = event.get("delta", {})
+                if delta.get("stop_reason"):
+                    stop_reason = delta["stop_reason"]
+                usage = event.get("usage", {})
+                output_tokens = usage.get("output_tokens", output_tokens)
+                if input_tokens == 0:
+                    input_tokens = usage.get("input_tokens", 0)
+            elif etype == "message_stop":
+                stream_complete = True
+
+    if not stream_complete:
+        raise _SSEStreamBroken("stream ended without [DONE] or message_stop")
+
+    result_blocks = []
+    for idx in sorted(content_blocks.keys()):
+        block = content_blocks[idx]
+        if block["type"] == "thinking":
+            continue
+        if block["type"] == "tool_use" and isinstance(block["input"], str):
+            try:
+                block["input"] = json.loads(block["input"]) if block["input"] else {}
+            except json.JSONDecodeError:
+                block["input"] = {}
+        result_blocks.append(block)
+
+    return {
+        "content": result_blocks,
+        "stop_reason": stop_reason,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
 
 
 class ModelChain:

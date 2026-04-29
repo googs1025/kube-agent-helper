@@ -1,9 +1,46 @@
 """Tests for runtime.model_chain."""
 from __future__ import annotations
 
+from contextlib import contextmanager
+from unittest.mock import patch
+
 import pytest
 
-from runtime.model_chain import ModelChain, ModelEndpoint
+from runtime.model_chain import (
+    ModelChain,
+    ModelEndpoint,
+    _SSEStreamBroken,
+    _stream_one,
+)
+
+
+def _make_sse_lines(events: list[str]) -> list[str]:
+    """events 中每条已是 SSE data 行内容（JSON 串或 [DONE]）。
+    httpx.Response.iter_lines() 返回 str（UTF-8 decoded），所以这里给 str。"""
+    return [f"data: {e}" for e in events]
+
+
+@contextmanager
+def _fake_stream(lines: list[str], status: int = 200):
+    """伪 httpx.stream 上下文管理器，yield 一个支持 iter_lines/raise_for_status 的对象。"""
+
+    class _Resp:
+        def raise_for_status(self):
+            if status >= 400:
+                import httpx
+
+                req = httpx.Request("POST", "https://x")
+                raise httpx.HTTPStatusError(
+                    f"{status}",
+                    request=req,
+                    response=httpx.Response(status, request=req),
+                )
+
+        def iter_lines(self):
+            for ln in lines:
+                yield ln
+
+    yield _Resp()
 
 
 def _clear_chain_env(monkeypatch):
@@ -89,3 +126,112 @@ class TestBackoffFor:
         assert _backoff_for(3) == 4
         assert _backoff_for(4) == 4   # 封顶
         assert _backoff_for(99) == 4
+
+
+class TestStreamOne:
+    def test_happy_path(self):
+        events = [
+            '{"type":"message_start","message":{"usage":{"input_tokens":5}}}',
+            '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+            '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}',
+            '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}',
+            "[DONE]",
+        ]
+        ep = ModelEndpoint(base_url="https://api.example.com", model="m", api_key="k", retries=0)
+
+        with patch(
+            "runtime.model_chain.httpx.stream",
+            return_value=_fake_stream(_make_sse_lines(events)),
+        ):
+            result = _stream_one(ep, tools=[], messages=[{"role": "user", "content": "x"}])
+
+        assert result["stop_reason"] == "end_turn"
+        assert result["content"][0]["type"] == "text"
+        assert result["content"][0]["text"] == "hi"
+        assert result["input_tokens"] == 5
+        assert result["output_tokens"] == 2
+
+    def test_sse_stream_broken(self):
+        # No [DONE] / message_stop terminator
+        events = [
+            '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+            '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}',
+        ]
+        ep = ModelEndpoint(base_url="https://api.example.com", model="m", api_key="k", retries=0)
+
+        with patch(
+            "runtime.model_chain.httpx.stream",
+            return_value=_fake_stream(_make_sse_lines(events)),
+        ):
+            with pytest.raises(_SSEStreamBroken):
+                _stream_one(ep, tools=[], messages=[])
+
+    def test_message_stop_terminates_stream(self):
+        events = [
+            '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+            '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+            '{"type":"message_delta","delta":{"stop_reason":"end_turn"}}',
+            '{"type":"message_stop"}',
+        ]
+        ep = ModelEndpoint(base_url="", model="m", api_key="k", retries=0)
+
+        with patch(
+            "runtime.model_chain.httpx.stream",
+            return_value=_fake_stream(_make_sse_lines(events)),
+        ):
+            result = _stream_one(ep, tools=[], messages=[])
+        assert result["content"][0]["text"] == "ok"
+
+    def test_tool_use_partial_json_assembled(self):
+        events = [
+            '{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"kubectl_get","input":{}}}',
+            '{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"namespace\\":"}}',
+            '{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\\"prod\\"}"}}',
+            '{"type":"message_stop"}',
+        ]
+        ep = ModelEndpoint(base_url="", model="m", api_key="k", retries=0)
+
+        with patch(
+            "runtime.model_chain.httpx.stream",
+            return_value=_fake_stream(_make_sse_lines(events)),
+        ):
+            result = _stream_one(ep, tools=[{"name": "kubectl_get"}], messages=[])
+        assert result["content"][0]["type"] == "tool_use"
+        assert result["content"][0]["input"] == {"namespace": "prod"}
+
+    def test_url_with_v1_messages_suffix_used_as_is(self):
+        """Some proxies require /v1/messages already in baseURL."""
+        events = ['{"type":"message_stop"}']
+        ep = ModelEndpoint(
+            base_url="https://proxy.example.com/v1/messages",
+            model="m",
+            api_key="k",
+            retries=0,
+        )
+
+        with patch("runtime.model_chain.httpx.stream") as mock_stream:
+            mock_stream.return_value = _fake_stream(_make_sse_lines(events))
+            _stream_one(ep, tools=[], messages=[])
+
+        args, kwargs = mock_stream.call_args
+        # Second positional arg is URL; verify no double /v1/messages append
+        assert args[1] == "https://proxy.example.com/v1/messages"
+
+    def test_thinking_blocks_dropped(self):
+        events = [
+            '{"type":"content_block_start","index":0,"content_block":{"type":"thinking","text":""}}',
+            '{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reasoning..."}}',
+            '{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
+            '{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"answer"}}',
+            '{"type":"message_stop"}',
+        ]
+        ep = ModelEndpoint(base_url="", model="m", api_key="k", retries=0)
+
+        with patch(
+            "runtime.model_chain.httpx.stream",
+            return_value=_fake_stream(_make_sse_lines(events)),
+        ):
+            result = _stream_one(ep, tools=[], messages=[])
+        assert len(result["content"]) == 1
+        assert result["content"][0]["type"] == "text"
+        assert result["content"][0]["text"] == "answer"
