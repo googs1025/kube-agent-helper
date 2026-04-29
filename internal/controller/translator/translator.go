@@ -294,6 +294,31 @@ func (t *Translator) resolveModelConfig(ctx context.Context, run *k8saiV1.Diagno
 	return &mc
 }
 
+// resolveModelChain returns the ordered list of ModelConfigs to try: the
+// primary at index 0, then each fallback in spec order. Missing fallbacks
+// are silently skipped (a fallback that no longer exists must not block the
+// run). Returns an empty slice if the k8s client is unavailable or the
+// primary ModelConfig is missing — callers should handle the empty-chain
+// case as a hard failure or fall back to legacy single-Secret behavior.
+func (t *Translator) resolveModelChain(ctx context.Context, run *k8saiV1.DiagnosticRun) []*k8saiV1.ModelConfig {
+	chain := []*k8saiV1.ModelConfig{}
+	if t.k8s == nil || run.Spec.ModelConfigRef == "" {
+		return chain
+	}
+	var primary k8saiV1.ModelConfig
+	if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.ModelConfigRef}, &primary); err == nil {
+		chain = append(chain, &primary)
+	}
+	for _, name := range run.Spec.FallbackModelConfigRefs {
+		var fb k8saiV1.ModelConfig
+		if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: name}, &fb); err != nil {
+			continue
+		}
+		chain = append(chain, &fb)
+	}
+	return chain
+}
+
 // resolveBaseURL returns ModelConfig.Spec.BaseURL if set, else the global config value.
 func (t *Translator) resolveBaseURL(ctx context.Context, run *k8saiV1.DiagnosticRun) string {
 	if mc := t.resolveModelConfig(ctx, run); mc != nil && mc.Spec.BaseURL != "" {
