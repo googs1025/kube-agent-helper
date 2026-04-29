@@ -52,6 +52,11 @@ spec:
                   ClusterRef is the name of a ClusterConfig CR in the same namespace.
                   When empty, the local (controller) cluster is used.
                 type: string
+              fallbackModelConfigRefs:
+                type: array
+                items:
+                  type: string
+                description: "Ordered list of fallback ModelConfig names tried when primary fails."
               historyLimit:
                 default: 10
                 description: HistoryLimit is the maximum number of completed child

@@ -94,6 +94,11 @@ type DiagnosticRunSpec struct {
 	// When empty, the local (controller) cluster is used.
 	// +optional
 	ClusterRef string `json:"clusterRef,omitempty"`
+	// FallbackModelConfigRefs 是按优先级排序的备选 ModelConfig 名称列表。
+	// 主 ModelConfig 所有重试用尽 / 流中段后按本列表顺序切换。
+	// 引用的 ModelConfig 必须与主在同一 namespace。
+	// +optional
+	FallbackModelConfigRefs []string `json:"fallbackModelConfigRefs,omitempty"`
 }
 
 type TargetSpec struct {
@@ -163,6 +168,12 @@ type ModelConfigSpec struct {
 	BaseURL string `json:"baseURL,omitempty"`
 	// +kubebuilder:default=20
 	MaxTurns *int `json:"maxTurns,omitempty"`
+	// Retries 是单模型瞬时错误的重试次数。0 = 不重试（默认）。
+	// 仅 5xx / 429 / 网络超时 / connection error 触发；4xx 永不重试。
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10
+	Retries int `json:"retries,omitempty"`
 }
 
 type SecretKeyRef struct {
