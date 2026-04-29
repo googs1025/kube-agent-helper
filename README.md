@@ -26,6 +26,7 @@
 - **Dashboard** — Next.js Web UI，支持中英文切换、深浅色主题、数据统计、快速创建、CRD YAML 查看器、事件页面
 - **输出语言可控** — `spec.outputLanguage: zh|en` 控制诊断结论语言
 - **ModelConfig 独立配置** — 每个 `ModelConfig` CR 可指定独立的 `spec.baseURL` 代理端点，Translator 按 Run 级别解析
+- **重试 + Fallback 链** — `ModelConfig.spec.retries`（单模型重试，opt-in）+ `DiagnosticRun.spec.fallbackModelConfigRefs`（多模型 fallback，messages 历史跨切完整保留）
 - **最小化 RBAC** — Translator 为每次运行自动生成最小权限 ServiceAccount
 - **SQLite 持久化** — findings、fixes、事件和指标快照本地存储，无需外部数据库
 
@@ -62,12 +63,13 @@ spec:
   provider: anthropic
   model: claude-3-5-sonnet-20241022
   baseURL: "https://my-proxy.example.com"   # 可选，省略则直连 Anthropic API
+  retries: 3                                # 可选，默认 0；代理抖动严重时设 1-3
   apiKeyRef:
     name: anthropic-credentials
     key: apiKey
 ```
 
-`spec.baseURL` 允许每个 ModelConfig 指定独立的 API 代理端点。Translator 在创建 Agent Job 时从 ModelConfig CR 中解析 `baseURL` 和 `apiKeyRef`，而非全局控制器配置。
+`spec.baseURL` 允许每个 ModelConfig 指定独立的 API 代理端点。`spec.retries` 控制单模型瞬时错误（5xx / 429 / 网络超时）的重试次数，0 表示不重试。Translator 在创建 Agent Job 时从 ModelConfig CR 中解析 `baseURL` 和 `apiKeyRef`，而非全局控制器配置。
 
 ### 3. Helm 安装
 
@@ -119,6 +121,9 @@ spec:
     namespaces:
       - default
   modelConfigRef: "anthropic-credentials"
+  fallbackModelConfigRefs:                  # 可选，主不可用时按顺序切换；messages 历史跨切完整保留
+    - claude-direct
+    - claude-haiku-cheap
   timeoutSeconds: 600     # 可选，不填则无超时
   outputLanguage: zh      # 可选：zh | en
 ```

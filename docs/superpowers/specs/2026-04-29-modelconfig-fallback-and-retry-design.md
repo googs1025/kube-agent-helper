@@ -1,6 +1,6 @@
 ---
 title: ModelConfig 多模型 Fallback 与重试机制设计规范
-status: Draft
+status: Implemented
 date: 2026-04-29
 owner: kube-agent-helper
 scope: agent-runtime + controller + dashboard 跨层改动
