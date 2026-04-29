@@ -12,6 +12,17 @@ import os
 from dataclasses import dataclass
 
 
+_BACKOFF_SCHEDULE = [1, 2, 4]  # 秒，指数；超过封顶 4s
+
+
+def _backoff_for(attempt: int) -> float:
+    """attempt 是从 1 起的重试序号（attempt=1 表示第一次重试）。"""
+    idx = attempt - 1
+    if 0 <= idx < len(_BACKOFF_SCHEDULE):
+        return float(_BACKOFF_SCHEDULE[idx])
+    return float(_BACKOFF_SCHEDULE[-1])
+
+
 @dataclass(frozen=True)
 class ModelEndpoint:
     """单个 LLM 端点的不可变配置。base_url 为空时走 SDK 默认。"""

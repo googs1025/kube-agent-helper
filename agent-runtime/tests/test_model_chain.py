@@ -78,3 +78,14 @@ class TestModelChainConstruction:
     def test_empty_endpoints_raises(self):
         with pytest.raises(ValueError, match="at least one"):
             ModelChain([])
+
+
+class TestBackoffFor:
+    def test_schedule(self):
+        from runtime.model_chain import _backoff_for
+
+        assert _backoff_for(1) == 1
+        assert _backoff_for(2) == 2
+        assert _backoff_for(3) == 4
+        assert _backoff_for(4) == 4   # 封顶
+        assert _backoff_for(99) == 4
