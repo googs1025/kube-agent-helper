@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/i18n/context";
 import { useK8sNamespaces, useK8sResources, getK8sResourceDetail, createRun, useRuns, useModelConfigs } from "@/lib/api";
+import { ModelConfigPicker } from "@/components/model-config-picker";
 import { SYMPTOM_PRESETS, symptomsToSkills } from "@/lib/symptoms";
 import { PhaseBadge } from "@/components/phase-badge";
 import Link from "next/link";
@@ -22,6 +23,7 @@ export default function DiagnosePage() {
   const [schedule, setSchedule] = useState("");
   const [customSchedule, setCustomSchedule] = useState(false);
   const [modelConfigRef, setModelConfigRef] = useState("");
+  const [fallbackModelConfigRefs, setFallbackModelConfigRefs] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [createdYAML, setCreatedYAML] = useState<string | null>(null);
@@ -84,6 +86,7 @@ export default function DiagnosePage() {
         },
         skills: symptomsToSkills(symptoms),
         modelConfigRef: modelConfigRef || (modelConfigs?.[0]?.name ?? "anthropic-credentials"),
+        fallbackModelConfigRefs: fallbackModelConfigRefs.length > 0 ? fallbackModelConfigRefs : undefined,
         outputLanguage: outputLang,
         ...(schedule ? { schedule } : {}),
       });
@@ -235,27 +238,16 @@ export default function DiagnosePage() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t("runs.form.modelConfigRef")}</label>
-          {(() => {
-            const filtered = (modelConfigs || []).filter((mc) => mc.namespace === "kube-agent-helper");
-            const displayValue = modelConfigRef || filtered[0]?.name || "";
-            return (
-              <select
-                value={displayValue}
-                onChange={(e) => setModelConfigRef(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                {filtered.map((mc) => (
-                  <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
-                    {mc.name} ({mc.model})
-                  </option>
-                ))}
-                {filtered.length === 0 && (
-                  <option value="anthropic-credentials">anthropic-credentials</option>
-                )}
-              </select>
-            );
-          })()}
+          <ModelConfigPicker
+            configs={modelConfigs || []}
+            primary={modelConfigRef || (modelConfigs?.[0]?.name ?? "")}
+            fallbacks={fallbackModelConfigRefs}
+            onChange={(p, fb) => {
+              setModelConfigRef(p);
+              setFallbackModelConfigRefs(fb);
+            }}
+            namespace="kube-agent-helper"
+          />
         </div>
 
         <div>
