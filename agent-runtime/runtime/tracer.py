@@ -138,6 +138,20 @@ class _Tracer:
             self._degraded = True
             return _NoOp()
 
+    def event(self, *, name: str, level: str = "DEFAULT", metadata: dict | None = None) -> None:
+        """Record a discrete trace event (model_retry / model_fallback / etc).
+
+        Failures degrade silently — observability never blocks the main flow.
+        """
+        if self._degraded:
+            return
+        try:
+            self._trace.event(name=name, level=level, metadata=metadata or {})
+        except Exception as exc:
+            import sys
+            print(f"[warn] langfuse event() failed, degrading to no-op: {exc}", file=sys.stderr)
+            self._degraded = True
+
     def flush(self) -> None:
         try:
             self._lf.flush()

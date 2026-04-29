@@ -59,3 +59,47 @@ class TestPostFindings:
         with patch("runtime.reporter.requests.post") as mock_post:
             post_findings("run-1", [])
         mock_post.assert_not_called()
+
+
+from runtime import reporter as _reporter
+
+
+class TestRecordLLMEvent:
+    def test_appends_to_buffer(self):
+        _reporter._LLM_BUFFER.clear()
+        _reporter.record_llm_event("retry", {"model": "m"})
+        _reporter.record_llm_event("fallback", {"from_model": "m", "to_model": "m2"})
+        assert len(_reporter._LLM_BUFFER) == 2
+        assert _reporter._LLM_BUFFER[0] == {"type": "retry", "labels": {"model": "m"}}
+
+
+class TestFlushLLMMetrics:
+    def test_posts_buffer_and_clears(self, monkeypatch):
+        monkeypatch.setattr("runtime.reporter.CONTROLLER_URL", "http://ctrl:8080")
+        _reporter._LLM_BUFFER.clear()
+        _reporter.record_llm_event("retry", {"model": "m"})
+
+        with patch("runtime.reporter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=204)
+            _reporter.flush_llm_metrics()
+
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        assert args[0] == "http://ctrl:8080/internal/llm-metrics"
+        assert kwargs["json"] == {"events": [{"type": "retry", "labels": {"model": "m"}}]}
+        assert _reporter._LLM_BUFFER == []
+
+    def test_empty_buffer_no_op(self):
+        _reporter._LLM_BUFFER.clear()
+        with patch("runtime.reporter.requests.post") as mock_post:
+            _reporter.flush_llm_metrics()
+        mock_post.assert_not_called()
+
+    def test_swallows_post_error_and_clears(self):
+        _reporter._LLM_BUFFER.clear()
+        _reporter.record_llm_event("retry", {"model": "m"})
+
+        with patch("runtime.reporter.requests.post", side_effect=RuntimeError("net down")):
+            _reporter.flush_llm_metrics()  # MUST NOT raise
+
+        assert _reporter._LLM_BUFFER == []

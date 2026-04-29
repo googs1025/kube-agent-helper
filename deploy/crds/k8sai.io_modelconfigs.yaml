@@ -62,6 +62,13 @@ spec:
                 enum:
                 - anthropic
                 type: string
+              retries:
+                description: |-
+                  Retries 是单模型瞬时错误的重试次数。0 = 不重试（默认）。
+                  仅 5xx / 429 / 网络超时 / connection error 触发；4xx 永不重试。
+                maximum: 10
+                minimum: 0
+                type: integer
             required:
             - apiKeyRef
             - model

@@ -341,6 +341,7 @@ export async function createModelConfig(body: {
   model?: string;
   baseURL?: string;
   maxTurns?: number;
+  retries?: number;
   secretRef?: string;
   secretKey?: string;
 }): Promise<void> {

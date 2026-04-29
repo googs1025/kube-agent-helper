@@ -26,6 +26,7 @@
 - **Dashboard** — Next.js web UI with Chinese/English toggle, dark/light theme, stats, create dialogs, CRD YAML viewer, events page
 - **Per-run output language** — `spec.outputLanguage: zh|en` controls finding language
 - **Per-ModelConfig baseURL** — each `ModelConfig` CR can specify its own `spec.baseURL` proxy endpoint; Translator resolves baseURL and apiKeyRef from the ModelConfig CR per-run
+- **Retry + Fallback chain** — `ModelConfig.spec.retries` (single-model retry, opt-in) plus `DiagnosticRun.spec.fallbackModelConfigRefs` (cross-model fallback; messages history preserved across switches)
 - **Minimal RBAC** — Translator auto-generates least-privilege ServiceAccount per run
 - **SQLite persistence** — findings, fixes, events, and metric snapshots stored locally; no external database required
 
@@ -62,12 +63,13 @@ spec:
   provider: anthropic
   model: claude-3-5-sonnet-20241022
   baseURL: "https://my-proxy.example.com"   # optional, omit for direct Anthropic API
+  retries: 3                                # optional, default 0; set 1-3 if proxy is flaky
   apiKeyRef:
     name: anthropic-credentials
     key: apiKey
 ```
 
-`spec.baseURL` lets each ModelConfig specify its own API proxy endpoint. The Translator resolves `baseURL` and `apiKeyRef` from the referenced ModelConfig CR when creating each agent Job, rather than from global controller config.
+`spec.baseURL` lets each ModelConfig specify its own API proxy endpoint. The Translator resolves `baseURL` and `apiKeyRef` from the referenced ModelConfig CR when creating each agent Job, rather than from global controller config. `spec.retries` controls per-endpoint retries on transient errors (5xx / 429 / network timeout); 0 disables retries.
 
 ### 3. Install with Helm
 
@@ -117,6 +119,9 @@ spec:
     namespaces:
       - default
   modelConfigRef: "anthropic-credentials"
+  fallbackModelConfigRefs:                  # optional, switched in order when primary fails; messages history preserved across switches
+    - claude-direct
+    - claude-haiku-cheap
   timeoutSeconds: 600     # optional, nil = no timeout
   outputLanguage: en      # optional: zh | en
 ```

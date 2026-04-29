@@ -93,10 +93,20 @@ func (t *Translator) Compile(ctx context.Context, run *k8saiV1.DiagnosticRun) ([
 	cm := t.buildConfigMap(cmName, runID, selected)
 	rb := t.buildRoleBinding(saName, runID, run.Namespace)
 
-	baseURL := t.resolveBaseURL(ctx, run)
-	modelName := t.resolveModel(ctx, run)
-	apiKeyEnv := t.resolveAPIKeyEnv(ctx, run)
-	job := t.buildJob(run, runID, saName, cmName, selected, baseURL, modelName, apiKeyEnv)
+	chain := t.resolveModelChain(ctx, run)
+	if len(chain) == 0 {
+		// Legacy path: no client or primary missing. Synthesize a single-element
+		// chain from global flags + treat ModelConfigRef as a Secret name with
+		// key "apiKey" (pre-ModelConfig-CR behavior).
+		chain = []*k8saiV1.ModelConfig{{
+			Spec: k8saiV1.ModelConfigSpec{
+				Model:     t.cfg.Model,
+				BaseURL:   t.cfg.AnthropicBaseURL,
+				APIKeyRef: k8saiV1.SecretKeyRef{Name: run.Spec.ModelConfigRef, Key: "apiKey"},
+			},
+		}}
+	}
+	job := t.buildJob(run, runID, saName, cmName, selected, chain)
 
 	return []client.Object{sa, cm, rb, job}, nil
 }
@@ -162,7 +172,7 @@ func (t *Translator) buildRoleBinding(saName, runID, saNamespace string) *rbacv1
 	}
 }
 
-func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName string, skills []*store.Skill, baseURL, modelName string, apiKeyEnv corev1.EnvVar) *batchv1.Job {
+func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName string, skills []*store.Skill, chain []*k8saiV1.ModelConfig) *batchv1.Job {
 	ttl := int32(3600)
 	backoff := int32(0)
 	isController := true
@@ -171,6 +181,23 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 	for i, s := range skills {
 		skillNames[i] = s.Name
 	}
+
+	baseEnv := []corev1.EnvVar{
+		{Name: "RUN_ID", Value: runID},
+		{Name: "TARGET_NAMESPACES", Value: strings.Join(run.Spec.Target.Namespaces, ",")},
+		{Name: "CONTROLLER_URL", Value: t.cfg.ControllerURL},
+		{Name: "MCP_SERVER_PATH", Value: "/usr/local/bin/k8s-mcp-server"},
+		{Name: "PROMETHEUS_URL", Value: t.cfg.PrometheusURL},
+		{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
+		{Name: "OUTPUT_LANGUAGE", Value: func() string {
+			if run.Spec.OutputLanguage != "" {
+				return run.Spec.OutputLanguage
+			}
+			return "en"
+		}()},
+	}
+	allEnv := append(baseEnv, buildChainEnv(chain)...)
+	allEnv = append(allEnv, langfuseEnvVars(t.cfg.LangfuseSecretName)...)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -203,23 +230,7 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 						Name:    "agent",
 						Image:   t.cfg.AgentImage,
 						Command: []string{"python", "-m", "runtime.main"},
-						Env: append([]corev1.EnvVar{
-							{Name: "RUN_ID", Value: runID},
-							{Name: "TARGET_NAMESPACES", Value: strings.Join(run.Spec.Target.Namespaces, ",")},
-							{Name: "CONTROLLER_URL", Value: t.cfg.ControllerURL},
-							{Name: "MCP_SERVER_PATH", Value: "/usr/local/bin/k8s-mcp-server"},
-							{Name: "PROMETHEUS_URL", Value: t.cfg.PrometheusURL},
-							{Name: "SKILL_NAMES", Value: strings.Join(skillNames, ",")},
-							{Name: "ANTHROPIC_BASE_URL", Value: baseURL},
-							{Name: "MODEL", Value: modelName},
-							{Name: "OUTPUT_LANGUAGE", Value: func() string {
-								if run.Spec.OutputLanguage != "" {
-									return run.Spec.OutputLanguage
-								}
-								return "en"
-							}()},
-							apiKeyEnv,
-						}, langfuseEnvVars(t.cfg.LangfuseSecretName)...),
+						Env:     allEnv,
 						VolumeMounts: []corev1.VolumeMount{{
 							Name:      "skills",
 							MountPath: "/workspace/skills",
@@ -246,6 +257,51 @@ func truncateName(s string, max int) string {
 		return s
 	}
 	return s[len(s)-max:]
+}
+
+// buildChainEnv produces MODEL_COUNT plus indexed MODEL_<i>_* env vars for each
+// chain entry (BASE_URL/MODEL/RETRIES as plain values, API_KEY as SecretKeyRef),
+// plus backward-compat ANTHROPIC_BASE_URL / MODEL / ANTHROPIC_API_KEY mirroring
+// chain[0] so older agent images still work.
+func buildChainEnv(chain []*k8saiV1.ModelConfig) []corev1.EnvVar {
+	env := []corev1.EnvVar{{Name: "MODEL_COUNT", Value: fmt.Sprintf("%d", len(chain))}}
+	for i, mc := range chain {
+		key := mc.Spec.APIKeyRef.Key
+		if key == "" {
+			key = "apiKey"
+		}
+		env = append(env,
+			corev1.EnvVar{Name: fmt.Sprintf("MODEL_%d_BASE_URL", i), Value: mc.Spec.BaseURL},
+			corev1.EnvVar{Name: fmt.Sprintf("MODEL_%d_MODEL", i), Value: mc.Spec.Model},
+			corev1.EnvVar{Name: fmt.Sprintf("MODEL_%d_RETRIES", i), Value: fmt.Sprintf("%d", mc.Spec.Retries)},
+			corev1.EnvVar{
+				Name: fmt.Sprintf("MODEL_%d_API_KEY", i),
+				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: mc.Spec.APIKeyRef.Name},
+					Key:                  key,
+				}},
+			},
+		)
+	}
+	if len(chain) > 0 {
+		mc := chain[0]
+		key := mc.Spec.APIKeyRef.Key
+		if key == "" {
+			key = "apiKey"
+		}
+		env = append(env,
+			corev1.EnvVar{Name: "ANTHROPIC_BASE_URL", Value: mc.Spec.BaseURL},
+			corev1.EnvVar{Name: "MODEL", Value: mc.Spec.Model},
+			corev1.EnvVar{
+				Name: "ANTHROPIC_API_KEY",
+				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: mc.Spec.APIKeyRef.Name},
+					Key:                  key,
+				}},
+			},
+		)
+	}
+	return env
 }
 
 // langfuseEnvVars returns LANGFUSE_* env vars sourced from secretName.
@@ -294,38 +350,28 @@ func (t *Translator) resolveModelConfig(ctx context.Context, run *k8saiV1.Diagno
 	return &mc
 }
 
-// resolveBaseURL returns ModelConfig.Spec.BaseURL if set, else the global config value.
-func (t *Translator) resolveBaseURL(ctx context.Context, run *k8saiV1.DiagnosticRun) string {
-	if mc := t.resolveModelConfig(ctx, run); mc != nil && mc.Spec.BaseURL != "" {
-		return mc.Spec.BaseURL
+// resolveModelChain returns the ordered list of ModelConfigs to try: the
+// primary at index 0, then each fallback in spec order. Missing fallbacks
+// are silently skipped (a fallback that no longer exists must not block the
+// run). Returns an empty slice if the k8s client is unavailable or the
+// primary ModelConfig is missing — callers should handle the empty-chain
+// case as a hard failure or fall back to legacy single-Secret behavior.
+func (t *Translator) resolveModelChain(ctx context.Context, run *k8saiV1.DiagnosticRun) []*k8saiV1.ModelConfig {
+	chain := []*k8saiV1.ModelConfig{}
+	if t.k8s == nil || run.Spec.ModelConfigRef == "" {
+		return chain
 	}
-	return t.cfg.AnthropicBaseURL
+	var primary k8saiV1.ModelConfig
+	if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.ModelConfigRef}, &primary); err == nil {
+		chain = append(chain, &primary)
+	}
+	for _, name := range run.Spec.FallbackModelConfigRefs {
+		var fb k8saiV1.ModelConfig
+		if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: name}, &fb); err != nil {
+			continue
+		}
+		chain = append(chain, &fb)
+	}
+	return chain
 }
 
-// resolveModel returns ModelConfig.Spec.Model if set, else the global config value.
-func (t *Translator) resolveModel(ctx context.Context, run *k8saiV1.DiagnosticRun) string {
-	if mc := t.resolveModelConfig(ctx, run); mc != nil && mc.Spec.Model != "" {
-		return mc.Spec.Model
-	}
-	return t.cfg.Model
-}
-
-// resolveAPIKeyEnv builds the ANTHROPIC_API_KEY EnvVar from ModelConfig.Spec.APIKeyRef,
-// falling back to treating ModelConfigRef as the Secret name with key "apiKey".
-func (t *Translator) resolveAPIKeyEnv(ctx context.Context, run *k8saiV1.DiagnosticRun) corev1.EnvVar {
-	secretName := run.Spec.ModelConfigRef
-	secretKey := "apiKey"
-	if mc := t.resolveModelConfig(ctx, run); mc != nil {
-		secretName = mc.Spec.APIKeyRef.Name
-		secretKey = mc.Spec.APIKeyRef.Key
-	}
-	return corev1.EnvVar{
-		Name: "ANTHROPIC_API_KEY",
-		ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-				Key:                  secretKey,
-			},
-		},
-	}
-}

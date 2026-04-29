@@ -1,8 +1,15 @@
-"""Tests for runtime.orchestrator."""
+"""Tests for runtime.orchestrator.
+
+Note: SSE parsing tests previously here have moved to test_model_chain.py
+(TestStreamOne) where the lifted _stream_one function now lives. Tests in
+this file focus on prompt construction and the agentic loop wiring.
+"""
 import json
-import os
 from unittest.mock import patch, MagicMock
-from runtime.orchestrator import build_prompt, run_agent, _stream_message
+
+import pytest
+
+from runtime.orchestrator import build_prompt, run_agent
 from runtime.skill_loader import Skill
 
 
@@ -35,130 +42,22 @@ class TestBuildPrompt:
         monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
         long_prompt = "x" * 500
         prompt = build_prompt([Skill(name="t", dimension="h", tools=[], prompt=long_prompt)])
-        # The skill line should show truncated prompt with ...
         assert "..." in prompt
 
 
-class TestStreamMessage:
-    """Tests for SSE parsing in _stream_message."""
+def _make_chain_mock(invoke_responses):
+    """Build a MagicMock that ModelChain.from_env() returns.
 
-    def _make_sse(self, events: list) -> str:
-        lines = []
-        for ev in events:
-            lines.append(f"data: {json.dumps(ev)}\n")
-        return "\n".join(lines)
-
-    def test_parses_text_block(self):
-        events = [
-            {"type": "message_start", "message": {"id": "m1", "content": []}},
-            {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello "}},
-            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "world"}},
-            {"type": "content_block_stop", "index": 0},
-            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}},
-        ]
-        sse_text = self._make_sse(events)
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.iter_lines.return_value = iter(sse_text.strip().split("\n"))
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        mock_client = MagicMock()
-        mock_client.api_key = "test-key"
-
-        with patch("httpx.stream", return_value=mock_resp):
-            result = _stream_message(mock_client, [], [{"role": "user", "content": "hi"}])
-
-        assert len(result["content"]) == 1
-        assert result["content"][0]["type"] == "text"
-        assert result["content"][0]["text"] == "Hello world"
-        assert result["stop_reason"] == "end_turn"
-
-    def test_parses_tool_use_block(self):
-        events = [
-            {"type": "message_start", "message": {"id": "m1"}},
-            {"type": "content_block_start", "index": 0,
-             "content_block": {"type": "tool_use", "id": "tu1", "name": "kubectl_get", "input": {}}},
-            {"type": "content_block_delta", "index": 0,
-             "delta": {"type": "input_json_delta", "partial_json": '{"kind":'}},
-            {"type": "content_block_delta", "index": 0,
-             "delta": {"type": "input_json_delta", "partial_json": '"Pod"}'}},
-            {"type": "content_block_stop", "index": 0},
-            {"type": "message_delta", "delta": {"stop_reason": "tool_use"}},
-        ]
-        sse_text = self._make_sse(events)
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.iter_lines.return_value = iter(sse_text.strip().split("\n"))
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        mock_client = MagicMock()
-        mock_client.api_key = "test-key"
-
-        with patch("httpx.stream", return_value=mock_resp):
-            result = _stream_message(mock_client, [], [])
-
-        assert result["stop_reason"] == "tool_use"
-        assert len(result["content"]) == 1
-        block = result["content"][0]
-        assert block["type"] == "tool_use"
-        assert block["name"] == "kubectl_get"
-        assert block["input"] == {"kind": "Pod"}
-
-    def test_drops_thinking_blocks(self):
-        events = [
-            {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "text": ""}},
-            {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "hmm"}},
-            {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
-            {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "answer"}},
-            {"type": "message_delta", "delta": {"stop_reason": "end_turn"}},
-        ]
-        sse_text = self._make_sse(events)
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.iter_lines.return_value = iter(sse_text.strip().split("\n"))
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        mock_client = MagicMock()
-        mock_client.api_key = "test-key"
-
-        with patch("httpx.stream", return_value=mock_resp):
-            result = _stream_message(mock_client, [], [])
-
-        # Thinking block should be dropped
-        assert len(result["content"]) == 1
-        assert result["content"][0]["text"] == "answer"
-
-    def test_invalid_tool_input_json(self):
-        events = [
-            {"type": "content_block_start", "index": 0,
-             "content_block": {"type": "tool_use", "id": "tu1", "name": "test"}},
-            {"type": "content_block_delta", "index": 0,
-             "delta": {"type": "input_json_delta", "partial_json": "not valid json"}},
-            {"type": "message_delta", "delta": {"stop_reason": "tool_use"}},
-        ]
-        sse_text = self._make_sse(events)
-
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.iter_lines.return_value = iter(sse_text.strip().split("\n"))
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        mock_client = MagicMock()
-        mock_client.api_key = "test-key"
-
-        with patch("httpx.stream", return_value=mock_resp):
-            result = _stream_message(mock_client, [], [])
-
-        # Invalid JSON should fallback to empty dict
-        assert result["content"][0]["input"] == {}
+    invoke_responses is either a single dict (returned every call) or a
+    list passed as side_effect.
+    """
+    chain = MagicMock()
+    if isinstance(invoke_responses, list):
+        chain.invoke.side_effect = invoke_responses
+    else:
+        chain.invoke.return_value = invoke_responses
+    chain.endpoints = [MagicMock(model="claude-sonnet-4-6")]
+    return chain
 
 
 class TestRunAgent:
@@ -174,10 +73,13 @@ class TestRunAgent:
         response = {
             "content": [{"type": "text", "text": f"Here is a finding:\n{finding_json}\nFINDINGS_COMPLETE"}],
             "stop_reason": "end_turn",
+            "input_tokens": 0,
+            "output_tokens": 0,
         }
+        chain = _make_chain_mock(response)
 
         with patch("runtime.orchestrator.discover_tools", return_value=[]):
-            with patch("runtime.orchestrator._stream_message", return_value=response):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
                 findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
 
         assert len(findings) == 1
@@ -190,33 +92,50 @@ class TestRunAgent:
         turn1 = {
             "content": [{"type": "tool_use", "id": "tu1", "name": "kubectl_get", "input": {"kind": "Pod"}}],
             "stop_reason": "tool_use",
+            "input_tokens": 0, "output_tokens": 0,
         }
         turn2 = {
             "content": [{"type": "text", "text": "No issues found.\nFINDINGS_COMPLETE"}],
             "stop_reason": "end_turn",
+            "input_tokens": 0, "output_tokens": 0,
         }
-
-        call_count = {"n": 0}
-        def mock_stream(*a, **kw):
-            call_count["n"] += 1
-            return turn1 if call_count["n"] == 1 else turn2
+        chain = _make_chain_mock([turn1, turn2])
 
         with patch("runtime.orchestrator.discover_tools", return_value=[]):
-            with patch("runtime.orchestrator._stream_message", side_effect=mock_stream):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
                 with patch("runtime.orchestrator.call_mcp_tool", return_value='{"items":[]}'):
                     findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
 
-        assert findings == []  # No findings in this case
-        assert call_count["n"] == 2  # Two turns
+        assert findings == []
+        assert chain.invoke.call_count == 2
 
     def test_stops_on_empty_response(self, monkeypatch):
         monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
         monkeypatch.setenv("MAX_TURNS", "5")
 
-        response = {"content": [], "stop_reason": "end_turn"}
+        response = {
+            "content": [], "stop_reason": "end_turn",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        chain = _make_chain_mock(response)
 
         with patch("runtime.orchestrator.discover_tools", return_value=[]):
-            with patch("runtime.orchestrator._stream_message", return_value=response):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
                 findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
 
         assert findings == []
+
+    def test_propagates_chain_exhausted(self, monkeypatch):
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "1")
+
+        from runtime.model_chain import ModelChainExhausted
+
+        chain = MagicMock()
+        chain.invoke.side_effect = ModelChainExhausted("all endpoints failed")
+        chain.endpoints = [MagicMock(model="m")]
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                with pytest.raises(ModelChainExhausted):
+                    run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])

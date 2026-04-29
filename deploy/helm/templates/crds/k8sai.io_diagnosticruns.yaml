@@ -52,6 +52,14 @@ spec:
                   ClusterRef is the name of a ClusterConfig CR in the same namespace.
                   When empty, the local (controller) cluster is used.
                 type: string
+              fallbackModelConfigRefs:
+                description: |-
+                  FallbackModelConfigRefs 是按优先级排序的备选 ModelConfig 名称列表。
+                  主 ModelConfig 所有重试用尽 / 流中段后按本列表顺序切换。
+                  引用的 ModelConfig 必须与主在同一 namespace。
+                items:
+                  type: string
+                type: array
               historyLimit:
                 default: 10
                 description: HistoryLimit is the maximum number of completed child

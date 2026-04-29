@@ -16,6 +16,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
     model: "claude-sonnet-4-6",
     baseURL: "",
     maxTurns: 20,
+    retries: 0,
     secretRef: "",
     secretKey: "apiKey",
   });
@@ -32,6 +33,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
         secretRef: form.secretRef || form.name,
         maxTurns: form.maxTurns || undefined,
         baseURL: form.baseURL || undefined,
+        retries: form.retries || undefined,
       });
       onClose();
     } catch (err: unknown) {
@@ -125,7 +127,20 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setForm({ ...form, maxTurns: parseInt(e.target.value) || 20 })}
             />
           </div>
-          <div />
+          <div>
+            <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
+              {t("runs.form.modelConfigRetries")}
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              className={inputClass}
+              value={form.retries}
+              onChange={(e) => setForm({ ...form, retries: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) })}
+            />
+            <p className="text-xs text-gray-400 mt-0.5">{t("runs.form.modelConfigRetriesHint")}</p>
+          </div>
           <div>
             <label className="block text-xs mb-1 text-gray-600 dark:text-gray-400">
               {t("modelconfigs.create.secretRef")}
@@ -214,6 +229,7 @@ export default function ModelConfigsPage() {
                 <TableHead>{t("modelconfigs.col.model")}</TableHead>
                 <TableHead>{t("modelconfigs.col.baseURL")}</TableHead>
                 <TableHead>{t("modelconfigs.col.maxTurns")}</TableHead>
+                <TableHead>{t("runs.form.modelConfigRetries")}</TableHead>
                 <TableHead>{t("modelconfigs.col.secret")}</TableHead>
                 <TableHead>{t("modelconfigs.col.apiKey")}</TableHead>
               </TableRow>
@@ -233,6 +249,7 @@ export default function ModelConfigsPage() {
                     {mc.baseURL || <span className="italic">default</span>}
                   </TableCell>
                   <TableCell className="text-center">{mc.maxTurns ?? 20}</TableCell>
+                  <TableCell className="text-center">{mc.retries ?? 0}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {mc.secretRef}/{mc.secretKey}
                   </TableCell>

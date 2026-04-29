@@ -54,6 +54,7 @@ export interface CreateRunRequest {
   };
   skills?: string[];
   modelConfigRef: string;
+  fallbackModelConfigRefs?: string[];
   timeoutSeconds?: number;
   outputLanguage?: "zh" | "en";
   schedule?: string;
@@ -106,6 +107,7 @@ export interface ModelConfig {
   model: string;
   baseURL?: string;
   maxTurns?: number;
+  retries?: number;
   secretRef: string;
   secretKey: string;
   apiKey: string; // always "****"

@@ -21,6 +21,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DialogRoot, DialogTrigger, DialogPortal, DialogBackdrop, DialogPopup, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { TagInput } from "@/components/tag-input";
+import { ModelConfigPicker } from "@/components/model-config-picker";
 import { createRun, useModelConfigs } from "@/lib/api";
 import { useI18n } from "@/i18n/context";
 import type { CreateRunRequest } from "@/lib/types";
@@ -43,6 +44,7 @@ export function CreateRunDialog({ onCreated }: Props) {
   const [labelSelector, setLabelSelector] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [modelConfigRef, setModelConfigRef] = useState("anthropic-credentials");
+  const [fallbackModelConfigRefs, setFallbackModelConfigRefs] = useState<string[]>([]);
   const [timeoutSeconds, setTimeoutSeconds] = useState<string>("");
   const [outputLanguage, setOutputLanguage] = useState<"zh" | "en">(lang);
   const [schedule, setSchedule] = useState("");
@@ -70,6 +72,7 @@ export function CreateRunDialog({ onCreated }: Props) {
       },
       skills: skills.length > 0 ? skills : undefined,
       modelConfigRef,
+      fallbackModelConfigRefs: fallbackModelConfigRefs.length > 0 ? fallbackModelConfigRefs : undefined,
       timeoutSeconds: Number(timeoutSeconds) > 0 ? Number(timeoutSeconds) : undefined,
       outputLanguage,
       schedule: schedule || undefined,
@@ -80,7 +83,7 @@ export function CreateRunDialog({ onCreated }: Props) {
       await createRun(body);
       setOpen(false);
       onCreated();
-      setName(""); setNamespaces([]); setLabelSelector([]); setSkills([]); setTimeoutSeconds(""); setSchedule(""); setHistoryLimit("");
+      setName(""); setNamespaces([]); setLabelSelector([]); setSkills([]); setTimeoutSeconds(""); setSchedule(""); setHistoryLimit(""); setFallbackModelConfigRefs([]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("runs.form.error"));
     } finally {
@@ -150,17 +153,16 @@ export function CreateRunDialog({ onCreated }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <label className={labelClass}>{t("runs.form.modelConfigRef")} *</label>
-              <select required value={modelConfigRef} onChange={(e) => setModelConfigRef(e.target.value)} className={inputClass}>
-                {(modelConfigs || []).filter((mc) => mc.namespace === namespace).map((mc) => (
-                  <option key={`${mc.namespace}/${mc.name}`} value={mc.name}>
-                    {mc.name} ({mc.model})
-                  </option>
-                ))}
-                {(modelConfigs || []).filter((mc) => mc.namespace === namespace).length === 0 && (
-                  <option value="anthropic-credentials">anthropic-credentials</option>
-                )}
-              </select>
+              <ModelConfigPicker
+                configs={modelConfigs || []}
+                primary={modelConfigRef}
+                fallbacks={fallbackModelConfigRefs}
+                onChange={(p, fb) => {
+                  setModelConfigRef(p);
+                  setFallbackModelConfigRefs(fb);
+                }}
+                namespace={namespace}
+              />
               <p className="text-xs text-gray-400 dark:text-gray-500">{t("runs.form.modelConfigRefHint")}</p>
             </div>
 

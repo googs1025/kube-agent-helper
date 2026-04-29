@@ -40,6 +40,10 @@ type Metrics struct {
 	LLMTokensTotal            *prometheus.CounterVec
 	EventCollectorEventsTotal *prometheus.CounterVec
 	ActiveRuns                prometheus.Gauge
+
+	LLMRetriesTotal   *prometheus.CounterVec
+	LLMFallbackTotal  *prometheus.CounterVec
+	LLMChainExhausted *prometheus.CounterVec
 }
 
 // New creates a new Metrics instance with a dedicated prometheus.Registry.
@@ -83,6 +87,18 @@ func New() *Metrics {
 		ActiveRuns: prometheus.NewGauge(
 			prometheus.GaugeOpts{Name: "kah_active_runs", Help: "Currently active runs"},
 		),
+		LLMRetriesTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{Name: "kah_llm_retries_total", Help: "Same-model LLM retries (5xx/429/timeout/network)"},
+			[]string{"model", "reason"},
+		),
+		LLMFallbackTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{Name: "kah_llm_fallback_total", Help: "Cross-endpoint fallback switches in ModelChain"},
+			[]string{"from_model", "to_model", "reason"},
+		),
+		LLMChainExhausted: prometheus.NewCounterVec(
+			prometheus.CounterOpts{Name: "kah_llm_chain_exhausted_total", Help: "ModelChain exhaustion events (all endpoints failed)"},
+			[]string{"endpoints"},
+		),
 	}
 
 	reg.MustRegister(
@@ -95,6 +111,9 @@ func New() *Metrics {
 		m.LLMTokensTotal,
 		m.EventCollectorEventsTotal,
 		m.ActiveRuns,
+		m.LLMRetriesTotal,
+		m.LLMFallbackTotal,
+		m.LLMChainExhausted,
 	)
 
 	return m
@@ -138,4 +157,28 @@ func (m *Metrics) DecActiveRuns() {
 // RecordEvent increments kah_event_collector_events_total.
 func (m *Metrics) RecordEvent(reason, cluster string) {
 	m.EventCollectorEventsTotal.WithLabelValues(reason, cluster).Inc()
+}
+
+// RecordLLMRetry increments kah_llm_retries_total.
+func (m *Metrics) RecordLLMRetry(model, reason string) {
+	if m == nil || m.LLMRetriesTotal == nil {
+		return
+	}
+	m.LLMRetriesTotal.WithLabelValues(model, reason).Inc()
+}
+
+// RecordLLMFallback increments kah_llm_fallback_total.
+func (m *Metrics) RecordLLMFallback(fromModel, toModel, reason string) {
+	if m == nil || m.LLMFallbackTotal == nil {
+		return
+	}
+	m.LLMFallbackTotal.WithLabelValues(fromModel, toModel, reason).Inc()
+}
+
+// RecordLLMChainExhausted increments kah_llm_chain_exhausted_total.
+func (m *Metrics) RecordLLMChainExhausted(endpoints string) {
+	if m == nil || m.LLMChainExhausted == nil {
+		return
+	}
+	m.LLMChainExhausted.WithLabelValues(endpoints).Inc()
 }
