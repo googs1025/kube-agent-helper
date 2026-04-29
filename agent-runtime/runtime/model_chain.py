@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+from . import logger
 
 
 _BACKOFF_SCHEDULE = [1, 2, 4]  # 秒，指数；超过封顶 4s
@@ -25,6 +28,19 @@ def _backoff_for(attempt: int) -> float:
     if 0 <= idx < len(_BACKOFF_SCHEDULE):
         return float(_BACKOFF_SCHEDULE[idx])
     return float(_BACKOFF_SCHEDULE[-1])
+
+
+def _retry_after(e: httpx.HTTPStatusError) -> float:
+    """从 429 响应的 Retry-After header 读退避秒数；缺失/无效用默认退避。
+    封顶 60s 防恶意服务端阻塞。"""
+    raw = e.response.headers.get("Retry-After")
+    if not raw:
+        return _backoff_for(1)
+    try:
+        secs = float(raw)
+    except ValueError:
+        return _backoff_for(1)
+    return min(secs, 60.0)
 
 
 @dataclass(frozen=True)
@@ -168,6 +184,117 @@ class ModelChain:
         if not endpoints:
             raise ValueError("ModelChain requires at least one endpoint")
         self.endpoints = endpoints
+
+    def invoke(self, tools, messages, tracer) -> dict:
+        """跑一个 turn 的所有重试 + fallback 决策。
+
+        返回 _stream_one 的结构化 dict。所有 endpoint + 重试都失败时
+        raise ModelChainExhausted。4xx（除 429）原样向上抛 — LLM 配置错
+        重试无意义。
+        """
+        last_error: Exception | None = None
+        for ep_idx, ep in enumerate(self.endpoints):
+            sse_broken = False
+            total_attempts = 1 + ep.retries
+            for attempt in range(1, total_attempts + 1):
+                try:
+                    return _stream_one(ep, tools, messages)
+                except _SSEStreamBroken as e:
+                    last_error = e
+                    sse_broken = True
+                    logger.warn(
+                        "model fallback",
+                        from_index=ep_idx,
+                        from_model=ep.model,
+                        reason="sse_stream_broken",
+                        error=str(e),
+                    )
+                    tracer.event(
+                        name="model_fallback",
+                        level="WARNING",
+                        metadata={"from_index": ep_idx, "reason": "sse_stream_broken"},
+                    )
+                    break  # 同模型不重试，跳到下一 endpoint
+                except httpx.HTTPStatusError as e:
+                    code = e.response.status_code
+                    if 400 <= code < 500 and code != 429:
+                        # 4xx (except 429) 不重试不 fallback
+                        raise
+                    last_error = e
+                    if attempt < total_attempts:
+                        backoff = (
+                            _retry_after(e) if code == 429 else _backoff_for(attempt)
+                        )
+                        logger.warn(
+                            "model retry",
+                            endpoint_index=ep_idx,
+                            model=ep.model,
+                            attempt=attempt,
+                            error=f"HTTP {code}",
+                            backoff_s=backoff,
+                        )
+                        tracer.event(
+                            name="model_retry",
+                            level="WARNING",
+                            metadata={
+                                "endpoint_index": ep_idx,
+                                "attempt": attempt,
+                                "error": f"HTTP {code}",
+                            },
+                        )
+                        time.sleep(backoff)
+                except (
+                    httpx.TimeoutException,
+                    httpx.ConnectError,
+                    httpx.RemoteProtocolError,
+                ) as e:
+                    last_error = e
+                    if attempt < total_attempts:
+                        backoff = _backoff_for(attempt)
+                        logger.warn(
+                            "model retry",
+                            endpoint_index=ep_idx,
+                            model=ep.model,
+                            attempt=attempt,
+                            error=type(e).__name__,
+                            backoff_s=backoff,
+                        )
+                        tracer.event(
+                            name="model_retry",
+                            level="WARNING",
+                            metadata={
+                                "endpoint_index": ep_idx,
+                                "attempt": attempt,
+                                "error": type(e).__name__,
+                            },
+                        )
+                        time.sleep(backoff)
+
+            # 切下一 endpoint。SSE 已在 except 块里打过 fallback 事件，
+            # 重试用尽路径在这里补发。
+            if not sse_broken and ep_idx < len(self.endpoints) - 1:
+                next_ep = self.endpoints[ep_idx + 1]
+                logger.warn(
+                    "model fallback",
+                    from_index=ep_idx,
+                    to_index=ep_idx + 1,
+                    from_model=ep.model,
+                    to_model=next_ep.model,
+                    reason="retries_exhausted",
+                )
+                tracer.event(
+                    name="model_fallback",
+                    level="WARNING",
+                    metadata={
+                        "from_index": ep_idx,
+                        "to_index": ep_idx + 1,
+                        "reason": "retries_exhausted",
+                    },
+                )
+
+        raise ModelChainExhausted(
+            f"all {len(self.endpoints)} endpoint(s) exhausted; last_error={last_error!r}"
+        )
 
     @classmethod
     def from_env(cls) -> "ModelChain":

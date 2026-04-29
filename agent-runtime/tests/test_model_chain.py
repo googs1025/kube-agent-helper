@@ -8,10 +8,32 @@ import pytest
 
 from runtime.model_chain import (
     ModelChain,
+    ModelChainExhausted,
     ModelEndpoint,
     _SSEStreamBroken,
     _stream_one,
 )
+
+
+class _NoopTracer:
+    """Stand-in tracer used in invoke tests; just absorbs calls."""
+
+    def event(self, **kwargs):
+        pass
+
+    def generation(self, **kwargs):
+        pass
+
+
+def _http_status_error(status: int, headers: dict | None = None):
+    import httpx
+
+    req = httpx.Request("POST", "https://x")
+    return httpx.HTTPStatusError(
+        f"{status}",
+        request=req,
+        response=httpx.Response(status, headers=headers or {}, request=req),
+    )
 
 
 def _make_sse_lines(events: list[str]) -> list[str]:
@@ -235,3 +257,116 @@ class TestStreamOne:
         assert len(result["content"]) == 1
         assert result["content"][0]["type"] == "text"
         assert result["content"][0]["text"] == "answer"
+
+class TestInvoke:
+    def test_succeeds_first_try(self):
+        chain = ModelChain([ModelEndpoint(base_url="", model="m", api_key="k", retries=0)])
+        with patch("runtime.model_chain._stream_one") as mock_stream:
+            mock_stream.return_value = {
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "input_tokens": 1,
+                "output_tokens": 1,
+            }
+            result = chain.invoke(tools=[], messages=[], tracer=_NoopTracer())
+        assert result["stop_reason"] == "end_turn"
+        assert mock_stream.call_count == 1
+
+    def test_retries_on_5xx_and_succeeds(self):
+        chain = ModelChain([ModelEndpoint(base_url="", model="m", api_key="k", retries=2)])
+        calls = {"n": 0}
+
+        def fake(ep, tools, messages):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise _http_status_error(503)
+            return {"content": [], "stop_reason": "end_turn", "input_tokens": 0, "output_tokens": 0}
+
+        with patch("runtime.model_chain._stream_one", side_effect=fake), \
+             patch("runtime.model_chain.time.sleep"):
+            result = chain.invoke([], [], _NoopTracer())
+        assert result["stop_reason"] == "end_turn"
+        assert calls["n"] == 3
+
+    def test_fallbacks_after_retries_exhausted(self):
+        eps = [
+            ModelEndpoint(base_url="", model="primary", api_key="k0", retries=1),
+            ModelEndpoint(base_url="", model="backup", api_key="k1", retries=0),
+        ]
+        chain = ModelChain(eps)
+        side = [
+            _http_status_error(503),
+            _http_status_error(503),
+            {"content": [], "stop_reason": "end_turn", "input_tokens": 0, "output_tokens": 0},
+        ]
+        with patch("runtime.model_chain._stream_one", side_effect=side), \
+             patch("runtime.model_chain.time.sleep"):
+            result = chain.invoke([], [], _NoopTracer())
+        assert result["stop_reason"] == "end_turn"
+
+    def test_4xx_no_retry_no_fallback(self):
+        eps = [
+            ModelEndpoint("", "m", "k", retries=3),
+            ModelEndpoint("", "m2", "k2", retries=3),
+        ]
+        chain = ModelChain(eps)
+        import httpx
+
+        with patch("runtime.model_chain._stream_one", side_effect=_http_status_error(403)), \
+             patch("runtime.model_chain.time.sleep"):
+            with pytest.raises(httpx.HTTPStatusError):
+                chain.invoke([], [], _NoopTracer())
+
+    def test_sse_broken_skips_to_fallback_no_retry(self):
+        eps = [
+            ModelEndpoint("", "m", "k", retries=3),  # retries=3 should NOT be used
+            ModelEndpoint("", "m2", "k2", retries=0),
+        ]
+        chain = ModelChain(eps)
+        # _stream_one called: once on primary (broken), once on fallback (success)
+        side = [
+            _SSEStreamBroken("eof"),
+            {"content": [], "stop_reason": "end_turn", "input_tokens": 0, "output_tokens": 0},
+        ]
+        with patch("runtime.model_chain._stream_one", side_effect=side) as mock_stream, \
+             patch("runtime.model_chain.time.sleep"):
+            result = chain.invoke([], [], _NoopTracer())
+        assert result["stop_reason"] == "end_turn"
+        assert mock_stream.call_count == 2  # NOT 4 (would be 4 if retried on primary)
+
+    def test_429_uses_retry_after_header(self):
+        chain = ModelChain([ModelEndpoint("", "m", "k", retries=1)])
+        side = [
+            _http_status_error(429, headers={"Retry-After": "10"}),
+            {"content": [], "stop_reason": "end_turn", "input_tokens": 0, "output_tokens": 0},
+        ]
+        sleeps: list[float] = []
+
+        with patch("runtime.model_chain._stream_one", side_effect=side), \
+             patch("runtime.model_chain.time.sleep", side_effect=lambda s: sleeps.append(s)):
+            chain.invoke([], [], _NoopTracer())
+        assert sleeps == [10.0]
+
+    def test_chain_exhausted_raises(self):
+        eps = [
+            ModelEndpoint("", "m", "k", retries=0),
+            ModelEndpoint("", "m2", "k2", retries=0),
+        ]
+        chain = ModelChain(eps)
+        with patch("runtime.model_chain._stream_one", side_effect=_http_status_error(503)), \
+             patch("runtime.model_chain.time.sleep"):
+            with pytest.raises(ModelChainExhausted):
+                chain.invoke([], [], _NoopTracer())
+
+    def test_429_retry_after_caps_at_60(self):
+        chain = ModelChain([ModelEndpoint("", "m", "k", retries=1)])
+        side = [
+            _http_status_error(429, headers={"Retry-After": "9999"}),
+            {"content": [], "stop_reason": "end_turn", "input_tokens": 0, "output_tokens": 0},
+        ]
+        sleeps: list[float] = []
+
+        with patch("runtime.model_chain._stream_one", side_effect=side), \
+             patch("runtime.model_chain.time.sleep", side_effect=lambda s: sleeps.append(s)):
+            chain.invoke([], [], _NoopTracer())
+        assert sleeps == [60.0]
