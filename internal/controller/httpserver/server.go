@@ -794,12 +794,13 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 			Namespaces    []string          `json:"namespaces"`
 			LabelSelector map[string]string `json:"labelSelector"`
 		} `json:"target"`
-		Skills         []string `json:"skills"`
-		ModelConfigRef string   `json:"modelConfigRef"`
-		TimeoutSeconds *int32   `json:"timeoutSeconds"`
-		OutputLanguage string   `json:"outputLanguage"`
-		Schedule       string   `json:"schedule"`
-		HistoryLimit   *int32   `json:"historyLimit"`
+		Skills                  []string `json:"skills"`
+		ModelConfigRef          string   `json:"modelConfigRef"`
+		FallbackModelConfigRefs []string `json:"fallbackModelConfigRefs"`
+		TimeoutSeconds          *int32   `json:"timeoutSeconds"`
+		OutputLanguage          string   `json:"outputLanguage"`
+		Schedule                string   `json:"schedule"`
+		HistoryLimit            *int32   `json:"historyLimit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -827,12 +828,13 @@ func (s *Server) handleAPIRunsPost(w http.ResponseWriter, r *http.Request) {
 				Namespaces:    req.Target.Namespaces,
 				LabelSelector: req.Target.LabelSelector,
 			},
-			Skills:         req.Skills,
-			ModelConfigRef: req.ModelConfigRef,
-			TimeoutSeconds: req.TimeoutSeconds,
-			OutputLanguage: req.OutputLanguage,
-			Schedule:       req.Schedule,
-			HistoryLimit:   req.HistoryLimit,
+			Skills:                  req.Skills,
+			ModelConfigRef:          req.ModelConfigRef,
+			FallbackModelConfigRefs: req.FallbackModelConfigRefs,
+			TimeoutSeconds:          req.TimeoutSeconds,
+			OutputLanguage:          req.OutputLanguage,
+			Schedule:                req.Schedule,
+			HistoryLimit:            req.HistoryLimit,
 		},
 	}
 
@@ -1134,6 +1136,7 @@ func (s *Server) handleAPIModelConfigs(w http.ResponseWriter, r *http.Request) {
 			Model     string `json:"model"`
 			BaseURL   string `json:"baseURL"`
 			MaxTurns  *int   `json:"maxTurns"`
+			Retries   int    `json:"retries"`
 			SecretRef string `json:"secretRef"`
 			SecretKey string `json:"secretKey"`
 		}
@@ -1167,6 +1170,7 @@ func (s *Server) handleAPIModelConfigs(w http.ResponseWriter, r *http.Request) {
 				Model:    req.Model,
 				BaseURL:  req.BaseURL,
 				MaxTurns: req.MaxTurns,
+				Retries:  req.Retries,
 				APIKeyRef: v1alpha1.SecretKeyRef{
 					Name: req.SecretRef,
 					Key:  req.SecretKey,
