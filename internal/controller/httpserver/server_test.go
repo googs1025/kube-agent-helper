@@ -1425,6 +1425,55 @@ func TestLLMMetrics_MethodNotAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 }
 
+func TestLLMMetrics_BatchEvents(t *testing.T) {
+	m := metrics.New()
+	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"events": []map[string]interface{}{
+			{"type": "retry", "labels": map[string]string{"model": "sonnet", "reason": "http_503"}},
+			{"type": "fallback", "labels": map[string]string{"from_model": "sonnet", "to_model": "haiku", "reason": "retries_exhausted"}},
+			{"type": "exhausted", "labels": map[string]string{"endpoints": "3"}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/llm-metrics", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	families, err := m.Registry().Gather()
+	require.NoError(t, err)
+	got := make(map[string]float64)
+	for _, f := range families {
+		switch f.GetName() {
+		case "kah_llm_retries_total", "kah_llm_fallback_total", "kah_llm_chain_exhausted_total":
+			for _, mt := range f.GetMetric() {
+				got[f.GetName()] += mt.GetCounter().GetValue()
+			}
+		}
+	}
+	assert.Equal(t, float64(1), got["kah_llm_retries_total"])
+	assert.Equal(t, float64(1), got["kah_llm_fallback_total"])
+	assert.Equal(t, float64(1), got["kah_llm_chain_exhausted_total"])
+}
+
+func TestLLMMetrics_BatchEvents_NilSafe(t *testing.T) {
+	// Without metrics configured, batch events handler must not panic.
+	srv := httpserver.New(&fakeStore{}, nil, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"events": []map[string]interface{}{
+			{"type": "retry", "labels": map[string]string{"model": "m"}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/llm-metrics", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
 func TestPostFindings_RecordsMetric(t *testing.T) {
 	m := metrics.New()
 	srv := httpserver.New(&fakeStore{}, nil, nil, httpserver.WithMetrics(m))
