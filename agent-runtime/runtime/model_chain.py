@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from . import logger
+from . import reporter
 
 
 _BACKOFF_SCHEDULE = [1, 2, 4]  # 秒，指数；超过封顶 4s
@@ -202,6 +203,11 @@ class ModelChain:
                 except _SSEStreamBroken as e:
                     last_error = e
                     sse_broken = True
+                    next_model = (
+                        self.endpoints[ep_idx + 1].model
+                        if ep_idx < len(self.endpoints) - 1
+                        else ""
+                    )
                     logger.warn(
                         "model fallback",
                         from_index=ep_idx,
@@ -213,6 +219,10 @@ class ModelChain:
                         name="model_fallback",
                         level="WARNING",
                         metadata={"from_index": ep_idx, "reason": "sse_stream_broken"},
+                    )
+                    reporter.record_llm_event(
+                        "fallback",
+                        {"from_model": ep.model, "to_model": next_model, "reason": "sse_stream_broken"},
                     )
                     break  # 同模型不重试，跳到下一 endpoint
                 except httpx.HTTPStatusError as e:
@@ -242,6 +252,10 @@ class ModelChain:
                                 "error": f"HTTP {code}",
                             },
                         )
+                        reporter.record_llm_event(
+                            "retry",
+                            {"model": ep.model, "reason": f"http_{code}"},
+                        )
                         time.sleep(backoff)
                 except (
                     httpx.TimeoutException,
@@ -268,6 +282,10 @@ class ModelChain:
                                 "error": type(e).__name__,
                             },
                         )
+                        reporter.record_llm_event(
+                            "retry",
+                            {"model": ep.model, "reason": type(e).__name__},
+                        )
                         time.sleep(backoff)
 
             # 切下一 endpoint。SSE 已在 except 块里打过 fallback 事件，
@@ -291,7 +309,15 @@ class ModelChain:
                         "reason": "retries_exhausted",
                     },
                 )
+                reporter.record_llm_event(
+                    "fallback",
+                    {"from_model": ep.model, "to_model": next_ep.model, "reason": "retries_exhausted"},
+                )
 
+        reporter.record_llm_event(
+            "exhausted",
+            {"endpoints": str(len(self.endpoints))},
+        )
         raise ModelChainExhausted(
             f"all {len(self.endpoints)} endpoint(s) exhausted; last_error={last_error!r}"
         )

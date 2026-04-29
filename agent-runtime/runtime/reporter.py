@@ -24,6 +24,37 @@ CONTROLLER_URL = os.environ.get("CONTROLLER_URL", "http://controller.kube-agent-
 MAX_RETRIES = 3
 BACKOFF_BASE = 2  # seconds
 
+# Buffer for LLM observability events (retry / fallback / exhausted) emitted
+# from ModelChain. Flushed once at end of run via flush_llm_metrics() — fire
+# and forget; controller side increments Prometheus counters.
+_LLM_BUFFER: list[dict] = []
+
+
+def record_llm_event(event_type: str, labels: dict) -> None:
+    """Buffer an LLM event for later batch upload to /internal/llm-metrics.
+
+    event_type: one of "retry" / "fallback" / "exhausted".
+    labels: free-form k/v sent as Prometheus labels server-side.
+    """
+    _LLM_BUFFER.append({"type": event_type, "labels": labels})
+
+
+def flush_llm_metrics() -> None:
+    """POST the buffered events to controller, then clear the buffer.
+
+    Failures are logged but never raised — observability must not block
+    the agent shutdown path.
+    """
+    if not _LLM_BUFFER:
+        return
+    url = f"{CONTROLLER_URL}/internal/llm-metrics"
+    try:
+        requests.post(url, json={"events": list(_LLM_BUFFER)}, timeout=10)
+    except Exception as e:
+        logger.warn("flush_llm_metrics failed", error=str(e), buffered=len(_LLM_BUFFER))
+    finally:
+        _LLM_BUFFER.clear()
+
 
 def post_findings(run_id: str, findings: list) -> None:
     url = f"{CONTROLLER_URL}/internal/runs/{run_id}/findings"

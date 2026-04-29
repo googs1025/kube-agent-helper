@@ -17,7 +17,7 @@ import sys
 from . import logger
 from . import tracer as _tracer
 from .orchestrator import run_agent
-from .reporter import post_findings
+from .reporter import flush_llm_metrics, post_findings
 from .skill_loader import load_skills
 
 
@@ -50,6 +50,7 @@ def main() -> None:
     logger.info("agent completed", findings=len(findings))
 
     post_findings(run_id, findings)
+    flush_llm_metrics()
     logger.info("done")
 
 
