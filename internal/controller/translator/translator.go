@@ -23,6 +23,7 @@ package translator
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -36,6 +37,11 @@ import (
 	"github.com/kube-agent-helper/kube-agent-helper/internal/store"
 )
 
+// defaultMaxTokens is the per-request output cap injected into the agent pod
+// env when Config.MaxTokens is unset. Matches agent-runtime's own default so
+// behavior is identical whether or not the controller overrides.
+const defaultMaxTokens = 8192
+
 type Config struct {
 	AgentImage          string
 	ControllerURL       string
@@ -43,6 +49,7 @@ type Config struct {
 	Model               string
 	PrometheusURL       string
 	LangfuseSecretName  string // optional; if set, injects LANGFUSE_* env vars
+	MaxTokens           int    // optional; 0 = use defaultMaxTokens (8192)
 }
 
 // SkillProvider is the interface Translator uses to fetch enabled skills.
@@ -182,6 +189,10 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 		skillNames[i] = s.Name
 	}
 
+	maxTokens := t.cfg.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = defaultMaxTokens
+	}
 	baseEnv := []corev1.EnvVar{
 		{Name: "RUN_ID", Value: runID},
 		{Name: "TARGET_NAMESPACES", Value: strings.Join(run.Spec.Target.Namespaces, ",")},
@@ -195,6 +206,7 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 			}
 			return "en"
 		}()},
+		{Name: "MAX_TOKENS", Value: strconv.Itoa(maxTokens)},
 	}
 	allEnv := append(baseEnv, buildChainEnv(chain)...)
 	allEnv = append(allEnv, langfuseEnvVars(t.cfg.LangfuseSecretName)...)

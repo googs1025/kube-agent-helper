@@ -397,3 +397,52 @@ func TestCompile_OutputLanguageDefaultsToEn(t *testing.T) {
 	}
 	assert.Equal(t, "en", gotLang, "default should be 'en'")
 }
+
+func TestTranslator_InjectsMaxTokensFromConfig(t *testing.T) {
+	tr := translator.New(translator.Config{
+		AgentImage:    "agent:test",
+		ControllerURL: "http://ctrl:8080",
+		MaxTokens:     16384,
+	}, &mockProvider{skills: testSkills})
+
+	run := newRun("r", "default", "uid", []string{"pod-health-analyst"}, []string{"default"})
+	objects, err := tr.Compile(context.Background(), run)
+	require.NoError(t, err)
+
+	var job *batchv1.Job
+	for _, o := range objects {
+		if j, ok := o.(*batchv1.Job); ok {
+			job = j
+			break
+		}
+	}
+	require.NotNil(t, job, "Compile must produce a Job")
+
+	envMap := envToMap(job.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t, "16384", envMap["MAX_TOKENS"])
+}
+
+func TestTranslator_DefaultMaxTokensWhenZero(t *testing.T) {
+	// Zero (unset) Config.MaxTokens must fall back to 8192.
+	tr := translator.New(translator.Config{
+		AgentImage:    "agent:test",
+		ControllerURL: "http://ctrl:8080",
+		// MaxTokens: 0 (zero-value)
+	}, &mockProvider{skills: testSkills})
+
+	run := newRun("r", "default", "uid", []string{"pod-health-analyst"}, []string{"default"})
+	objects, err := tr.Compile(context.Background(), run)
+	require.NoError(t, err)
+
+	var job *batchv1.Job
+	for _, o := range objects {
+		if j, ok := o.(*batchv1.Job); ok {
+			job = j
+			break
+		}
+	}
+	require.NotNil(t, job)
+
+	envMap := envToMap(job.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t, "8192", envMap["MAX_TOKENS"], "zero MaxTokens must fall back to 8192 default")
+}
