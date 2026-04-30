@@ -27,6 +27,7 @@ import os
 from typing import List
 
 from . import logger
+from . import reporter
 from . import tracer as _tracer_mod
 from .mcp_client import discover_tools, call_mcp_tool
 from .model_chain import ModelChain
@@ -120,8 +121,9 @@ Available diagnostic skills:
 Instructions:
 1. For each skill, analyze the cluster in the target namespaces.
 2. Use the available MCP tools to gather data.
-3. For each issue found, output a finding JSON object on its own line:
-   {{"dimension":"<dim>","severity":"<critical|high|medium|low|info>","title":"<title>","description":"<desc>","resource_kind":"<kind>","resource_namespace":"<ns>","resource_name":"<name>","suggestion":"<suggestion>"}}
+3. For each issue found, emit ONE line in this exact format (literal `FINDING_JSON: ` prefix, single-line JSON, no markdown fence, no trailing commentary on the same line):
+   FINDING_JSON: {{"dimension":"<health|security|cost|reliability>","severity":"<critical|high|medium|low|info>","title":"<title>","description":"<desc>","resource_kind":"<kind>","resource_namespace":"<ns>","resource_name":"<name>","suggestion":"<suggestion>"}}
+   All eight fields are REQUIRED. `dimension` and `severity` MUST be one of the listed enum values.
 4. After all skills complete, output: FINDINGS_COMPLETE
 """
 
@@ -181,15 +183,19 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
             if block["type"] == "text" and block.get("text"):
                 assistant_content.append({"type": "text", "text": block["text"]})
                 logger.debug("text block", chars=len(block['text']), preview=block['text'][:200])
-                # Extract findings from text
-                for line in block["text"].split("\n"):
-                    line = line.strip()
-                    if line.startswith("{") and "dimension" in line:
-                        try:
-                            f = json.loads(line)
-                            findings.append(f)
-                        except json.JSONDecodeError:
-                            pass
+                block_findings, parse_errors = extract_findings(block["text"])
+                findings.extend(block_findings)
+                for err in parse_errors:
+                    logger.warn("finding parse failed", error=err, turn=turn + 1)
+                    tracer.event(
+                        name="finding_parse_error",
+                        level="WARNING",
+                        metadata={"turn": turn + 1, "error": err},
+                    )
+                    reporter.record_llm_event(
+                        "finding_parse_error",
+                        {"turn": str(turn + 1), "error": err},
+                    )
             elif block["type"] == "tool_use":
                 assistant_content.append(block)
                 logger.debug("tool_use", tool=block['name'], input=block.get('input', {}))

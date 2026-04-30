@@ -155,13 +155,21 @@ class TestRunAgent:
         monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
         monkeypatch.setenv("MAX_TURNS", "1")
 
-        finding_json = json.dumps({
+        finding_obj = {
             "dimension": "health", "severity": "critical",
-            "title": "CrashLoopBackOff", "resource_kind": "Pod",
+            "title": "CrashLoopBackOff",
+            "description": "Pod restarting repeatedly",
+            "resource_kind": "Pod",
             "resource_namespace": "default", "resource_name": "nginx",
-        })
+            "suggestion": "Inspect container logs",
+        }
+        text = (
+            "Here is a finding:\n"
+            f"FINDING_JSON: {json.dumps(finding_obj)}\n"
+            "FINDINGS_COMPLETE"
+        )
         response = {
-            "content": [{"type": "text", "text": f"Here is a finding:\n{finding_json}\nFINDINGS_COMPLETE"}],
+            "content": [{"type": "text", "text": text}],
             "stop_reason": "end_turn",
             "input_tokens": 0,
             "output_tokens": 0,
@@ -363,3 +371,31 @@ class TestRunAgent:
         assert chain.invoke.call_count == 2, (
             "unknown behavior must fall back to continue (not silently fail)"
         )
+
+    def test_parse_errors_surfaced_via_reporter(self, monkeypatch):
+        """A malformed FINDING_JSON line must be reported via reporter.record_llm_event."""
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "1")
+
+        text = (
+            'FINDING_JSON: {"dimension":"BOGUS","severity":"critical","title":"X","description":"d","resource_kind":"Pod","resource_namespace":"n","resource_name":"x","suggestion":"s"}\n'
+            "FINDINGS_COMPLETE"
+        )
+        response = {
+            "content": [{"type": "text", "text": text}],
+            "stop_reason": "end_turn",
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }
+        chain = _make_chain_mock(response)
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                with patch("runtime.orchestrator.reporter.record_llm_event") as mock_event:
+                    findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+        assert findings == []  # rejected by enum check
+        mock_event.assert_called()
+        args, _ = mock_event.call_args
+        assert args[0] == "finding_parse_error"
+        assert "dimension" in args[1].get("error", "")
