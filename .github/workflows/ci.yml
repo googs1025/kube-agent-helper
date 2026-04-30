@@ -285,6 +285,46 @@ jobs:
           " >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            const xml = fs.readFileSync('agent-runtime/coverage.xml', 'utf8');
+            const lineRate = parseFloat(xml.match(/line-rate="([\d.]+)"/)?.[1] ?? '0') * 100;
+            const branchRate = parseFloat(xml.match(/branch-rate="([\d.]+)"/)?.[1] ?? '0') * 100;
+            const body = [
+              '## 🐍 Agent Runtime Test Coverage',
+              '',
+              `**Lines: ${lineRate.toFixed(1)}% | Branches: ${branchRate.toFixed(1)}%**`,
+              '',
+              'Full report available in the [Actions artifact](../actions/runs/${{ github.run_id }}).',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body?.includes('Agent Runtime Test Coverage'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
