@@ -698,3 +698,67 @@ func TestParsePodLogStream_LineExceeds1MBReturnsError(t *testing.T) {
 	assert.ErrorIs(t, err, bufio.ErrTooLong)
 	assert.Empty(t, rs.logs, "no entries should be persisted when scanner aborts on oversized line")
 }
+
+// ── TTL-expiry / PhaseUnknown ──────────────────────────────────────────────
+
+func TestRunReconciler_JobNotFoundWithinGrace_Requeues(t *testing.T) {
+	// Job missing but StartedAt is recent (< 1h) — may still be creating; requeue.
+	run := testRun()
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	recent := metav1.NewTime(time.Now().Add(-5 * time.Minute))
+	run.Status.StartedAt = &recent
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run). // no Job object
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.NotZero(t, result.RequeueAfter, "should requeue while within grace period")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Running", updated.Status.Phase, "phase must not change within grace period")
+}
+
+func TestRunReconciler_JobNotFoundAfterTTL_MarksUnknown(t *testing.T) {
+	// Job missing and StartedAt is > 1h ago — job was TTL-cleaned; mark Unknown.
+	run := testRun()
+	run.Status.Phase = "Running"
+	run.Status.ReportID = "uid-1"
+	old := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	run.Status.StartedAt = &old
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run). // no Job object
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	ms.runs["uid-1"] = &store.DiagnosticRun{ID: "uid-1", Status: store.PhaseRunning}
+
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	result := reconcileOnce(t, r)
+	assert.Zero(t, result.RequeueAfter, "terminal — should not requeue")
+
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Unknown", updated.Status.Phase)
+	assert.Contains(t, updated.Status.Message, "TTL")
+	assert.NotNil(t, updated.Status.CompletedAt)
+}
