@@ -247,8 +247,8 @@ class TestRunAgent:
 
         finding_json = json.dumps({
             "dimension": "health", "severity": "critical",
-            "title": "Found", "resource_kind": "Pod",
-            "resource_namespace": "default", "resource_name": "p",
+            "title": "Found", "description": "desc", "suggestion": "fix it",
+            "resource_kind": "Pod", "resource_namespace": "default", "resource_name": "p",
         })
         truncated = {
             "content": [{"type": "text", "text": "partial analysis..."}],
@@ -256,7 +256,7 @@ class TestRunAgent:
             "input_tokens": 0, "output_tokens": 0,
         }
         completion = {
-            "content": [{"type": "text", "text": f"{finding_json}\nFINDINGS_COMPLETE"}],
+            "content": [{"type": "text", "text": f"FINDING_JSON: {finding_json}\nFINDINGS_COMPLETE"}],
             "stop_reason": "end_turn",
             "input_tokens": 0, "output_tokens": 0,
         }
