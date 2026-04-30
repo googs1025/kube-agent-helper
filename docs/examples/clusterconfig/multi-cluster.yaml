@@ -1,0 +1,27 @@
+# 一份文件声明多个 ClusterConfig（staging + prod），方便 GitOps 批量管理。
+# 前置：每个集群对应的 kubeconfig 已存在 Secret（可参考 remote-with-sa-token.yaml
+# 中创建只读 SA + token 的步骤）。
+---
+apiVersion: k8sai.io/v1alpha1
+kind: ClusterConfig
+metadata:
+  name: staging
+  namespace: kube-agent-helper
+spec:
+  kubeConfigRef:
+    name: staging-kubeconfig
+    key: kubeconfig
+  prometheusURL: "http://prometheus.monitoring:9090"
+  description: "Staging cluster (us-east-1)"
+---
+apiVersion: k8sai.io/v1alpha1
+kind: ClusterConfig
+metadata:
+  name: prod
+  namespace: kube-agent-helper
+spec:
+  kubeConfigRef:
+    name: prod-kubeconfig
+    key: kubeconfig
+  prometheusURL: "http://prometheus.monitoring:9090"
+  description: "Production cluster (us-east-1)"

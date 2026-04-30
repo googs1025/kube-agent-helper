@@ -1,0 +1,23 @@
+# 使用模型 fallback 链：主 Opus 失败后按顺序尝试 Sonnet → Haiku。
+# 需先创建 docs/examples/modelconfig/with-fallback.yaml 中的三个 ModelConfig。
+#
+# 行为：
+#   1. 用 opus-primary 跑，含其自身 retries=3
+#   2. 用尽后切 sonnet-fallback（retries=2）
+#   3. 仍失败则切 haiku-emergency（retries=1）保底产出
+#   4. 三个都失败 → DiagnosticRun 状态 Failed
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticRun
+metadata:
+  name: resilient-prod-audit
+  namespace: kube-agent-helper
+spec:
+  target:
+    scope: namespace
+    namespaces: [production]
+  modelConfigRef: opus-primary
+  fallbackModelConfigRefs:
+    - sonnet-fallback
+    - haiku-emergency
+  outputLanguage: zh
+  timeoutSeconds: 600

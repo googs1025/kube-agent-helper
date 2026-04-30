@@ -1,0 +1,48 @@
+# 演示 ModelConfig 的 retries（瞬时错误重试）+ 配套 fallback 链。
+# 配合 DiagnosticRun.spec.fallbackModelConfigRefs 使用：
+# 主 Opus 用尽 retries 后切到 Sonnet，再切到 Haiku 兜底。
+#
+# 触发条件：5xx / 429 / 网络超时 / connection error。
+# 4xx（鉴权失败、模型不存在等）永不重试，直接切下一个。
+---
+apiVersion: k8sai.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: opus-primary
+  namespace: kube-agent-helper
+spec:
+  provider: anthropic
+  model: claude-opus-4-7
+  apiKeyRef:
+    name: anthropic-credentials
+    key: apiKey
+  maxTurns: 40
+  retries: 3
+---
+apiVersion: k8sai.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: sonnet-fallback
+  namespace: kube-agent-helper
+spec:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  apiKeyRef:
+    name: anthropic-credentials
+    key: apiKey
+  maxTurns: 30
+  retries: 2
+---
+apiVersion: k8sai.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: haiku-emergency
+  namespace: kube-agent-helper
+spec:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  apiKeyRef:
+    name: anthropic-credentials
+    key: apiKey
+  maxTurns: 15
+  retries: 1

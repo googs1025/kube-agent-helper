@@ -1,0 +1,46 @@
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticSkill
+metadata:
+  name: cost-waste-analyst
+  namespace: kube-agent-helper
+spec:
+  description: "检测资源浪费：超额 limits、僵尸 Deployment、未释放的 PVC"
+  dimension: cost
+  enabled: true
+  priority: 80
+  tools:
+    - kubectl_get
+    - top_pods
+    - top_nodes
+    - pvc_status
+    - node_status_summary
+  requiresData:
+    - pods
+    - nodes
+    - metrics
+  prompt: |
+    你是 Kubernetes 成本优化专家。
+
+    ## 步骤
+    1. 用 kubectl_get（kind=Pod）汇总所有容器的 resources.requests / limits
+    2. 用 top_pods 拉取每个命名空间实际 CPU/内存用量
+    3. 对每个容器计算 actual / request 比值：
+       - actual CPU < 20% request 持续 → 过量配置
+       - actual memory < 30% request 持续 → 过量配置
+       - 同一 Deployment 下 ≥3 个 Pod 命中 → 合并为单条 finding
+    4. 用 kubectl_get（kind=Deployment）找 spec.replicas=0 的僵尸 Deployment
+    5. 用 pvc_status 列出 status.phase=Released 或无 Pod 引用的 PVC
+    6. 用 top_nodes + node_status_summary 找 allocated < 20% 的低利用率节点
+    7. 输出 finding（dimension: cost）。建议优先聚合到 Deployment 级别，避免每个 Pod 一条
+
+    ## Finding 输出格式（每行一个 JSON）
+    {"dimension":"cost","severity":"<high|medium|low>",
+     "title":"<简短标题>","description":"<请求 vs 实际用量数据>",
+     "resource_kind":"<Deployment|StatefulSet|PersistentVolumeClaim|Node>",
+     "resource_namespace":"<ns>","resource_name":"<name>",
+     "suggestion":"<建议下调 limits 至具体数值，或删除资源>"}
+
+    ## 严重程度
+    - high: >50% 资源浪费横跨多个 Pod，或低利用率节点
+    - medium: 20-50% 过量配置，或孤儿 PVC
+    - low: 单 Pod 轻度过量
