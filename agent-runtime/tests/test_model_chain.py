@@ -258,6 +258,33 @@ class TestStreamOne:
         assert result["content"][0]["type"] == "text"
         assert result["content"][0]["text"] == "answer"
 
+    def test_default_max_tokens_is_8192(self, monkeypatch):
+        """When MAX_TOKENS env is unset, _stream_one must request 8192."""
+        monkeypatch.delenv("MAX_TOKENS", raising=False)
+        events = ['{"type":"message_stop"}']
+        ep = ModelEndpoint(base_url="", model="m", api_key="k", retries=0)
+
+        with patch("runtime.model_chain.httpx.stream") as mock_stream:
+            mock_stream.return_value = _fake_stream(_make_sse_lines(events))
+            _stream_one(ep, tools=[], messages=[])
+
+        _, kwargs = mock_stream.call_args
+        assert kwargs["json"]["max_tokens"] == 8192
+
+    def test_max_tokens_env_override(self, monkeypatch):
+        """MAX_TOKENS env overrides the default."""
+        monkeypatch.setenv("MAX_TOKENS", "16384")
+        events = ['{"type":"message_stop"}']
+        ep = ModelEndpoint(base_url="", model="m", api_key="k", retries=0)
+
+        with patch("runtime.model_chain.httpx.stream") as mock_stream:
+            mock_stream.return_value = _fake_stream(_make_sse_lines(events))
+            _stream_one(ep, tools=[], messages=[])
+
+        _, kwargs = mock_stream.call_args
+        assert kwargs["json"]["max_tokens"] == 16384
+
+
 class TestInvoke:
     def test_succeeds_first_try(self):
         chain = ModelChain([ModelEndpoint(base_url="", model="m", api_key="k", retries=0)])
