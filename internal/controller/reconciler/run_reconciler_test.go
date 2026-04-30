@@ -580,3 +580,18 @@ func TestRunReconciler_RunningNoTimeoutWhenZero(t *testing.T) {
 		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
 	assert.Equal(t, "Running", updated.Status.Phase, "should remain Running with timeout=0")
 }
+
+// ── marshalJSON ───────────────────────────────────────────────────────────────
+
+func TestMarshalJSON_Success(t *testing.T) {
+	got, err := reconciler.MarshalJSON(map[string]string{"k": "v"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"k":"v"}`, got)
+}
+
+func TestMarshalJSON_Error(t *testing.T) {
+	// channels are unsupported by encoding/json → triggers the error path
+	_, err := reconciler.MarshalJSON(make(chan int))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "json.Marshal")
+}

@@ -411,3 +411,17 @@ func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+// MarshalJSON marshals v to a JSON string. Returns an error instead of
+// silently swallowing — callers must surface marshal failures (e.g. via
+// failRun) so they don't become silent data corruption in the store.
+//
+// Exported for unit tests; internal callers should treat this like a
+// package-private helper.
+func MarshalJSON(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("json.Marshal: %w", err)
+	}
+	return string(b), nil
+}
