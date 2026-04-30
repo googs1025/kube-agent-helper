@@ -40,85 +40,13 @@ jobs:
           go tool cover -func=coverage.out | tail -20 >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Comment coverage on PR
+      - name: Upload Go coverage artifact
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            const coverage = fs.readFileSync('coverage.out', 'utf8');
-            const { execSync } = require('child_process');
-            const report = execSync('go tool cover -func=coverage.out').toString();
-            const totalLine = report.split('\n').find(l => l.includes('total:'));
-            const total = totalLine ? totalLine.match(/[\d.]+%/)?.[0] : 'unknown';
-
-            // Build per-package summary
-            const lines = report.trim().split('\n');
-            const pkgMap = new Map();
-            for (const line of lines) {
-              if (line.includes('total:')) continue;
-              const match = line.match(/^(.+?)\s+\S+\s+([\d.]+%)/);
-              if (match) {
-                const pkg = match[1].replace('github.com/kube-agent-helper/kube-agent-helper/', '');
-                if (!pkgMap.has(pkg)) pkgMap.set(pkg, []);
-                pkgMap.get(pkg).push(match[2]);
-              }
-            }
-
-            let table = '| Package | Functions | Avg Coverage |\n|---------|-----------|-------------|\n';
-            const pkgSet = new Set();
-            for (const line of lines) {
-              if (line.includes('total:')) continue;
-              const match = line.match(/^(\S+)\s/);
-              if (match) {
-                const pkg = match[1].replace('github.com/kube-agent-helper/kube-agent-helper/', '');
-                const dir = pkg.substring(0, pkg.lastIndexOf('/'));
-                if (dir && !pkgSet.has(dir)) {
-                  pkgSet.add(dir);
-                  const funcs = lines.filter(l => l.includes(match[1].substring(0, match[1].lastIndexOf('/'))));
-                  const pcts = funcs.map(f => parseFloat(f.match(/([\d.]+)%/)?.[1] || '0'));
-                  const avg = pcts.length ? (pcts.reduce((a,b) => a+b, 0) / pcts.length).toFixed(1) : '0';
-                  table += `| ${dir} | ${pcts.length} | ${avg}% |\n`;
-                }
-              }
-            }
-
-            const body = [
-              '## 📊 Go Test Coverage Report',
-              '',
-              `**Total: ${total}**`,
-              '',
-              '<details><summary>Per-function details</summary>',
-              '',
-              '```',
-              report.split('\n').slice(-21).join('\n'),
-              '```',
-              '</details>',
-            ].join('\n');
-
-            // Find existing comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find(c => c.body?.includes('Go Test Coverage Report'));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
+          name: go-coverage
+          path: coverage.out
+          retention-days: 1
 
   envtest:
     name: Integration Tests (envtest)
@@ -285,52 +213,14 @@ jobs:
           " >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const { execSync } = require('child_process');
-            const xml = fs.readFileSync('agent-runtime/coverage.xml', 'utf8');
-            const lineRate = parseFloat(xml.match(/line-rate="([\d.]+)"/)?.[1] ?? '0') * 100;
-            const branchRate = parseFloat(xml.match(/branch-rate="([\d.]+)"/)?.[1] ?? '0') * 100;
-            const body = [
-              '## 🐍 Agent Runtime Test Coverage',
-              '',
-              `**Lines: ${lineRate.toFixed(1)}% | Branches: ${branchRate.toFixed(1)}%**`,
-              '',
-              'Full report available in the [Actions artifact](../actions/runs/${{ github.run_id }}).',
-            ].join('\n');
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find(c => c.body?.includes('Agent Runtime Test Coverage'));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
-
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: agent-runtime-coverage
-          path: agent-runtime/htmlcov/
+          path: |
+            agent-runtime/htmlcov/
+            agent-runtime/coverage.xml
           retention-days: 7
 
   skill-lint:
@@ -556,3 +446,90 @@ jobs:
           kubectl delete diagnosticfix smoke-fix smoke-fix-create --ignore-not-found
           kubectl delete diagnosticrun smoke-test --ignore-not-found
           kubectl delete diagnosticskill pod-health-analyst --ignore-not-found
+
+  coverage-comment:
+    name: Coverage Report (PR comment)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [test, python-test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download Go coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: go-coverage
+
+      - name: Download Python coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-runtime-coverage
+          path: htmlcov
+
+      - name: Post combined coverage comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+
+            // ── Go ────────────────────────────────────────────────────────
+            const goReport = execSync('go tool cover -func=coverage.out').toString();
+            const goTotal = (goReport.split('\n').find(l => l.includes('total:')) ?? '')
+              .match(/[\d.]+%/)?.[0] ?? 'n/a';
+            const goDetail = goReport.split('\n').slice(-21).join('\n');
+
+            // ── Python ────────────────────────────────────────────────────
+            let pyLines = 'n/a', pyBranches = 'n/a';
+            const xmlPath = 'htmlcov/coverage.xml';
+            if (fs.existsSync(xmlPath)) {
+              const xml = fs.readFileSync(xmlPath, 'utf8');
+              pyLines    = (parseFloat(xml.match(/line-rate="([\d.]+)"/)?.[1]   ?? '0') * 100).toFixed(1) + '%';
+              pyBranches = (parseFloat(xml.match(/branch-rate="([\d.]+)"/)?.[1] ?? '0') * 100).toFixed(1) + '%';
+            }
+
+            const body = [
+              '## 📊 Test Coverage Report',
+              '',
+              '| | Lines | Branches |',
+              '|---|---|---|',
+              `| **Go** | ${goTotal} | — |`,
+              `| **Python (agent-runtime)** | ${pyLines} | ${pyBranches} |`,
+              '',
+              '<details><summary>Go per-function details</summary>',
+              '',
+              '```',
+              goDetail,
+              '```',
+              '</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = 'Test Coverage Report';
+            const existing = comments.find(c => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
