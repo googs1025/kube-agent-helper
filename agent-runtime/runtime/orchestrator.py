@@ -90,6 +90,9 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
 
     findings = []
     max_turns = int(os.environ.get("MAX_TURNS", "10"))
+    max_tokens_continue_limit = int(os.environ.get("MAX_TOKENS_CONTINUE_LIMIT", "3"))
+    max_tokens_behavior = os.environ.get("MAX_TOKENS_BEHAVIOR", "continue")
+    consecutive_max_tokens = 0
 
     for turn in range(max_turns):
         logger.info("turn", turn=turn + 1, max_turns=max_turns)
@@ -141,6 +144,7 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
             break
 
         if response["stop_reason"] == "tool_use":
+            consecutive_max_tokens = 0
             tool_results = []
             for block in response["content"]:
                 if block["type"] == "tool_use":
@@ -152,6 +156,34 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
                         "content": result,
                     })
             messages.append({"role": "user", "content": tool_results})
+        elif response["stop_reason"] == "max_tokens":
+            logger.warn(
+                "hit max_tokens",
+                turn=turn + 1,
+                behavior=max_tokens_behavior,
+                consecutive=consecutive_max_tokens + 1,
+                limit=max_tokens_continue_limit,
+            )
+            tracer.event(
+                name="max_tokens_hit",
+                level="WARNING",
+                metadata={
+                    "turn": turn + 1,
+                    "behavior": max_tokens_behavior,
+                    "consecutive": consecutive_max_tokens + 1,
+                },
+            )
+            if max_tokens_behavior == "fail":
+                break
+            consecutive_max_tokens += 1
+            if consecutive_max_tokens >= max_tokens_continue_limit:
+                logger.warn(
+                    "max_tokens continue limit reached, stopping",
+                    limit=max_tokens_continue_limit,
+                )
+                break
+            # behavior == "continue": loop iterates again with the now-extended
+            # messages history; assistant_content has already been appended above.
         else:
             logger.warn("unexpected stop_reason, stopping", stop_reason=response['stop_reason'])
             break

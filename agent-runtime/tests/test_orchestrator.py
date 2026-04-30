@@ -139,3 +139,108 @@ class TestRunAgent:
             with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
                 with pytest.raises(ModelChainExhausted):
                     run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+    def test_max_tokens_continues_by_default(self, monkeypatch):
+        """stop_reason=max_tokens with default behavior should continue to next turn."""
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "5")
+        monkeypatch.delenv("MAX_TOKENS_BEHAVIOR", raising=False)
+        monkeypatch.delenv("MAX_TOKENS_CONTINUE_LIMIT", raising=False)
+
+        finding_json = json.dumps({
+            "dimension": "health", "severity": "critical",
+            "title": "Found", "resource_kind": "Pod",
+            "resource_namespace": "default", "resource_name": "p",
+        })
+        truncated = {
+            "content": [{"type": "text", "text": "partial analysis..."}],
+            "stop_reason": "max_tokens",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        completion = {
+            "content": [{"type": "text", "text": f"{finding_json}\nFINDINGS_COMPLETE"}],
+            "stop_reason": "end_turn",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        chain = _make_chain_mock([truncated, completion])
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+        assert chain.invoke.call_count == 2, "should continue past max_tokens"
+        assert len(findings) == 1
+        assert findings[0]["title"] == "Found"
+
+    def test_max_tokens_death_loop_breaks_at_limit(self, monkeypatch):
+        """Consecutive max_tokens beyond the configured limit must stop the loop."""
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "10")
+        monkeypatch.setenv("MAX_TOKENS_CONTINUE_LIMIT", "3")
+        monkeypatch.delenv("MAX_TOKENS_BEHAVIOR", raising=False)
+
+        truncated = {
+            "content": [{"type": "text", "text": "..."}],
+            "stop_reason": "max_tokens",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        chain = _make_chain_mock(truncated)  # always returns max_tokens
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+        assert chain.invoke.call_count == 3, f"expected 3 invokes, got {chain.invoke.call_count}"
+        assert findings == []
+
+    def test_max_tokens_behavior_fail_stops_immediately(self, monkeypatch):
+        """MAX_TOKENS_BEHAVIOR=fail must break the loop on the first max_tokens hit."""
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "10")
+        monkeypatch.setenv("MAX_TOKENS_BEHAVIOR", "fail")
+
+        truncated = {
+            "content": [{"type": "text", "text": "..."}],
+            "stop_reason": "max_tokens",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        chain = _make_chain_mock(truncated)
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                findings = run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+        assert chain.invoke.call_count == 1, "fail behavior must stop after first hit"
+        assert findings == []
+
+    def test_max_tokens_counter_resets_on_non_max_tokens(self, monkeypatch):
+        """A non-max_tokens turn must reset the consecutive counter."""
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "10")
+        monkeypatch.setenv("MAX_TOKENS_CONTINUE_LIMIT", "3")  # limit=3: allows 2 consecutive, breaks on 3rd
+        monkeypatch.delenv("MAX_TOKENS_BEHAVIOR", raising=False)
+
+        max_t = {
+            "content": [{"type": "text", "text": "..."}],
+            "stop_reason": "max_tokens",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        tool_call = {
+            "content": [{"type": "tool_use", "id": "tu", "name": "kubectl_get", "input": {}}],
+            "stop_reason": "tool_use",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        end = {
+            "content": [{"type": "text", "text": "FINDINGS_COMPLETE"}],
+            "stop_reason": "end_turn",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        # Sequence: max, max, tool_use (resets counter), max, max, end_turn → 6 invokes total
+        chain = _make_chain_mock([max_t, max_t, tool_call, max_t, max_t, end])
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                with patch("runtime.orchestrator.call_mcp_tool", return_value="{}"):
+                    run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+        assert chain.invoke.call_count == 6, f"counter should reset after tool_use; got {chain.invoke.call_count}"
