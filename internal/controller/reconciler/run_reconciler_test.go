@@ -1,6 +1,7 @@
 package reconciler_test
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"strings"
@@ -685,4 +686,15 @@ func TestParsePodLogStream_NonJSONLineBecomesInfo(t *testing.T) {
 	assert.Equal(t, "starting up", rs.logs[0].Message)
 	assert.Equal(t, "info", rs.logs[1].Type)
 	assert.Equal(t, "shutdown", rs.logs[1].Message)
+}
+
+func TestParsePodLogStream_LineExceeds1MBReturnsError(t *testing.T) {
+	// Build a single line > 1MB to exceed the helper's hard cap
+	huge := strings.Repeat("x", (1<<20)+1024) // 1MB + 1KB
+	rs := newRecordingStore()
+
+	err := reconciler.ParsePodLogStream(context.Background(), rs, "uid-1", strings.NewReader(huge+"\n"))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, bufio.ErrTooLong)
+	assert.Empty(t, rs.logs, "no entries should be persisted when scanner aborts on oversized line")
 }

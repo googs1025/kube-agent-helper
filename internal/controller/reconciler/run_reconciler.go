@@ -385,7 +385,7 @@ func (r *DiagnosticRunReconciler) collectPodLogs(ctx context.Context, run *k8sai
 // Buffer is sized to 1MB max — agent tool_result JSON for kubectl_get
 // or events_list against large namespaces routinely exceeds the 64KB
 // bufio.Scanner default. Lines beyond 1MB are dropped (Scanner returns
-// io.ErrShortBuffer) and the error is returned to the caller.
+// bufio.ErrTooLong) and the error is returned to the caller.
 func ParsePodLogStream(ctx context.Context, st store.Store, runID string, r io.Reader) error {
 	const maxLogLine = 1 << 20 // 1MB
 	scanner := bufio.NewScanner(r)
