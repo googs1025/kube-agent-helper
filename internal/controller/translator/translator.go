@@ -23,7 +23,6 @@ package translator
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -206,7 +205,7 @@ func (t *Translator) buildJob(run *k8saiV1.DiagnosticRun, runID, saName, cmName 
 			}
 			return "en"
 		}()},
-		{Name: "MAX_TOKENS", Value: strconv.Itoa(maxTokens)},
+		{Name: "MAX_TOKENS", Value: fmt.Sprintf("%d", maxTokens)},
 	}
 	allEnv := append(baseEnv, buildChainEnv(chain)...)
 	allEnv = append(allEnv, langfuseEnvVars(t.cfg.LangfuseSecretName)...)
