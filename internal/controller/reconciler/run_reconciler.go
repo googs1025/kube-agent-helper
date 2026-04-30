@@ -101,10 +101,19 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		// Persist to store
+		targetJSON, err := MarshalJSONFn(run.Spec.Target)
+		if err != nil {
+			return r.failRun(ctx, &run, fmt.Sprintf("marshal target: %s", err))
+		}
+		skillsJSON, err := MarshalJSONFn(run.Spec.Skills)
+		if err != nil {
+			return r.failRun(ctx, &run, fmt.Sprintf("marshal skills: %s", err))
+		}
+
 		storeRun := &store.DiagnosticRun{
 			ID:          string(run.UID),
-			TargetJSON:  mustJSON(run.Spec.Target),
-			SkillsJSON:  mustJSON(run.Spec.Skills),
+			TargetJSON:  targetJSON,
+			SkillsJSON:  skillsJSON,
 			Status:      store.PhasePending,
 			ClusterName: clusterName,
 		}
@@ -407,11 +416,6 @@ func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func mustJSON(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
-}
-
 // MarshalJSON marshals v to a JSON string. Returns an error instead of
 // silently swallowing — callers must surface marshal failures (e.g. via
 // failRun) so they don't become silent data corruption in the store.
@@ -425,3 +429,7 @@ func MarshalJSON(v any) (string, error) {
 	}
 	return string(b), nil
 }
+
+// MarshalJSONFn is the package-level marshal hook. Tests may override it
+// to inject failures; production code keeps the default.
+var MarshalJSONFn = MarshalJSON

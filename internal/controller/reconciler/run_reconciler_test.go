@@ -2,6 +2,7 @@ package reconciler_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -594,4 +595,35 @@ func TestMarshalJSON_Error(t *testing.T) {
 	_, err := reconciler.MarshalJSON(make(chan int))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "json.Marshal")
+}
+
+func TestRunReconciler_TargetMarshalError_FailsRun(t *testing.T) {
+	// Arrange: hijack MarshalJSONFn to return an error for any input
+	orig := reconciler.MarshalJSONFn
+	reconciler.MarshalJSONFn = func(_ any) (string, error) {
+		return "", fmt.Errorf("synthetic marshal error")
+	}
+	t.Cleanup(func() { reconciler.MarshalJSONFn = orig })
+
+	run := testRun()
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(run).
+		WithStatusSubresource(run).
+		Build()
+
+	ms := newMemStore()
+	r := &reconciler.DiagnosticRunReconciler{
+		Client: fakeClient, Store: ms, Translator: testTranslator(),
+	}
+
+	// Act
+	_ = reconcileOnce(t, r)
+
+	// Assert: run is now Failed and message references marshal error
+	var updated k8saiV1.DiagnosticRun
+	require.NoError(t, fakeClient.Get(context.Background(),
+		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
+	assert.Equal(t, "Failed", updated.Status.Phase)
+	assert.Contains(t, updated.Status.Message, "marshal")
 }
