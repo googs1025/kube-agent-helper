@@ -33,7 +33,9 @@ _LLM_BUFFER: list[dict] = []
 def record_llm_event(event_type: str, labels: dict) -> None:
     """Buffer an LLM event for later batch upload to /internal/llm-metrics.
 
-    event_type: one of "retry" / "fallback" / "exhausted".
+    event_type: any short string identifying the event class. Current
+        producers: "retry", "fallback", "exhausted" (model_chain.py),
+        "finding_parse_error" (orchestrator.py).
     labels: free-form k/v sent as Prometheus labels server-side.
     """
     _LLM_BUFFER.append({"type": event_type, "labels": labels})

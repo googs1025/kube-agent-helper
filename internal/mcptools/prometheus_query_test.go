@@ -62,3 +62,62 @@ func TestPrometheusQuery_Instant(t *testing.T) {
 	require.True(t, ok)
 	assert.Len(t, data, 1)
 }
+
+func TestPrometheusQuery_MissingQuery(t *testing.T) {
+	d := &Deps{Prometheus: &fakePrometheus{}}
+	handler := NewPrometheusQueryHandler(d)
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]interface{}{}
+	result, err := handler(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	assert.Contains(t, textOf(result), "query is required")
+}
+
+func TestPrometheusQuery_RangeDefaults(t *testing.T) {
+	mat := model.Matrix{
+		&model.SampleStream{
+			Metric: model.Metric{"__name__": "up"},
+			Values: []model.SamplePair{
+				{Timestamp: model.TimeFromUnix(1700000000), Value: 1},
+				{Timestamp: model.TimeFromUnix(1700000060), Value: 1},
+			},
+		},
+	}
+	d := &Deps{Prometheus: &fakePrometheus{queryResult: mat}}
+	handler := NewPrometheusQueryHandler(d)
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]interface{}{"query": "up", "mode": "range"}
+	result, err := handler(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(textOf(result)), &payload))
+	assert.Equal(t, "range", payload["mode"])
+	data, ok := payload["data"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, data, 1)
+}
+
+func TestPrometheusQuery_RangeCustomStartEndStep(t *testing.T) {
+	d := &Deps{Prometheus: &fakePrometheus{queryResult: model.Matrix{}}}
+	handler := NewPrometheusQueryHandler(d)
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]interface{}{
+		"query": "rate(http_requests_total[5m])",
+		"mode":  "range",
+		"start": "2026-04-30T10:00:00Z",
+		"end":   "2026-04-30T11:00:00Z",
+		"step":  "30s",
+	}
+	result, err := handler(context.Background(), req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(textOf(result)), &payload))
+	assert.Equal(t, "range", payload["mode"])
+}

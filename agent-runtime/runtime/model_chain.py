@@ -86,7 +86,7 @@ def _stream_one(endpoint: ModelEndpoint, tools, messages) -> dict:
 
     payload: dict[str, Any] = {
         "model": endpoint.model,
-        "max_tokens": int(os.environ.get("MAX_TOKENS", "4096")),
+        "max_tokens": int(os.environ.get("MAX_TOKENS", "8192")),
         "messages": messages,
         "stream": True,
     }

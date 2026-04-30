@@ -8,7 +8,7 @@ run_agent() 的循环：
             ↓
     ┌─ for turn in 0..MAX_TURNS:
     │     ┌─ Claude 流式 API 推理
-    │     │     ├─ 收到 text 块 → 扫 JSON finding，加入 findings[]
+    │     │     ├─ 收到 text 块 → extract_findings() 校验 schema → findings[]
     │     │     ├─ 收到 tool_use 块 → 转 call_mcp_tool() 拿结果
     │     │     └─ 把工具结果回喂给 LLM 作为 user 消息
     │     └─ stop_reason == "end_turn" → break
@@ -27,6 +27,7 @@ import os
 from typing import List
 
 from . import logger
+from . import reporter
 from . import tracer as _tracer_mod
 from .mcp_client import discover_tools, call_mcp_tool
 from .model_chain import ModelChain
@@ -34,6 +35,60 @@ from .skill_loader import Skill
 
 
 TARGET_NAMESPACES = os.environ.get("TARGET_NAMESPACES", "default")
+
+# Findings extraction (issue #44): the LLM emits one finding per line as
+# "FINDING_JSON: <single-line json>". Validation runs in extract_findings;
+# malformed entries are returned as parse errors so callers can log + emit
+# observability events.
+_FINDING_PREFIX = "FINDING_JSON: "
+_FINDING_REQUIRED_FIELDS = frozenset({
+    "dimension",
+    "severity",
+    "title",
+    "description",
+    "resource_kind",
+    "resource_namespace",
+    "resource_name",
+    "suggestion",
+})
+_DIMENSION_ENUM = frozenset({"health", "security", "cost", "reliability"})
+_SEVERITY_ENUM = frozenset({"critical", "high", "medium", "low", "info"})
+
+
+def extract_findings(text: str) -> tuple[list[dict], list[str]]:
+    """Parse FINDING_JSON: prefixed lines from LLM text output.
+
+    Returns (valid_findings, parse_errors). Each parse_error is a short
+    human-readable description suitable for logging or trace events.
+    The caller is responsible for emitting logs / metrics / events.
+    """
+    findings: list[dict] = []
+    errors: list[str] = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line.startswith(_FINDING_PREFIX):
+            continue
+        payload = line[len(_FINDING_PREFIX):].strip()
+        try:
+            obj = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            errors.append(f"json parse failed: {exc.msg}")
+            continue
+        if not isinstance(obj, dict):
+            errors.append("finding payload is not a JSON object")
+            continue
+        missing = _FINDING_REQUIRED_FIELDS - obj.keys()
+        if missing:
+            errors.append(f"missing required field(s): {sorted(missing)}")
+            continue
+        if obj["dimension"] not in _DIMENSION_ENUM:
+            errors.append(f"invalid dimension: {obj['dimension']!r}")
+            continue
+        if obj["severity"] not in _SEVERITY_ENUM:
+            errors.append(f"invalid severity: {obj['severity']!r}")
+            continue
+        findings.append(obj)
+    return findings, errors
 
 
 def build_prompt(skills: List[Skill]) -> str:
@@ -66,8 +121,9 @@ Available diagnostic skills:
 Instructions:
 1. For each skill, analyze the cluster in the target namespaces.
 2. Use the available MCP tools to gather data.
-3. For each issue found, output a finding JSON object on its own line:
-   {{"dimension":"<dim>","severity":"<critical|high|medium|low|info>","title":"<title>","description":"<desc>","resource_kind":"<kind>","resource_namespace":"<ns>","resource_name":"<name>","suggestion":"<suggestion>"}}
+3. For each issue found, emit ONE line in this exact format (literal `FINDING_JSON: ` prefix, single-line JSON, no markdown fence, no trailing commentary on the same line):
+   FINDING_JSON: {{"dimension":"<health|security|cost|reliability>","severity":"<critical|high|medium|low|info>","title":"<title>","description":"<desc>","resource_kind":"<kind>","resource_namespace":"<ns>","resource_name":"<name>","suggestion":"<suggestion>"}}
+   All eight fields are REQUIRED. `dimension` and `severity` MUST be one of the listed enum values.
 4. After all skills complete, output: FINDINGS_COMPLETE
 """
 
@@ -90,6 +146,15 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
 
     findings = []
     max_turns = int(os.environ.get("MAX_TURNS", "10"))
+    max_tokens_continue_limit = int(os.environ.get("MAX_TOKENS_CONTINUE_LIMIT", "3"))
+    max_tokens_behavior = os.environ.get("MAX_TOKENS_BEHAVIOR", "continue")
+    if max_tokens_behavior not in ("continue", "fail"):
+        logger.warn(
+            "unknown MAX_TOKENS_BEHAVIOR value, defaulting to continue",
+            value=max_tokens_behavior,
+        )
+        max_tokens_behavior = "continue"
+    consecutive_max_tokens = 0
 
     for turn in range(max_turns):
         logger.info("turn", turn=turn + 1, max_turns=max_turns)
@@ -118,15 +183,19 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
             if block["type"] == "text" and block.get("text"):
                 assistant_content.append({"type": "text", "text": block["text"]})
                 logger.debug("text block", chars=len(block['text']), preview=block['text'][:200])
-                # Extract findings from text
-                for line in block["text"].split("\n"):
-                    line = line.strip()
-                    if line.startswith("{") and "dimension" in line:
-                        try:
-                            f = json.loads(line)
-                            findings.append(f)
-                        except json.JSONDecodeError:
-                            pass
+                block_findings, parse_errors = extract_findings(block["text"])
+                findings.extend(block_findings)
+                for err in parse_errors:
+                    logger.warn("finding parse failed", error=err, turn=turn + 1)
+                    tracer.event(
+                        name="finding_parse_error",
+                        level="WARNING",
+                        metadata={"turn": turn + 1, "error": err},
+                    )
+                    reporter.record_llm_event(
+                        "finding_parse_error",
+                        {"turn": str(turn + 1), "error": err},
+                    )
             elif block["type"] == "tool_use":
                 assistant_content.append(block)
                 logger.debug("tool_use", tool=block['name'], input=block.get('input', {}))
@@ -141,6 +210,7 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
             break
 
         if response["stop_reason"] == "tool_use":
+            consecutive_max_tokens = 0
             tool_results = []
             for block in response["content"]:
                 if block["type"] == "tool_use":
@@ -152,6 +222,36 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
                         "content": result,
                     })
             messages.append({"role": "user", "content": tool_results})
+        elif response["stop_reason"] == "max_tokens":
+            logger.warn(
+                "hit max_tokens",
+                turn=turn + 1,
+                behavior=max_tokens_behavior,
+                consecutive=consecutive_max_tokens + 1,
+                limit=max_tokens_continue_limit,
+            )
+            tracer.event(
+                name="max_tokens_hit",
+                level="WARNING",
+                metadata={
+                    "turn": turn + 1,
+                    "behavior": max_tokens_behavior,
+                    "consecutive": consecutive_max_tokens + 1,
+                },
+            )
+            if max_tokens_behavior == "fail":
+                break
+            consecutive_max_tokens += 1
+            if consecutive_max_tokens >= max_tokens_continue_limit:
+                logger.warn(
+                    "max_tokens continue limit reached, stopping",
+                    turn=turn + 1,
+                    consecutive=consecutive_max_tokens,
+                    limit=max_tokens_continue_limit,
+                )
+                break
+            # behavior == "continue": loop iterates again with the now-extended
+            # messages history; assistant_content has already been appended above.
         else:
             logger.warn("unexpected stop_reason, stopping", stop_reason=response['stop_reason'])
             break
