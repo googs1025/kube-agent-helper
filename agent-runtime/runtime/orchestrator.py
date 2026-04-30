@@ -8,7 +8,7 @@ run_agent() 的循环：
             ↓
     ┌─ for turn in 0..MAX_TURNS:
     │     ┌─ Claude 流式 API 推理
-    │     │     ├─ 收到 text 块 → 扫 JSON finding，加入 findings[]
+    │     │     ├─ 收到 text 块 → extract_findings() 校验 schema → findings[]
     │     │     ├─ 收到 tool_use 块 → 转 call_mcp_tool() 拿结果
     │     │     └─ 把工具结果回喂给 LLM 作为 user 消息
     │     └─ stop_reason == "end_turn" → break
