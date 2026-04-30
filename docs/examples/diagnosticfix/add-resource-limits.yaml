@@ -1,0 +1,38 @@
+# 给 Deployment 容器补上 resources.limits + requests，避免节点资源耗尽。
+# 适用于来自 cost-waste-analyst 或 reliability-analyst 的 finding。
+#
+# 与 dry-run-preview.yaml 的差异：strategy=auto 会真正下发，并配套全套回滚。
+apiVersion: k8sai.io/v1alpha1
+kind: DiagnosticFix
+metadata:
+  name: add-resource-limits
+  namespace: kube-agent-helper
+spec:
+  diagnosticRunRef: prod-full-audit
+  findingTitle: "Containers without resource limits"
+  target:
+    kind: Deployment
+    namespace: production
+    name: api-server
+  strategy: auto
+  approvalRequired: true
+  patch:
+    type: strategic-merge
+    content: |
+      spec:
+        template:
+          spec:
+            containers:
+            - name: api
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+  rollback:
+    enabled: true
+    snapshotBefore: true
+    autoRollbackOnFailure: true
+    healthCheckTimeout: 180
