@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -368,45 +369,66 @@ func (r *DiagnosticRunReconciler) collectPodLogs(ctx context.Context, run *k8sai
 			continue
 		}
 
-		scanner := bufio.NewScanner(stream)
-		for scanner.Scan() {
-			line := scanner.Text()
-			var entry struct {
-				Timestamp string      `json:"timestamp"`
-				RunID     string      `json:"run_id"`
-				Type      string      `json:"type"`
-				Message   string      `json:"message"`
-				Data      interface{} `json:"data"`
-			}
-
-			logEntry := store.RunLog{RunID: runID}
-			if err := json.Unmarshal([]byte(line), &entry); err == nil && entry.Message != "" {
-				logEntry.Timestamp = entry.Timestamp
-				logEntry.Type = entry.Type
-				logEntry.Message = entry.Message
-				if entry.Data != nil {
-					dataBytes, _ := json.Marshal(entry.Data)
-					logEntry.Data = string(dataBytes)
-				}
-			} else {
-				// Non-JSON line — store as info
-				logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
-				logEntry.Type = "info"
-				logEntry.Message = line
-			}
-			if logEntry.Type == "" {
-				logEntry.Type = "info"
-			}
-			if logEntry.Timestamp == "" {
-				logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
-			}
-
-			if err := r.Store.AppendRunLog(ctx, logEntry); err != nil {
-				logger.Error(err, "failed to persist log entry")
-			}
+		if err := ParsePodLogStream(ctx, r.Store, runID, stream); err != nil {
+			logger.Error(err, "failed to parse pod log stream", "pod", pod.Name)
 		}
 		stream.Close()
 	}
+}
+
+// ParsePodLogStream reads structured log entries from r line-by-line and
+// persists each via store.AppendRunLog. Lines that don't parse as the
+// agent runtime's JSON envelope are stored as type=info entries.
+//
+// Exported for unit tests; internal callers go through collectPodLogs.
+//
+// Buffer is sized to 1MB max — agent tool_result JSON for kubectl_get
+// or events_list against large namespaces routinely exceeds the 64KB
+// bufio.Scanner default. Lines beyond 1MB are dropped (Scanner returns
+// io.ErrShortBuffer) and the error is returned to the caller.
+func ParsePodLogStream(ctx context.Context, st store.Store, runID string, r io.Reader) error {
+	const maxLogLine = 1 << 20 // 1MB
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLogLine)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		var entry struct {
+			Timestamp string      `json:"timestamp"`
+			RunID     string      `json:"run_id"`
+			Type      string      `json:"type"`
+			Message   string      `json:"message"`
+			Data      interface{} `json:"data"`
+		}
+
+		logEntry := store.RunLog{RunID: runID}
+		if err := json.Unmarshal([]byte(line), &entry); err == nil && entry.Message != "" {
+			logEntry.Timestamp = entry.Timestamp
+			logEntry.Type = entry.Type
+			logEntry.Message = entry.Message
+			if entry.Data != nil {
+				dataBytes, err := json.Marshal(entry.Data)
+				if err == nil {
+					logEntry.Data = string(dataBytes)
+				}
+			}
+		} else {
+			logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+			logEntry.Type = "info"
+			logEntry.Message = line
+		}
+		if logEntry.Type == "" {
+			logEntry.Type = "info"
+		}
+		if logEntry.Timestamp == "" {
+			logEntry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+
+		if err := st.AppendRunLog(ctx, logEntry); err != nil {
+			return fmt.Errorf("AppendRunLog: %w", err)
+		}
+	}
+	return scanner.Err()
 }
 
 func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {

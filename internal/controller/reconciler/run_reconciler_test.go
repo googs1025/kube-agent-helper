@@ -3,6 +3,7 @@ package reconciler_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -626,4 +627,62 @@ func TestRunReconciler_TargetMarshalError_FailsRun(t *testing.T) {
 		types.NamespacedName{Name: "test-run", Namespace: "default"}, &updated))
 	assert.Equal(t, "Failed", updated.Status.Phase)
 	assert.Contains(t, updated.Status.Message, "marshal")
+}
+
+// ── parsePodLogStream ─────────────────────────────────────────────────────────
+
+// recordingStore captures AppendRunLog calls for assertions.
+type recordingStore struct {
+	*memStore
+	logs []store.RunLog
+}
+
+func newRecordingStore() *recordingStore {
+	return &recordingStore{memStore: newMemStore()}
+}
+
+func (r *recordingStore) AppendRunLog(_ context.Context, l store.RunLog) error {
+	r.logs = append(r.logs, l)
+	return nil
+}
+
+func TestParsePodLogStream_HandlesMultipleLines(t *testing.T) {
+	rs := newRecordingStore()
+	body := strings.NewReader(
+		`{"timestamp":"2026-04-30T10:00:00Z","run_id":"uid-1","type":"tool_use","message":"calling kubectl_get"}` + "\n" +
+			`{"timestamp":"2026-04-30T10:00:01Z","run_id":"uid-1","type":"tool_result","message":"ok"}` + "\n",
+	)
+
+	require.NoError(t, reconciler.ParsePodLogStream(context.Background(), rs, "uid-1", body))
+	require.Len(t, rs.logs, 2)
+	assert.Equal(t, "tool_use", rs.logs[0].Type)
+	assert.Equal(t, "tool_result", rs.logs[1].Type)
+}
+
+func TestParsePodLogStream_LongLineExceeds64KBNotTruncated(t *testing.T) {
+	// Build a single tool_result line > 64KB (default bufio.Scanner cap)
+	bigData := strings.Repeat("x", 80*1024) // 80KB > 64KB default
+	line := fmt.Sprintf(
+		`{"timestamp":"2026-04-30T10:00:00Z","run_id":"uid-1","type":"tool_result","message":"big","data":{"raw":"%s"}}`+"\n",
+		bigData,
+	)
+
+	rs := newRecordingStore()
+	require.NoError(t, reconciler.ParsePodLogStream(context.Background(), rs, "uid-1", strings.NewReader(line)))
+
+	require.Len(t, rs.logs, 1, "long line must NOT cause Scanner to drop the entry")
+	assert.Equal(t, "tool_result", rs.logs[0].Type)
+	assert.Equal(t, "big", rs.logs[0].Message)
+}
+
+func TestParsePodLogStream_NonJSONLineBecomesInfo(t *testing.T) {
+	rs := newRecordingStore()
+	body := strings.NewReader("starting up\nshutdown\n")
+
+	require.NoError(t, reconciler.ParsePodLogStream(context.Background(), rs, "uid-1", body))
+	require.Len(t, rs.logs, 2)
+	assert.Equal(t, "info", rs.logs[0].Type)
+	assert.Equal(t, "starting up", rs.logs[0].Message)
+	assert.Equal(t, "info", rs.logs[1].Type)
+	assert.Equal(t, "shutdown", rs.logs[1].Message)
 }
