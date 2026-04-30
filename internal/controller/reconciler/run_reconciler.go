@@ -420,8 +420,10 @@ func (r *DiagnosticRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // silently swallowing — callers must surface marshal failures (e.g. via
 // failRun) so they don't become silent data corruption in the store.
 //
-// Exported for unit tests; internal callers should treat this like a
-// package-private helper.
+// Exported because MarshalJSONFn (the production dispatch hook) defaults
+// to it and external tests in package reconciler_test need to reference
+// both symbols. Production code paths go through MarshalJSONFn, not this
+// function directly.
 func MarshalJSON(v any) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
