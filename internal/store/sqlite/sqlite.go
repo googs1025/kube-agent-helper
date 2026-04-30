@@ -98,7 +98,7 @@ func (s *SQLiteStore) UpdateRunStatus(ctx context.Context, id string, phase stor
 		result, err = s.db.ExecContext(ctx,
 			`UPDATE diagnostic_runs SET status=?, message=?, started_at=? WHERE id=?`,
 			string(phase), msg, now, id)
-	case store.PhaseSucceeded, store.PhaseFailed:
+	case store.PhaseSucceeded, store.PhaseFailed, store.PhaseUnknown:
 		result, err = s.db.ExecContext(ctx,
 			`UPDATE diagnostic_runs SET status=?, message=?, completed_at=? WHERE id=?`,
 			string(phase), msg, now, id)

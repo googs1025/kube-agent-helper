@@ -7,6 +7,7 @@ const config: Record<string, { bg: string; text: string; dot: string; pulse?: bo
   Running:   { bg: "bg-sky-500/10",    text: "text-sky-400",    dot: "bg-sky-400",   pulse: true },
   Succeeded: { bg: "bg-green-500/10",  text: "text-green-400",  dot: "bg-green-400" },
   Failed:    { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
+  Unknown:   { bg: "bg-amber-500/10",  text: "text-amber-400",  dot: "bg-amber-400" },
   Scheduled: { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
 };
 

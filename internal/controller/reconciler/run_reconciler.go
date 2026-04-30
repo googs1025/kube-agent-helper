@@ -161,7 +161,18 @@ func (r *DiagnosticRunReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		var job batchv1.Job
 		if err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: run.Namespace}, &job); err != nil {
 			if errors.IsNotFound(err) {
-				// Job not created yet or was cleaned up
+				// Grace period: job may not have been created yet.
+				// Once the run has been in Running for longer than the job TTL
+				// (1 h), the job must have completed and been TTL-cleaned before
+				// the reconciler could observe its terminal status.
+				const jobTTL = time.Hour
+				if run.Status.StartedAt != nil && time.Since(run.Status.StartedAt.Time) > jobTTL {
+					msg := fmt.Sprintf(
+						"agent job not found — job TTL (1h) expired before reconciler could observe terminal status; run started at %s",
+						run.Status.StartedAt.Format(time.RFC3339),
+					)
+					return r.unknownRun(ctx, &run, msg)
+				}
 				logger.Info("job not found, requeueing", "job", jobName)
 				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 			}
@@ -303,6 +314,10 @@ func (r *DiagnosticRunReconciler) completeRun(ctx context.Context, run *k8saiV1.
 
 func (r *DiagnosticRunReconciler) failRun(ctx context.Context, run *k8saiV1.DiagnosticRun, msg string) (ctrl.Result, error) {
 	return r.completeRun(ctx, run, store.PhaseFailed, msg)
+}
+
+func (r *DiagnosticRunReconciler) unknownRun(ctx context.Context, run *k8saiV1.DiagnosticRun, msg string) (ctrl.Result, error) {
+	return r.completeRun(ctx, run, store.PhaseUnknown, msg)
 }
 
 // podWaitingReason lists pods for the given job and returns a human-readable

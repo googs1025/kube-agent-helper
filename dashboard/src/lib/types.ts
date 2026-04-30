@@ -3,7 +3,7 @@ export interface DiagnosticRun {
   Name?: string;
   TargetJSON: string;
   SkillsJSON: string;
-  Status: "Pending" | "Running" | "Succeeded" | "Failed" | "Scheduled";
+  Status: "Pending" | "Running" | "Succeeded" | "Failed" | "Unknown" | "Scheduled";
   Message: string;
   StartedAt: string | null;
   CompletedAt: string | null;

@@ -102,6 +102,7 @@
     "Running": "Running",
     "Succeeded": "Succeeded",
     "Failed": "Failed",
+    "Unknown": "Unknown",
     "Scheduled": "Scheduled",
     "PendingApproval": "Pending Approval",
     "Approved": "Approved",

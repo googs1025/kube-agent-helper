@@ -34,6 +34,7 @@ const (
 	PhaseRunning   Phase = "Running"
 	PhaseSucceeded Phase = "Succeeded"
 	PhaseFailed    Phase = "Failed"
+	PhaseUnknown   Phase = "Unknown"
 )
 
 type DiagnosticRun struct {
