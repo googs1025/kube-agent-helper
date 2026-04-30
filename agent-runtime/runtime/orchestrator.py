@@ -92,6 +92,12 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
     max_turns = int(os.environ.get("MAX_TURNS", "10"))
     max_tokens_continue_limit = int(os.environ.get("MAX_TOKENS_CONTINUE_LIMIT", "3"))
     max_tokens_behavior = os.environ.get("MAX_TOKENS_BEHAVIOR", "continue")
+    if max_tokens_behavior not in ("continue", "fail"):
+        logger.warn(
+            "unknown MAX_TOKENS_BEHAVIOR value, defaulting to continue",
+            value=max_tokens_behavior,
+        )
+        max_tokens_behavior = "continue"
     consecutive_max_tokens = 0
 
     for turn in range(max_turns):
@@ -179,6 +185,8 @@ def run_agent(skills: List[Skill], tracer=None) -> List[dict]:
             if consecutive_max_tokens >= max_tokens_continue_limit:
                 logger.warn(
                     "max_tokens continue limit reached, stopping",
+                    turn=turn + 1,
+                    consecutive=consecutive_max_tokens,
                     limit=max_tokens_continue_limit,
                 )
                 break

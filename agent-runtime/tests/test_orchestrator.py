@@ -244,3 +244,32 @@ class TestRunAgent:
                     run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
 
         assert chain.invoke.call_count == 6, f"counter should reset after tool_use; got {chain.invoke.call_count}"
+
+    def test_unknown_max_tokens_behavior_defaults_to_continue(self, monkeypatch):
+        """An unrecognized MAX_TOKENS_BEHAVIOR value must fall back to continue, not fail silently."""
+        monkeypatch.setenv("OUTPUT_LANGUAGE", "en")
+        monkeypatch.setenv("MAX_TURNS", "5")
+        monkeypatch.setenv("MAX_TOKENS_BEHAVIOR", "FAIL")  # uppercase typo — not "fail"
+        monkeypatch.delenv("MAX_TOKENS_CONTINUE_LIMIT", raising=False)
+
+        truncated = {
+            "content": [{"type": "text", "text": "..."}],
+            "stop_reason": "max_tokens",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        end = {
+            "content": [{"type": "text", "text": "done\nFINDINGS_COMPLETE"}],
+            "stop_reason": "end_turn",
+            "input_tokens": 0, "output_tokens": 0,
+        }
+        chain = _make_chain_mock([truncated, end])
+
+        with patch("runtime.orchestrator.discover_tools", return_value=[]):
+            with patch("runtime.orchestrator.ModelChain.from_env", return_value=chain):
+                run_agent([Skill(name="t", dimension="h", tools=[], prompt="p")])
+
+        # If "FAIL" had been silently treated as fail, invoke count would be 1.
+        # With validation, it falls back to continue → 2 invokes.
+        assert chain.invoke.call_count == 2, (
+            "unknown behavior must fall back to continue (not silently fail)"
+        )
