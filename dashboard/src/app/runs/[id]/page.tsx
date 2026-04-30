@@ -114,9 +114,11 @@ export default function RunDetailPage({ params }: { params: Promise<{ id: string
           <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
             run.Status === "Failed"
               ? "border-red-500/20 bg-red-500/10 text-red-400"
-              : run.Status === "Running"
-                ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-400"
-                : "border-border bg-muted/30 text-muted-foreground"
+              : run.Status === "Unknown"
+                ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
+                : run.Status === "Running"
+                  ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-400"
+                  : "border-border bg-muted/30 text-muted-foreground"
           }`}>
             {run.Message}
           </div>

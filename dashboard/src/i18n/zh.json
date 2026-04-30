@@ -102,6 +102,7 @@
     "Running": "执行中",
     "Succeeded": "成功",
     "Failed": "失败",
+    "Unknown": "结果未知",
     "Scheduled": "定时",
     "PendingApproval": "待审批",
     "Approved": "已批准",
