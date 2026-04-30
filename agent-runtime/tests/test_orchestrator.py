@@ -13,6 +13,96 @@ from runtime.orchestrator import build_prompt, run_agent
 from runtime.skill_loader import Skill
 
 
+class TestExtractFindings:
+    """Tests for the FINDING_JSON: prefix extractor."""
+
+    def test_single_valid_finding(self):
+        text = (
+            "Some preamble.\n"
+            'FINDING_JSON: {"dimension":"health","severity":"critical","title":"Pod CrashLoopBackOff","description":"d","resource_kind":"Pod","resource_namespace":"default","resource_name":"nginx","suggestion":"Restart"}\n'
+            "FINDINGS_COMPLETE"
+        )
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        assert errors == []
+        assert len(findings) == 1
+        assert findings[0]["title"] == "Pod CrashLoopBackOff"
+
+    def test_multiple_findings_one_invalid_enum(self):
+        text = (
+            'FINDING_JSON: {"dimension":"health","severity":"critical","title":"A","description":"d","resource_kind":"Pod","resource_namespace":"ns","resource_name":"a","suggestion":"s"}\n'
+            'FINDING_JSON: {"dimension":"BOGUS","severity":"critical","title":"B","description":"d","resource_kind":"Pod","resource_namespace":"ns","resource_name":"b","suggestion":"s"}\n'
+            'FINDING_JSON: {"dimension":"security","severity":"medium","title":"C","description":"d","resource_kind":"Pod","resource_namespace":"ns","resource_name":"c","suggestion":"s"}\n'
+        )
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        assert len(findings) == 2  # A and C accepted, B rejected
+        assert {f["title"] for f in findings} == {"A", "C"}
+        assert len(errors) == 1
+        assert "dimension" in errors[0]
+
+    def test_missing_required_field_rejected(self):
+        # No `suggestion` key
+        text = 'FINDING_JSON: {"dimension":"health","severity":"low","title":"X","description":"d","resource_kind":"Pod","resource_namespace":"n","resource_name":"x"}\n'
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        assert findings == []
+        assert len(errors) == 1
+        assert "suggestion" in errors[0]
+
+    def test_invalid_severity_enum_rejected(self):
+        text = 'FINDING_JSON: {"dimension":"health","severity":"PANIC","title":"X","description":"d","resource_kind":"Pod","resource_namespace":"n","resource_name":"x","suggestion":"s"}\n'
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        assert findings == []
+        assert len(errors) == 1
+        assert "severity" in errors[0]
+
+    def test_markdown_code_fence_json_not_extracted(self):
+        """Old startswith heuristic falsely captured JSON inside ``` blocks. New parser must not."""
+        text = (
+            "Here is an example finding format:\n"
+            "```json\n"
+            '{"dimension":"health","severity":"critical","title":"EXAMPLE","description":"d","resource_kind":"Pod","resource_namespace":"n","resource_name":"e","suggestion":"s"}\n'
+            "```\n"
+            "Now the real one:\n"
+            'FINDING_JSON: {"dimension":"health","severity":"low","title":"REAL","description":"d","resource_kind":"Pod","resource_namespace":"n","resource_name":"r","suggestion":"s"}\n'
+        )
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        assert len(findings) == 1
+        assert findings[0]["title"] == "REAL"
+        assert errors == []
+
+    def test_pretty_printed_multiline_json_not_extracted(self):
+        """Multi-line JSON without prefix on first line is rejected — keeps the contract single-line."""
+        text = (
+            "FINDING_JSON: {\n"
+            '  "dimension": "health",\n'
+            '  "severity": "critical"\n'
+            "}\n"
+        )
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        # Either parsed nothing (only the prefix line is invalid JSON), or
+        # captured an error — both are acceptable, but findings must be empty.
+        assert findings == []
+
+    def test_garbage_after_prefix_logged(self):
+        text = "FINDING_JSON: not-json-at-all\n"
+        from runtime.orchestrator import extract_findings
+
+        findings, errors = extract_findings(text)
+        assert findings == []
+        assert len(errors) == 1
+
+
 class TestBuildPrompt:
     def test_contains_skill_info(self, monkeypatch):
         monkeypatch.setenv("TARGET_NAMESPACES", "default")

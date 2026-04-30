@@ -35,6 +35,60 @@ from .skill_loader import Skill
 
 TARGET_NAMESPACES = os.environ.get("TARGET_NAMESPACES", "default")
 
+# Findings extraction (issue #44): the LLM emits one finding per line as
+# "FINDING_JSON: <single-line json>". Validation runs in extract_findings;
+# malformed entries are returned as parse errors so callers can log + emit
+# observability events.
+_FINDING_PREFIX = "FINDING_JSON: "
+_FINDING_REQUIRED_FIELDS = frozenset({
+    "dimension",
+    "severity",
+    "title",
+    "description",
+    "resource_kind",
+    "resource_namespace",
+    "resource_name",
+    "suggestion",
+})
+_DIMENSION_ENUM = frozenset({"health", "security", "cost", "reliability"})
+_SEVERITY_ENUM = frozenset({"critical", "high", "medium", "low", "info"})
+
+
+def extract_findings(text: str) -> tuple[list[dict], list[str]]:
+    """Parse FINDING_JSON: prefixed lines from LLM text output.
+
+    Returns (valid_findings, parse_errors). Each parse_error is a short
+    human-readable description suitable for logging or trace events.
+    The caller is responsible for emitting logs / metrics / events.
+    """
+    findings: list[dict] = []
+    errors: list[str] = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line.startswith(_FINDING_PREFIX):
+            continue
+        payload = line[len(_FINDING_PREFIX):].strip()
+        try:
+            obj = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            errors.append(f"json parse failed: {exc.msg}")
+            continue
+        if not isinstance(obj, dict):
+            errors.append("finding payload is not a JSON object")
+            continue
+        missing = _FINDING_REQUIRED_FIELDS - obj.keys()
+        if missing:
+            errors.append(f"missing required field(s): {sorted(missing)}")
+            continue
+        if obj["dimension"] not in _DIMENSION_ENUM:
+            errors.append(f"invalid dimension: {obj['dimension']!r}")
+            continue
+        if obj["severity"] not in _SEVERITY_ENUM:
+            errors.append(f"invalid severity: {obj['severity']!r}")
+            continue
+        findings.append(obj)
+    return findings, errors
+
 
 def build_prompt(skills: List[Skill]) -> str:
     skill_list = "\n".join(
