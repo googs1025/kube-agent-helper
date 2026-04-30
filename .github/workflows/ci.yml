@@ -256,11 +256,42 @@ jobs:
 
       - name: Install dependencies
         working-directory: agent-runtime
-        run: pip install -r requirements.txt pytest httpx
+        run: pip install -r requirements.txt pytest pytest-cov httpx
 
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: agent-runtime
-        run: PYTHONPATH=. python -m pytest tests/ -v
+        run: |
+          PYTHONPATH=. python -m pytest tests/ -v \
+            --cov=runtime \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov
+
+      - name: Agent runtime coverage summary
+        if: always()
+        working-directory: agent-runtime
+        run: |
+          echo '## Agent Runtime Test Coverage' >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage.xml ]; then
+            python3 -c "
+          import xml.etree.ElementTree as ET
+          root = ET.parse('coverage.xml').getroot()
+          line_rate = float(root.get('line-rate', 0)) * 100
+          branch_rate = float(root.get('branch-rate', 0)) * 100
+          print('| Metric | Coverage |')
+          print('|--------|----------|')
+          print(f'| Lines | {line_rate:.1f}% |')
+          print(f'| Branches | {branch_rate:.1f}% |')
+          " >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-coverage
+          path: agent-runtime/htmlcov/
+          retention-days: 7
 
   skill-lint:
     name: Skill File Validation
