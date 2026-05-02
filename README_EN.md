@@ -9,6 +9,8 @@
 
 [中文](README.md)
 
+> **This project has two names:** **KubeDoctor** is the new name; `kube-agent-helper` is the old one that still shows up in the repo URL, `kubectl` commands, and image paths. Same project.
+
 ## Features
 
 - **CRD-driven diagnostics** — declare tasks with `DiagnosticRun`; extend with `DiagnosticSkill` CRs

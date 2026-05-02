@@ -9,6 +9,8 @@
 
 [English](README_EN.md)
 
+> **这个项目有两个名字：** **KubeDoctor** 是新名字，`kube-agent-helper` 是老名字 —— 仓库 URL、`kubectl` 命令、镜像路径里还能看到老名字，是同一个项目。
+
 ## 功能特性
 
 - **CRD 驱动** — 用 `DiagnosticRun` 声明诊断任务，用 `DiagnosticSkill` CR 扩展技能
