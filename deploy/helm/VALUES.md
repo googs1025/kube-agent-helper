@@ -1,4 +1,4 @@
-# Kube Agent Helper — Helm Values Reference
+# KubeDoctor — Helm Values Reference
 
 Complete reference for all configurable parameters in the `kube-agent-helper` Helm chart.
 

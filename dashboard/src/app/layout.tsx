@@ -81,7 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh" suppressHydrationWarning>
       <head>
-        <title>Kube Agent Helper</title>
+        <title>KubeDoctor</title>
         <script dangerouslySetInnerHTML={{ __html: preHydrationScript }} />
       </head>
       <body className="min-h-screen bg-background">

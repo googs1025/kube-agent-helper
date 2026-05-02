@@ -632,7 +632,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Kube Agent Helper",
+  "title": "KubeDoctor",
   "uid": "kube-agent-helper",
   "version": 1
 }

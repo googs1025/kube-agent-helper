@@ -1,6 +1,6 @@
 # Notification / Webhook Setup Guide
 
-Kube Agent Helper can send real-time notifications when diagnostic runs complete, critical findings are detected, or fixes change status. Four notification channels are supported out of the box.
+KubeDoctor can send real-time notifications when diagnostic runs complete, critical findings are detected, or fixes change status. Four notification channels are supported out of the box.
 
 ## Architecture
 

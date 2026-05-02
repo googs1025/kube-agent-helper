@@ -1,8 +1,8 @@
-# kube-agent-helper
+# KubeDoctor
 
 > Kubernetes 原生 AI 诊断 Operator，支持自动修复建议
 
-**kube-agent-helper** 是运行在 Kubernetes 集群内的 AI 智能体。声明一个 `DiagnosticRun` CR，控制器即刻拉起隔离的 Agent Pod，通过 MCP 工具调用 Claude，输出结构化诊断结论，并可选生成 `DiagnosticFix` CR（含 patch 或新资源 manifest）。支持定时调度诊断、K8s 事件采集、Prometheus 指标快照。
+**KubeDoctor** 是运行在 Kubernetes 集群内的 AI 智能体。声明一个 `DiagnosticRun` CR，控制器即刻拉起隔离的 Agent Pod，通过 MCP 工具调用 Claude，输出结构化诊断结论，并可选生成 `DiagnosticFix` CR（含 patch 或新资源 manifest）。支持定时调度诊断、K8s 事件采集、Prometheus 指标快照。
 
 [![CI](https://github.com/googs1025/kube-agent-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/googs1025/kube-agent-helper/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -64,9 +64,12 @@ spec:
   model: claude-3-5-sonnet-20241022
   baseURL: "https://my-proxy.example.com"   # 可选，省略则直连 Anthropic API
   retries: 3                                # 可选，默认 0；代理抖动严重时设 1-3
+  # apiKeyRef 引用 Step 1 创建的 Secret，等价于：
+  #   kubectl create secret generic anthropic-credentials \
+  #     -n kube-agent-helper --from-literal=apiKey=sk-ant-...
   apiKeyRef:
-    name: anthropic-credentials
-    key: apiKey
+    name: anthropic-credentials   # ← Secret 名称（与 Step 1 一致）
+    key: apiKey                   # ← Secret 中存放 API Key 的 data key
 ```
 
 `spec.baseURL` 允许每个 ModelConfig 指定独立的 API 代理端点。`spec.retries` 控制单模型瞬时错误（5xx / 429 / 网络超时）的重试次数，0 表示不重试。Translator 在创建 Agent Job 时从 ModelConfig CR 中解析 `baseURL` 和 `apiKeyRef`，而非全局控制器配置。

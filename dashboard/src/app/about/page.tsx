@@ -11,7 +11,7 @@ export default function AboutPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">{t("about.title")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Kube Agent Helper — AI-powered Kubernetes diagnostics</p>
+        <p className="mt-1 text-sm text-muted-foreground">KubeDoctor — AI-powered Kubernetes diagnostics</p>
       </div>
 
       {/* Architecture */}
