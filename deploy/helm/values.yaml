@@ -12,13 +12,15 @@ replicaCount: 1
 # =============================================================================
 image:
   # -- Controller container image (repository:tag).
-  # Tag is pinned to chart appVersion; override to use :latest or a custom build.
-  controller: ghcr.io/googs1025/kube-doctor-controller:0.1.0
+  # Released chart packages have these tags rewritten to the release version
+  # (see .github/workflows/release.yml). The :latest default below is for
+  # local-source installs (`helm install ... deploy/helm`).
+  controller: ghcr.io/googs1025/kube-doctor-controller:latest
   # -- Agent runtime image. The Translator spawns this image as a Job for each
   # diagnostic run.
-  agent: ghcr.io/googs1025/kube-doctor-agent-runtime:0.1.0
+  agent: ghcr.io/googs1025/kube-doctor-agent-runtime:latest
   # -- Dashboard (Next.js) container image.
-  dashboard: ghcr.io/googs1025/kube-doctor-dashboard:0.1.0
+  dashboard: ghcr.io/googs1025/kube-doctor-dashboard:latest
   # -- Image pull policy applied to all containers.
   # Valid values: Always, IfNotPresent, Never
   pullPolicy: IfNotPresent
