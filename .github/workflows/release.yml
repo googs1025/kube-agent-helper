@@ -84,13 +84,24 @@ jobs:
         with:
           version: v3.14.0
 
-      - name: Pin Chart.yaml version & appVersion to tag
+      - name: Pin Chart.yaml + values.yaml image tags to release tag
         run: |
           v="${{ steps.ver.outputs.version }}"
+          # Chart metadata
           sed -i.bak -E "s/^version: .*/version: ${v}/" deploy/helm/Chart.yaml
           sed -i.bak -E "s/^appVersion: .*/appVersion: \"${v}\"/" deploy/helm/Chart.yaml
-          rm -f deploy/helm/Chart.yaml.bak
+          # Image tags in values.yaml (controller / agent-runtime / dashboard)
+          # so the released chart references the matching image versions out of
+          # the box, without requiring users to pass --set image.* overrides.
+          for name in controller agent-runtime dashboard; do
+            sed -i.bak -E "s|kube-doctor-${name}:[^[:space:]]+|kube-doctor-${name}:${v}|g" \
+              deploy/helm/values.yaml
+          done
+          rm -f deploy/helm/Chart.yaml.bak deploy/helm/values.yaml.bak
+          echo '--- Chart.yaml ---'
           cat deploy/helm/Chart.yaml
+          echo '--- values.yaml (image section) ---'
+          grep -A 10 '^image:' deploy/helm/values.yaml | head -12
 
       - name: Helm lint
         run: helm lint deploy/helm
