@@ -184,7 +184,7 @@ func (m *Manager) SendTest(ctx context.Context, cfg *NotificationConfig) error {
 		Type:      "test",
 		Severity:  "info",
 		Title:     "Test Notification",
-		Message:   fmt.Sprintf("This is a test notification from Kube Agent Helper (%s channel: %s)", cfg.Type, cfg.Name),
+		Message:   fmt.Sprintf("This is a test notification from KubeDoctor (%s channel: %s)", cfg.Type, cfg.Name),
 		Timestamp: time.Now(),
 	})
 }

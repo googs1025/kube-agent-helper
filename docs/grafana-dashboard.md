@@ -17,7 +17,7 @@ helm upgrade --install kah ./deploy/helm \
   --set grafana.dashboard.enabled=true
 ```
 
-The ConfigMap is labeled with `grafana_dashboard: "1"`. The Grafana sidecar detects this label and provisions the dashboard automatically. It typically appears in Grafana within 60 seconds under the title **Kube Agent Helper**.
+The ConfigMap is labeled with `grafana_dashboard: "1"`. The Grafana sidecar detects this label and provisions the dashboard automatically. It typically appears in Grafana within 60 seconds under the title **KubeDoctor**.
 
 ### Custom annotations
 

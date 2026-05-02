@@ -22,7 +22,7 @@ func SetVersionInfo(version, commit string) {
 
 var rootCmd = &cobra.Command{
 	Use:   "kah",
-	Short: "Kube Agent Helper CLI",
+	Short: "KubeDoctor CLI",
 	Long:  "CLI tool for interacting with the kube-agent-helper controller API",
 }
 

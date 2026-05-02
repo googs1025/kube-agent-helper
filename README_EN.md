@@ -1,8 +1,8 @@
-# kube-agent-helper
+# KubeDoctor
 
 > Kubernetes-native AI diagnostic operator with auto-fix capabilities
 
-**kube-agent-helper** is an AI agent that runs inside your Kubernetes cluster, diagnoses workload issues, and generates actionable fix suggestions. Declare a `DiagnosticRun` CR, and the controller spins up an isolated agent Pod that calls Claude via MCP tools, writes structured findings, and optionally produces `DiagnosticFix` CRs with patches or new resource manifests. Supports scheduled diagnostics, K8s event collection, and Prometheus metric snapshots.
+**KubeDoctor** is an AI agent that runs inside your Kubernetes cluster, diagnoses workload issues, and generates actionable fix suggestions. Declare a `DiagnosticRun` CR, and the controller spins up an isolated agent Pod that calls Claude via MCP tools, writes structured findings, and optionally produces `DiagnosticFix` CRs with patches or new resource manifests. Supports scheduled diagnostics, K8s event collection, and Prometheus metric snapshots.
 
 [![CI](https://github.com/googs1025/kube-agent-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/googs1025/kube-agent-helper/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -64,9 +64,12 @@ spec:
   model: claude-3-5-sonnet-20241022
   baseURL: "https://my-proxy.example.com"   # optional, omit for direct Anthropic API
   retries: 3                                # optional, default 0; set 1-3 if proxy is flaky
+  # apiKeyRef references the Secret created in Step 1, equivalent to:
+  #   kubectl create secret generic anthropic-credentials \
+  #     -n kube-agent-helper --from-literal=apiKey=sk-ant-...
   apiKeyRef:
-    name: anthropic-credentials
-    key: apiKey
+    name: anthropic-credentials   # ← Secret name (matches Step 1)
+    key: apiKey                   # ← data key in the Secret holding the API key
 ```
 
 `spec.baseURL` lets each ModelConfig specify its own API proxy endpoint. The Translator resolves `baseURL` and `apiKeyRef` from the referenced ModelConfig CR when creating each agent Job, rather than from global controller config. `spec.retries` controls per-endpoint retries on transient errors (5xx / 429 / network timeout); 0 disables retries.

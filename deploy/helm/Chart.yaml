@@ -1,5 +1,5 @@
 apiVersion: v2
-name: kube-agent-helper
+name: kube-doctor
 description: Kubernetes AI diagnostic operator
 type: application
 version: 0.1.0
