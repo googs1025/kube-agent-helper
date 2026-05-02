@@ -28,6 +28,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,11 +100,16 @@ func (t *Translator) Compile(ctx context.Context, run *k8saiV1.DiagnosticRun) ([
 	cm := t.buildConfigMap(cmName, runID, selected)
 	rb := t.buildRoleBinding(saName, runID, run.Namespace)
 
-	chain := t.resolveModelChain(ctx, run)
+	chain, err := t.resolveModelChain(ctx, run)
+	if err != nil {
+		return nil, err
+	}
 	if len(chain) == 0 {
-		// Legacy path: no client or primary missing. Synthesize a single-element
-		// chain from global flags + treat ModelConfigRef as a Secret name with
-		// key "apiKey" (pre-ModelConfig-CR behavior).
+		// Legacy path: client unavailable (test scenarios) or no ModelConfigRef
+		// specified at all. Synthesize a single-element chain from global flags
+		// + treat ModelConfigRef as a Secret name with key "apiKey"
+		// (pre-ModelConfig-CR behavior). NOT entered when ref points to a
+		// missing CR — that's a hard failure surfaced via the err above.
 		chain = []*k8saiV1.ModelConfig{{
 			Spec: k8saiV1.ModelConfigSpec{
 				Model:     t.cfg.Model,
@@ -364,18 +370,28 @@ func (t *Translator) resolveModelConfig(ctx context.Context, run *k8saiV1.Diagno
 // resolveModelChain returns the ordered list of ModelConfigs to try: the
 // primary at index 0, then each fallback in spec order. Missing fallbacks
 // are silently skipped (a fallback that no longer exists must not block the
-// run). Returns an empty slice if the k8s client is unavailable or the
-// primary ModelConfig is missing — callers should handle the empty-chain
-// case as a hard failure or fall back to legacy single-Secret behavior.
-func (t *Translator) resolveModelChain(ctx context.Context, run *k8saiV1.DiagnosticRun) []*k8saiV1.ModelConfig {
+// run).
+//
+// Returns:
+//   - (empty, nil) when the k8s client is unavailable or no primary ref is
+//     specified — callers may fall back to legacy single-Secret behavior.
+//   - (empty, error) when a primary ref is specified but the CR cannot be
+//     fetched (NotFound or any other client error). This surfaces user-visible
+//     mistakes such as a typoed modelConfigRef rather than silently degrading
+//     to legacy mode and producing a confusing 401 from the LLM.
+func (t *Translator) resolveModelChain(ctx context.Context, run *k8saiV1.DiagnosticRun) ([]*k8saiV1.ModelConfig, error) {
 	chain := []*k8saiV1.ModelConfig{}
 	if t.k8s == nil || run.Spec.ModelConfigRef == "" {
-		return chain
+		return chain, nil
 	}
 	var primary k8saiV1.ModelConfig
-	if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.ModelConfigRef}, &primary); err == nil {
-		chain = append(chain, &primary)
+	if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.ModelConfigRef}, &primary); err != nil {
+		if apierrors.IsNotFound(err) {
+			return chain, fmt.Errorf("ModelConfig %q not found in namespace %q", run.Spec.ModelConfigRef, run.Namespace)
+		}
+		return chain, fmt.Errorf("get ModelConfig %q: %w", run.Spec.ModelConfigRef, err)
 	}
+	chain = append(chain, &primary)
 	for _, name := range run.Spec.FallbackModelConfigRefs {
 		var fb k8saiV1.ModelConfig
 		if err := t.k8s.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: name}, &fb); err != nil {
@@ -383,6 +399,6 @@ func (t *Translator) resolveModelChain(ctx context.Context, run *k8saiV1.Diagnos
 		}
 		chain = append(chain, &fb)
 	}
-	return chain
+	return chain, nil
 }
 

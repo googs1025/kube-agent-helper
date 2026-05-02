@@ -16,7 +16,7 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DialogRoot, DialogTrigger, DialogPortal, DialogBackdrop, DialogPopup, DialogTitle, DialogClose } from "@/components/ui/dialog";
@@ -43,12 +43,25 @@ export function CreateRunDialog({ onCreated }: Props) {
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const [labelSelector, setLabelSelector] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
-  const [modelConfigRef, setModelConfigRef] = useState("anthropic-credentials");
+  // Empty initially — populated by the effect below once modelConfigs loads.
+  // Hard-coding a default here caused a silent UI desync: the <select> in
+  // ModelConfigPicker would visually show the first available option (because
+  // the hard-coded default doesn't match), but the form state stayed wrong
+  // unless the user actively re-picked.
+  const [modelConfigRef, setModelConfigRef] = useState("");
   const [fallbackModelConfigRefs, setFallbackModelConfigRefs] = useState<string[]>([]);
   const [timeoutSeconds, setTimeoutSeconds] = useState<string>("");
   const [outputLanguage, setOutputLanguage] = useState<"zh" | "en">(lang);
   const [schedule, setSchedule] = useState("");
   const [historyLimit, setHistoryLimit] = useState<string>("");
+
+  // Auto-select first available ModelConfig once SWR resolves the list, so the
+  // submitted modelConfigRef always matches what the user sees in the picker.
+  useEffect(() => {
+    if (!modelConfigRef && modelConfigs && modelConfigs.length > 0) {
+      setModelConfigRef(modelConfigs[0].name);
+    }
+  }, [modelConfigs, modelConfigRef]);
 
   function parseLabelSelector(tags: string[]): Record<string, string> {
     const result: Record<string, string> = {};

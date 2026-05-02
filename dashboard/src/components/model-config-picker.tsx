@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useI18n } from "@/i18n/context";
 import type { ModelConfig } from "@/lib/types";
@@ -49,6 +49,18 @@ export function ModelConfigPicker({
   const candidates = visible
     .map((c) => c.name)
     .filter((n) => n !== primary && !fallbacks.includes(n));
+
+  // Defensive: if the parent passed a primary that doesn't match any visible
+  // config (typically a stale hard-coded default like "anthropic-credentials"),
+  // the <select> would visually show the first option without firing onChange,
+  // and the form state would silently desync. Snap to the first visible config
+  // so what the user sees is what gets submitted.
+  const primaryMissing = !!primary && !visible.some((c) => c.name === primary);
+  useEffect(() => {
+    if (primaryMissing && visible.length > 0) {
+      onChange(visible[0].name, fallbacks);
+    }
+  }, [primaryMissing, visible, fallbacks, onChange]);
 
   if (visible.length === 0) {
     return (
