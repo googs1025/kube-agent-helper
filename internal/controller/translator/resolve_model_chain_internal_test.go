@@ -43,7 +43,10 @@ func TestResolveModelChain_PrimaryOnly(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec:       k8saiV1.DiagnosticRunSpec{ModelConfigRef: "primary"},
 	}
-	chain := tr.resolveModelChain(context.Background(), run)
+	chain, err := tr.resolveModelChain(context.Background(), run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(chain) != 1 || chain[0].Name != "primary" {
 		t.Fatalf("expected [primary], got %+v", chain)
 	}
@@ -63,7 +66,10 @@ func TestResolveModelChain_PrimaryWithFallbacks(t *testing.T) {
 			FallbackModelConfigRefs: []string{"f1", "f2"},
 		},
 	}
-	chain := tr.resolveModelChain(context.Background(), run)
+	chain, err := tr.resolveModelChain(context.Background(), run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	got := []string{}
 	for _, mc := range chain {
 		got = append(got, mc.Name)
@@ -86,7 +92,10 @@ func TestResolveModelChain_MissingFallbackSkipped(t *testing.T) {
 			FallbackModelConfigRefs: []string{"missing"},
 		},
 	}
-	chain := tr.resolveModelChain(context.Background(), run)
+	chain, err := tr.resolveModelChain(context.Background(), run)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(chain) != 1 {
 		t.Fatalf("expected primary only when fallback missing, got %d", len(chain))
 	}
@@ -98,8 +107,32 @@ func TestResolveModelChain_NoClient(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec:       k8saiV1.DiagnosticRunSpec{ModelConfigRef: "primary"},
 	}
-	chain := tr.resolveModelChain(context.Background(), run)
+	chain, err := tr.resolveModelChain(context.Background(), run)
+	if err != nil {
+		t.Fatalf("expected nil error without k8s client (legacy path), got %v", err)
+	}
 	if len(chain) != 0 {
 		t.Fatalf("expected empty chain without k8s client, got %d", len(chain))
+	}
+}
+
+// TestResolveModelChain_PrimaryNotFound asserts that a typoed or stale
+// modelConfigRef is surfaced as a hard error rather than silently degrading
+// to the global-flag fallback (which used to produce a confusing 401 from
+// the LLM provider when the legacy Secret didn't exist either).
+func TestResolveModelChain_PrimaryNotFound(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(resolveTestScheme()).Build()
+	tr := NewWithClient(Config{}, emptyProvider{}, c)
+
+	run := &k8saiV1.DiagnosticRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
+		Spec:       k8saiV1.DiagnosticRunSpec{ModelConfigRef: "does-not-exist"},
+	}
+	chain, err := tr.resolveModelChain(context.Background(), run)
+	if err == nil {
+		t.Fatalf("expected error when primary ModelConfig is missing, got chain=%v", chain)
+	}
+	if len(chain) != 0 {
+		t.Fatalf("expected empty chain on error, got %d entries", len(chain))
 	}
 }

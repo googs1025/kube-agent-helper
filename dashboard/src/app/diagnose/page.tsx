@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/i18n/context";
 import { useK8sNamespaces, useK8sResources, getK8sResourceDetail, createRun, useRuns, useModelConfigs } from "@/lib/api";
@@ -33,6 +33,15 @@ export default function DiagnosePage() {
   const { data: modelConfigs } = useModelConfigs();
   const { data: resources } = useK8sResources(resourceType, namespace);
   const { data: runs } = useRuns();
+
+  // Auto-select first available ModelConfig once SWR resolves the list, so
+  // submitting before the user touches the picker still uses a real config
+  // (instead of the previous "anthropic-credentials" hard-coded fallback).
+  useEffect(() => {
+    if (!modelConfigRef && modelConfigs && modelConfigs.length > 0) {
+      setModelConfigRef(modelConfigs[0].name);
+    }
+  }, [modelConfigs, modelConfigRef]);
 
   const toggleSymptom = (id: string) => {
     if (id === "full-check") {
@@ -85,7 +94,7 @@ export default function DiagnosePage() {
           labelSelector,
         },
         skills: symptomsToSkills(symptoms),
-        modelConfigRef: modelConfigRef || (modelConfigs?.[0]?.name ?? "anthropic-credentials"),
+        modelConfigRef: modelConfigRef || (modelConfigs?.[0]?.name ?? ""),
         fallbackModelConfigRefs: fallbackModelConfigRefs.length > 0 ? fallbackModelConfigRefs : undefined,
         outputLanguage: outputLang,
         ...(schedule ? { schedule } : {}),
