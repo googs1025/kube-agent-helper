@@ -80,19 +80,25 @@ spec:
 
 > 完整参数列表和部署场景请参阅 [Helm Values Reference](deploy/helm/VALUES.md)。
 
+Chart 已发布到 GitHub Container Registry（OCI），无需 `git clone` 即可安装：
+
 ```bash
-helm install kah deploy/helm \
-  --namespace kube-agent-helper
+helm install kah oci://ghcr.io/googs1025/charts/kube-doctor \
+  --version 0.1.0 \
+  --namespace kube-agent-helper --create-namespace
 ```
 
 使用自定义代理和模型：
 
 ```bash
-helm install kah deploy/helm \
-  --namespace kube-agent-helper \
+helm install kah oci://ghcr.io/googs1025/charts/kube-doctor \
+  --version 0.1.0 \
+  --namespace kube-agent-helper --create-namespace \
   --set anthropic.baseURL=https://my-proxy.example.com \
   --set anthropic.model=claude-3-5-sonnet-20241022
 ```
+
+> 想从本地源码安装（开发场景），见下方「本地开发」段。
 
 ### 4. 访问 Dashboard
 
@@ -262,6 +268,9 @@ make image
 
 # 启动 Dashboard 开发服务器
 cd dashboard && npm run dev
+
+# 从本地源码安装 Helm Chart（不走 OCI 仓库）
+helm install kah deploy/helm --namespace kube-agent-helper --create-namespace
 ```
 
 ## 项目结构
